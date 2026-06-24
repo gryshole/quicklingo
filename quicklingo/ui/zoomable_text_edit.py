@@ -113,10 +113,8 @@ class ZoomableTextEdit(QTextEdit):
         self._result_html: str | None = None
         self._result_plain: str | None = None
         self.setReadOnly(True)
-        self.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextSelectableByKeyboard
-        )
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         _install_zoom_shortcuts(self, self._zoom_in, self._zoom_out, self.reset_zoom)
 
     def set_result_html(self, html: str) -> None:
@@ -158,6 +156,7 @@ class ZoomableTextEdit(QTextEdit):
         elif self._result_plain is not None:
             self.setPlainText(self._result_plain)
         self.document().setDefaultFont(font)
+        self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if _handle_zoom_key(event, self._zoom_in, self._zoom_out, self.reset_zoom):

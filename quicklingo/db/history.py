@@ -94,6 +94,12 @@ def clear_all() -> None:
         conn.execute("DELETE FROM translations")
 
 
+def delete_by_id(record_id: int) -> bool:
+    with _connect() as conn:
+        cursor = conn.execute("DELETE FROM translations WHERE id = ?", (record_id,))
+        return cursor.rowcount > 0
+
+
 def _row_to_record(row: sqlite3.Row) -> TranslationRecord:
     return TranslationRecord(
         id=row["id"],

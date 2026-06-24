@@ -43,29 +43,28 @@ class HistoryWindow(QDialog):
         top_row.addWidget(refresh_btn)
         top_row.addWidget(clear_btn)
 
-        self._table = QTableWidget(0, 5)
+        self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(
-            ["Дата", "Напрямок", "Запит", "Модель", "Результат"]
+            ["Дата", "Напрямок", "Запит", "Модель", "Результат", ""]
         )
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.verticalHeader().setVisible(False)
-        self._table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
-        )
-        self._table.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.Stretch
-        )
+
+        header = self._table.horizontalHeader()
+        header.setMinimumSectionSize(48)
+        header.setStretchLastSection(False)
+        for col in range(5):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(0, 150)
+        header.resizeSection(1, 100)
+        header.resizeSection(2, 120)
+        header.resizeSection(3, 160)
+        header.resizeSection(4, 220)
+        header.resizeSection(5, 36)
+
         self._table.itemSelectionChanged.connect(self._on_row_selected)
 
         detail_label = QLabel("Повний результат:")
@@ -93,27 +92,46 @@ class HistoryWindow(QDialog):
             + (f"  ·  показано останні {shown}" if shown < stats["total"] else "")
         )
 
-        self._table.setRowCount(0)
         self._detail_field.clear()
 
-        for row_idx, record in enumerate(self._records):
-            self._table.insertRow(row_idx)
-            values = [
-                record.created_at,
-                _DIRECTION_LABELS.get(record.direction, record.direction),
-                record.source_text,
-                record.model,
-                _preview(record.result_text),
-            ]
-            for col, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                item.setToolTip(value if col != 4 else record.result_text)
-                if col in (0, 1, 3):
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignTop)
-                self._table.setItem(row_idx, col, item)
+        self._table.blockSignals(True)
+        try:
+            self._table.setRowCount(0)
+            for row_idx, record in enumerate(self._records):
+                self._table.insertRow(row_idx)
+                values = [
+                    record.created_at,
+                    _DIRECTION_LABELS.get(record.direction, record.direction),
+                    record.source_text,
+                    record.model,
+                    _preview(record.result_text),
+                ]
+                for col, value in enumerate(values):
+                    item = QTableWidgetItem(value)
+                    item.setToolTip(value if col != 4 else record.result_text)
+                    if col in (0, 1, 3):
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignTop)
+                    self._table.setItem(row_idx, col, item)
 
-        if self._records:
-            self._table.selectRow(0)
+                delete_btn = QPushButton("✕")
+                delete_btn.setToolTip("Видалити")
+                delete_btn.setFixedWidth(32)
+                delete_btn.clicked.connect(
+                    lambda _checked=False, rid=record.id: self._delete_record(rid)
+                )
+                self._table.setCellWidget(row_idx, 5, delete_btn)
+
+            if self._records:
+                self._table.selectRow(0)
+        finally:
+            self._table.blockSignals(False)
+
+        self._on_row_selected()
+
+    def _delete_record(self, record_id: int) -> None:
+        if not history.delete_by_id(record_id):
+            return
+        self.refresh()
 
     def _clear_history(self) -> None:
         stats = history.get_stats()
@@ -139,8 +157,11 @@ class HistoryWindow(QDialog):
         if not rows:
             self._detail_field.clear()
             return
-        record = self._records[rows[0].row()]
-        self._detail_field.setPlainText(record.result_text)
+        row = rows[0].row()
+        if row < 0 or row >= len(self._records):
+            self._detail_field.clear()
+            return
+        self._detail_field.setPlainText(self._records[row].result_text)
 
 
 def _preview(text: str, max_len: int = 120) -> str:

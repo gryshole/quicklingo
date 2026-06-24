@@ -27,6 +27,8 @@ echo Building QuickLingo.exe...
     --onefile ^
     --windowed ^
     --name QuickLingo ^
+    --icon assets\quicklingo_icon.ico ^
+    --add-data "assets;assets" ^
     --collect-all PySide6 ^
     main.py
 

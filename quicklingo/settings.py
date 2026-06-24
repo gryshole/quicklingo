@@ -59,3 +59,21 @@ def save_window_geometry_state(state: bytes) -> None:
     for key in ("window_x", "window_y", "window_width", "window_height"):
         data.pop(key, None)
     _save(data)
+
+
+def get_ui_preferences() -> tuple[str | None, str | None]:
+    data = _load()
+    model_id = data.get("selected_model_id")
+    direction = data.get("translation_direction")
+    if not isinstance(model_id, str):
+        model_id = None
+    if direction not in ("ua-en", "en-ua"):
+        direction = None
+    return model_id, direction
+
+
+def save_ui_preferences(model_id: str, direction: str) -> None:
+    data = _load()
+    data["selected_model_id"] = model_id
+    data["translation_direction"] = direction
+    _save(data)

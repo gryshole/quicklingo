@@ -5,10 +5,8 @@ from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
-    QHBoxLayout,
     QLabel,
     QMainWindow,
-    QPushButton,
     QRadioButton,
     QVBoxLayout,
     QWidget,
@@ -35,15 +33,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("QuickLingo")
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
 
+        self._create_menu_bar()
+
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(12, 8, 12, 12)
         layout.setSpacing(10)
-
-        history_btn = QPushButton("Історія")
-        history_btn.clicked.connect(self._open_history)
-        layout.addWidget(history_btn)
 
         model_label = QLabel("Модель:")
         self._model_combo = QComboBox()
@@ -87,10 +83,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._output_field, stretch=1)
         layout.addWidget(self._status_label)
 
+        self._restore_ui_preferences()
         self._check_api_key()
         self._restore_window_geometry()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        model_entry = get_model_by_index(self._model_combo.currentIndex())
+        settings.save_ui_preferences(model_entry.model_id, self._current_direction())
         settings.save_zoom_steps(
             self._input_field.zoom_steps(),
             self._output_field.zoom_steps(),
@@ -110,6 +109,29 @@ class MainWindow(QMainWindow):
             height = max(400, int(available.height() * 0.70))
             self.resize(width, height)
             self.move(available.right() - width - 16, available.top() + 16)
+
+    def _restore_ui_preferences(self) -> None:
+        model_id, direction = settings.get_ui_preferences()
+        if model_id:
+            index = self._model_combo.findData(model_id)
+            if index >= 0:
+                self._model_combo.setCurrentIndex(index)
+        if direction == "en-ua":
+            self._en_ua_radio.setChecked(True)
+        elif direction == "ua-en":
+            self._ua_en_radio.setChecked(True)
+
+    def _create_menu_bar(self) -> None:
+        menu_bar = self.menuBar()
+        menu_bar.setFixedHeight(22)
+        menu_bar.setStyleSheet(
+            "QMenuBar { padding: 0px; spacing: 0px; background: transparent; }"
+            "QMenuBar::item { padding: 1px 8px; margin: 0px; }"
+            "QMenuBar::item:selected { background: #e5e7eb; }"
+        )
+        tools_menu = menu_bar.addMenu("Tools")
+        history_action = tools_menu.addAction("Історія запитів")
+        history_action.triggered.connect(self._open_history)
 
     def _open_history(self) -> None:
         if self._history_window is None:

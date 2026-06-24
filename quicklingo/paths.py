@@ -9,6 +9,13 @@ def app_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def resource_path(relative: str) -> Path:
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", app_root()))
+        return base / relative
+    return app_root() / relative
+
+
 def user_data_dir() -> Path:
     app_data = os.environ.get("APPDATA")
     if app_data:
@@ -17,3 +24,7 @@ def user_data_dir() -> Path:
         base = Path.home() / ".quicklingo"
     base.mkdir(parents=True, exist_ok=True)
     return base
+
+
+def app_icon_path() -> Path:
+    return resource_path("assets/quicklingo_icon.png")
