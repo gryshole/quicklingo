@@ -1,0 +1,1 @@
+"""QuickLingo — desktop translation assistant."""
