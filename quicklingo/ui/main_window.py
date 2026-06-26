@@ -1,5 +1,3 @@
-import os
-
 from PySide6.QtCore import Qt, QByteArray
 from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
@@ -216,7 +214,9 @@ class MainWindow(QMainWindow):
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self)
         dialog.config_changed.connect(self._on_config_changed)
+        dialog.api_keys_changed.connect(self._check_api_key)
         dialog.exec()
+        self._check_api_key()
 
     def _on_config_changed(self) -> None:
         reload_config()
@@ -227,12 +227,12 @@ class MainWindow(QMainWindow):
 
     def _check_api_key(self) -> None:
         entry = get_model_by_index(self._model_combo.currentIndex())
-        api_key = os.environ.get(entry.env_key, "")
-        if not api_key or api_key == "your_key_here":
+        api_key = settings.get_api_key(entry.api_provider)
+        if not api_key:
             self._set_status(
                 "main.status_api_key",
                 error=True,
-                env_key=entry.env_key,
+                provider=tr(f"settings.api_keys.provider_{entry.api_provider}"),
             )
         else:
             self._set_status("main.status_ready", error=False)

@@ -1,8 +1,7 @@
-import os
-
 import httpx
 
-from quicklingo.i18n.translator import TranslatableError, translate_message
+from quicklingo import settings
+from quicklingo.i18n.translator import TranslatableError
 from quicklingo.providers.base import TranslationProvider
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -16,7 +15,7 @@ class GroqProvider(TranslationProvider):
     def _get_api_key(self) -> str:
         if self._api_key:
             return self._api_key
-        return os.environ.get("GROQ_API_KEY", "")
+        return settings.get_api_key("groq")
 
     async def translate(
         self,
@@ -27,7 +26,7 @@ class GroqProvider(TranslationProvider):
         temperature: float = 0.2,
     ) -> str:
         api_key = self._get_api_key()
-        if not api_key or api_key == "your_key_here":
+        if not api_key:
             raise TranslatableError("errors.groq_api_key_missing")
 
         headers = {

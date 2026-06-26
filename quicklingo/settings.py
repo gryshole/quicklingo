@@ -121,3 +121,26 @@ def save_ui_language(lang: str) -> None:
     data = _load()
     data["ui_language"] = lang if lang in ("en", "uk") else "en"
     _save(data)
+
+
+def get_api_key(provider: str) -> str:
+    data = _load()
+    key_name = {
+        "groq": "groq_api_key",
+        "gemini": "gemini_api_key",
+    }.get(provider)
+    if not key_name:
+        return ""
+    value = data.get(key_name, "")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def get_api_keys() -> tuple[str, str]:
+    return get_api_key("groq"), get_api_key("gemini")
+
+
+def save_api_keys(*, groq: str, gemini: str) -> None:
+    data = _load()
+    data["groq_api_key"] = groq.strip()
+    data["gemini_api_key"] = gemini.strip()
+    _save(data)

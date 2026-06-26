@@ -47,19 +47,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
-copy /Y ".env.example" "dist\.env.example" >nul
 xcopy /E /I /Y "config_data" "dist\config_data" >nul
 
 echo.
 echo === Build complete ===
 echo   dist\QuickLingo.exe
 echo   dist\config_data\
-echo   dist\.env.example
 echo.
 echo To use on another PC:
 echo   1. Copy dist\QuickLingo.exe and dist\config_data\ to the target PC
 echo   2. Keep config_data in the same folder as QuickLingo.exe
-echo   3. Copy dist\.env.example as .env next to the exe
-echo   4. Add GROQ_API_KEY and/or GEMINI_API_KEY to .env
+echo   3. Run QuickLingo and add API keys in Tools - Settings - API keys
 echo.
 pause

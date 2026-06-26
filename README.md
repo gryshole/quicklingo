@@ -24,24 +24,20 @@ cd quicklingo
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env
 ```
-
-Edit `.env` and add your API key(s):
-
-```
-GROQ_API_KEY=gsk_xxxxxxxx
-GEMINI_API_KEY=AIza_xxxxxxxx
-```
-
-- Groq: [console.groq.com](https://console.groq.com/)
-- Gemini: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
 Run:
 
 ```powershell
 python main.py
 ```
+
+On first launch, open **Tools → Settings → API keys** and add your key(s):
+
+- Groq: [console.groq.com](https://console.groq.com/)
+- Gemini: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+
+Keys are saved in `%APPDATA%/QuickLingo/settings.json`.
 
 ## Usage
 
@@ -50,7 +46,7 @@ python main.py
 3. Type text and press **Enter**.
 4. The result appears in the output field; the request is saved to history automatically.
 
-Use **Tools → Settings** to manage translation directions, profiles, prompts, formatters, and active profile selection. All configuration is editable in the UI — no manual JSON editing required.
+Use **Tools → Settings** to manage API keys, translation directions, profiles, prompts, formatters, and active profile selection. All configuration is editable in the UI — no manual JSON editing required.
 
 ### UI language
 
@@ -65,6 +61,7 @@ On first run, QuickLingo copies the distribution `config_data/` into `%APPDATA%/
 | Tab | What you can do |
 |-----|-----------------|
 | **Interface** | Choose UI language (English / Ukrainian) |
+| **API keys** | Groq and Gemini API keys |
 | **Usage** | Pick active profile per direction |
 | **Directions** | Add, edit, delete, enable/disable translation directions |
 | **Profiles** | Edit prompts, temperature, formatters per direction; add/delete profiles |
@@ -137,7 +134,7 @@ xcopy /E /I /Y config_data dist\config_data
 
 Output: `dist/QuickLingo.exe` and `dist/config_data/` — keep both in the same folder.
 
-Place `.env` next to the executable or set `GROQ_API_KEY` / `GEMINI_API_KEY` as environment variables.
+After first run, add API keys via **Tools → Settings → API keys**.
 
 ## Project structure
 

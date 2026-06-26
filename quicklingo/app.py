@@ -1,15 +1,11 @@
 import sys
 
-from dotenv import load_dotenv
 from PySide6.QtWidgets import QApplication
 
 from quicklingo.app_icon import configure_windows_app_id, load_app_icon
 from quicklingo.db import history
 from quicklingo.i18n import init_language, language_changed
-from quicklingo.paths import app_root
 from quicklingo.ui.main_window import MainWindow
-
-load_dotenv(app_root() / ".env")
 
 
 def run() -> int:

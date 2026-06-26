@@ -1,8 +1,8 @@
 import json
-import os
 
 import httpx
 
+from quicklingo import settings
 from quicklingo.i18n.translator import TranslatableError
 from quicklingo.providers.base import TranslationProvider
 
@@ -17,7 +17,7 @@ class GeminiProvider(TranslationProvider):
     def _get_api_key(self) -> str:
         if self._api_key:
             return self._api_key
-        return os.environ.get("GEMINI_API_KEY", "")
+        return settings.get_api_key("gemini")
 
     async def translate(
         self,
@@ -28,7 +28,7 @@ class GeminiProvider(TranslationProvider):
         temperature: float = 0.2,
     ) -> str:
         api_key = self._get_api_key()
-        if not api_key or api_key == "your_key_here":
+        if not api_key:
             raise TranslatableError("errors.gemini_api_key_missing")
 
         url = GEMINI_API_URL.format(model=model)

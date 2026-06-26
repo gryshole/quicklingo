@@ -13,14 +13,14 @@ class ModelEntry:
     model_id: str
     display_name: str
     provider: TranslationProvider
-    env_key: str
+    api_provider: str
 
 
 MODELS: list[ModelEntry] = [
-    ModelEntry("llama-3.1-8b-instant", "Groq Llama 3.1 8B", _groq, "GROQ_API_KEY"),
-    ModelEntry("llama-3.3-70b-versatile", "Groq Llama 3.3 70B", _groq, "GROQ_API_KEY"),
-    ModelEntry("gemini-2.5-flash", "Gemini 2.5 Flash", _gemini, "GEMINI_API_KEY"),
-    ModelEntry("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", _gemini, "GEMINI_API_KEY"),
+    ModelEntry("llama-3.1-8b-instant", "Groq Llama 3.1 8B", _groq, "groq"),
+    ModelEntry("llama-3.3-70b-versatile", "Groq Llama 3.3 70B", _groq, "groq"),
+    ModelEntry("gemini-2.5-flash", "Gemini 2.5 Flash", _gemini, "gemini"),
+    ModelEntry("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", _gemini, "gemini"),
 ]
 
 

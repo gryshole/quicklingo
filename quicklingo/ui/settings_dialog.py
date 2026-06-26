@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from quicklingo.config.loader import reload_config
 from quicklingo.i18n import language_changed, tr
+from quicklingo.ui.settings.api_keys_tab import ApiKeysTab
 from quicklingo.ui.settings.directions_tab import DirectionsTab
 from quicklingo.ui.settings.formatters_tab import FormattersTab
 from quicklingo.ui.settings.interface_tab import InterfaceTab
@@ -19,6 +20,7 @@ from quicklingo.ui.settings.usage_tab import UsageTab
 
 class SettingsDialog(QDialog):
     config_changed = Signal()
+    api_keys_changed = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -28,6 +30,7 @@ class SettingsDialog(QDialog):
         self._tabs = QTabWidget()
 
         self._interface_tab = InterfaceTab()
+        self._api_keys_tab = ApiKeysTab()
         self._usage_tab = UsageTab()
         self._directions_tab = DirectionsTab()
         self._profiles_tab = ProfilesTab()
@@ -35,6 +38,7 @@ class SettingsDialog(QDialog):
 
         self._tab_widgets = (
             self._interface_tab,
+            self._api_keys_tab,
             self._usage_tab,
             self._directions_tab,
             self._profiles_tab,
@@ -46,6 +50,7 @@ class SettingsDialog(QDialog):
         for tab in self._tab_widgets:
             if tab is not self._interface_tab:
                 tab.config_saved.connect(self._on_config_saved)
+        self._api_keys_tab.api_keys_saved.connect(self.api_keys_changed.emit)
 
         btn_row = QHBoxLayout()
         self._apply_btn = QPushButton()
@@ -68,6 +73,7 @@ class SettingsDialog(QDialog):
         self.setWindowTitle(tr("settings.title"))
         self._tabs.clear()
         self._tabs.addTab(self._interface_tab, tr("settings.tab_interface"))
+        self._tabs.addTab(self._api_keys_tab, tr("settings.tab_api_keys"))
         self._tabs.addTab(self._usage_tab, tr("settings.tab_usage"))
         self._tabs.addTab(self._directions_tab, tr("settings.tab_directions"))
         self._tabs.addTab(self._profiles_tab, tr("settings.tab_profiles"))
