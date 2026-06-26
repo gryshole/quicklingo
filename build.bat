@@ -15,9 +15,17 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 echo Installing dependencies...
-.venv\Scripts\pip install -r requirements.txt pyinstaller -q
+.venv\Scripts\pip install -r requirements.txt pyinstaller pillow -q
 if errorlevel 1 (
     echo ERROR: pip install failed.
+    pause
+    exit /b 1
+)
+
+echo Preparing icon...
+.venv\Scripts\python.exe scripts\make_icon.py
+if errorlevel 1 (
+    echo ERROR: Could not prepare icon.
     pause
     exit /b 1
 )
@@ -29,6 +37,7 @@ echo Building QuickLingo.exe...
     --name QuickLingo ^
     --icon assets\quicklingo_icon.ico ^
     --add-data "assets;assets" ^
+    --add-data "quicklingo\i18n\locales;quicklingo\i18n\locales" ^
     --collect-all PySide6 ^
     main.py
 
@@ -39,15 +48,18 @@ if errorlevel 1 (
 )
 
 copy /Y ".env.example" "dist\.env.example" >nul
+xcopy /E /I /Y "config_data" "dist\config_data" >nul
 
 echo.
 echo === Build complete ===
 echo   dist\QuickLingo.exe
+echo   dist\config_data\
 echo   dist\.env.example
 echo.
 echo To use on another PC:
-echo   1. Copy dist\QuickLingo.exe to the target PC
-echo   2. Copy dist\.env.example as .env next to the exe
-echo   3. Add GROQ_API_KEY and/or GEMINI_API_KEY to .env
+echo   1. Copy dist\QuickLingo.exe and dist\config_data\ to the target PC
+echo   2. Keep config_data in the same folder as QuickLingo.exe
+echo   3. Copy dist\.env.example as .env next to the exe
+echo   4. Add GROQ_API_KEY and/or GEMINI_API_KEY to .env
 echo.
 pause

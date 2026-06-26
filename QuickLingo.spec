@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('assets', 'assets')]
+datas = [('assets', 'assets'), ('quicklingo/i18n/locales', 'quicklingo/i18n/locales')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('PySide6')

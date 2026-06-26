@@ -1,0 +1,14 @@
+{
+  "id": "detailed",
+  "name": "Detailed",
+  "description": "Full explanations, context notes, and formatted cards (default).",
+  "prompts": {
+    "ua-en": "prompts/ua-en-detailed.txt",
+    "en-ua": "prompts/en-ua-detailed.txt"
+  },
+  "formatters": {
+    "ua-en": "ua_en_cards",
+    "en-ua": "en_ua_cards"
+  },
+  "temperature": 0.2
+}

@@ -1,0 +1,8 @@
+{
+  "id": "ua-en",
+  "label": "Укр → Англ",
+  "source_lang": "uk",
+  "target_lang": "en",
+  "default_profile": "detailed",
+  "enabled": true
+}

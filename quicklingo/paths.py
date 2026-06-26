@@ -26,5 +26,18 @@ def user_data_dir() -> Path:
     return base
 
 
+def user_config_dir() -> Path:
+    path = user_data_dir() / "config"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def default_config_dir() -> Path:
+    return app_root() / "config_data"
+
+
 def app_icon_path() -> Path:
+    ui_icon = resource_path("assets/quicklingo_icon_ui.png")
+    if ui_icon.is_file():
+        return ui_icon
     return resource_path("assets/quicklingo_icon.png")

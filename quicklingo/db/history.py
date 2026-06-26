@@ -25,21 +25,63 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _create_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS translations (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            direction   TEXT NOT NULL,
+            source_text TEXT NOT NULL,
+            result_text TEXT NOT NULL,
+            model       TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _migrate_remove_direction_check(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE translations_new (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            direction   TEXT NOT NULL,
+            source_text TEXT NOT NULL,
+            result_text TEXT NOT NULL,
+            model       TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO translations_new
+            (id, created_at, direction, source_text, result_text, model)
+        SELECT id, created_at, direction, source_text, result_text, model
+        FROM translations
+        """
+    )
+    conn.execute("DROP TABLE translations")
+    conn.execute("ALTER TABLE translations_new RENAME TO translations")
+
+
 def init_db() -> None:
     # Future: this table will feed Anki deck generation and word frequency stats.
     with _connect() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS translations (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                direction   TEXT NOT NULL CHECK(direction IN ('ua-en', 'en-ua')),
-                source_text TEXT NOT NULL,
-                result_text TEXT NOT NULL,
-                model       TEXT NOT NULL
-            )
-            """
-        )
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='translations'"
+        ).fetchone()
+        if row is None:
+            _create_table(conn)
+        elif row[0] and "CHECK" in row[0].upper():
+            _migrate_remove_direction_check(conn)
+
+
+def _validate_direction(direction: str) -> None:
+    from quicklingo.config.loader import get_direction
+
+    if get_direction(direction) is None:
+        raise ValueError(f"Unknown translation direction: {direction}")
 
 
 def save_translation(
@@ -48,6 +90,7 @@ def save_translation(
     result_text: str,
     model: str,
 ) -> int:
+    _validate_direction(direction)
     with _connect() as conn:
         cursor = conn.execute(
             """

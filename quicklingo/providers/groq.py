@@ -2,6 +2,7 @@ import os
 
 import httpx
 
+from quicklingo.i18n.translator import TranslatableError, translate_message
 from quicklingo.providers.base import TranslationProvider
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -17,10 +18,17 @@ class GroqProvider(TranslationProvider):
             return self._api_key
         return os.environ.get("GROQ_API_KEY", "")
 
-    async def translate(self, text: str, prompt: str, model: str) -> str:
+    async def translate(
+        self,
+        text: str,
+        prompt: str,
+        model: str,
+        *,
+        temperature: float = 0.2,
+    ) -> str:
         api_key = self._get_api_key()
         if not api_key or api_key == "your_key_here":
-            raise ValueError("GROQ_API_KEY не налаштовано. Додайте ключ у файл .env")
+            raise TranslatableError("errors.groq_api_key_missing")
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -32,25 +40,29 @@ class GroqProvider(TranslationProvider):
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": text},
             ],
-            "temperature": 0.2,
+            "temperature": temperature,
         }
 
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 response = await client.post(GROQ_API_URL, headers=headers, json=payload)
         except httpx.TimeoutException as exc:
-            raise ConnectionError("Час очікування API минув. Спробуйте ще раз.") from exc
+            raise TranslatableError("errors.api_timeout") from exc
         except httpx.RequestError as exc:
-            raise ConnectionError(f"Помилка мережі: {exc}") from exc
+            raise TranslatableError("errors.network", detail=str(exc)) from exc
 
         if response.status_code == 401:
-            raise ValueError("Невірний GROQ_API_KEY. Перевірте ключ у .env")
+            raise TranslatableError("errors.groq_invalid_key")
         if response.status_code >= 400:
             detail = response.text.strip() or response.reason_phrase
-            raise RuntimeError(f"Помилка API ({response.status_code}): {detail}")
+            raise TranslatableError(
+                "errors.api_error",
+                status=response.status_code,
+                detail=detail,
+            )
 
         data = response.json()
         try:
             return data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("Неочікувана відповідь від Groq API") from exc
+            raise TranslatableError("errors.groq_unexpected") from exc

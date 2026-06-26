@@ -3,6 +3,7 @@ import json
 from binascii import Error as BinasciiError
 
 from quicklingo.paths import user_data_dir
+
 _SETTINGS_FILE = "settings.json"
 
 
@@ -61,13 +62,44 @@ def save_window_geometry_state(state: bytes) -> None:
     _save(data)
 
 
+def _default_active_profiles() -> dict[str, str]:
+    from quicklingo.config.loader import get_directions
+
+    return {direction.id: direction.default_profile for direction in get_directions()}
+
+
+def get_active_profiles() -> dict[str, str]:
+    data = _load()
+    stored = data.get("active_profiles")
+    defaults = _default_active_profiles()
+    if not isinstance(stored, dict):
+        return defaults
+    merged = dict(defaults)
+    for direction_id, profile_id in stored.items():
+        if isinstance(direction_id, str) and isinstance(profile_id, str):
+            merged[direction_id] = profile_id
+    return merged
+
+
+def save_active_profiles(active_profiles: dict[str, str]) -> None:
+    data = _load()
+    data["active_profiles"] = active_profiles
+    _save(data)
+
+
+def get_active_profile(direction_id: str) -> str:
+    return get_active_profiles().get(direction_id, "detailed")
+
+
 def get_ui_preferences() -> tuple[str | None, str | None]:
+    from quicklingo.config.loader import get_direction
+
     data = _load()
     model_id = data.get("selected_model_id")
     direction = data.get("translation_direction")
     if not isinstance(model_id, str):
         model_id = None
-    if direction not in ("ua-en", "en-ua"):
+    if not isinstance(direction, str) or get_direction(direction) is None:
         direction = None
     return model_id, direction
 
@@ -76,4 +108,16 @@ def save_ui_preferences(model_id: str, direction: str) -> None:
     data = _load()
     data["selected_model_id"] = model_id
     data["translation_direction"] = direction
+    _save(data)
+
+
+def get_ui_language() -> str:
+    data = _load()
+    lang = data.get("ui_language", "en")
+    return lang if lang in ("en", "uk") else "en"
+
+
+def save_ui_language(lang: str) -> None:
+    data = _load()
+    data["ui_language"] = lang if lang in ("en", "uk") else "en"
     _save(data)

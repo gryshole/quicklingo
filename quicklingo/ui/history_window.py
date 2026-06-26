@@ -12,18 +12,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from quicklingo.config.loader import get_direction_label
 from quicklingo.db import history
-
-_DIRECTION_LABELS = {
-    "ua-en": "Укр → Англ",
-    "en-ua": "Англ → Укр",
-}
+from quicklingo.i18n import tr
 
 
 class HistoryWindow(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Історія запитів")
         self.resize(720, 520)
 
         layout = QVBoxLayout(self)
@@ -32,21 +28,18 @@ class HistoryWindow(QDialog):
         self._summary_label = QLabel()
         self._summary_label.setWordWrap(True)
 
-        refresh_btn = QPushButton("Оновити")
-        refresh_btn.clicked.connect(self.refresh)
+        self._refresh_btn = QPushButton()
+        self._refresh_btn.clicked.connect(self.refresh)
 
-        clear_btn = QPushButton("Очистити")
-        clear_btn.clicked.connect(self._clear_history)
+        self._clear_btn = QPushButton()
+        self._clear_btn.clicked.connect(self._clear_history)
 
         top_row = QHBoxLayout()
         top_row.addWidget(self._summary_label, stretch=1)
-        top_row.addWidget(refresh_btn)
-        top_row.addWidget(clear_btn)
+        top_row.addWidget(self._refresh_btn)
+        top_row.addWidget(self._clear_btn)
 
         self._table = QTableWidget(0, 6)
-        self._table.setHorizontalHeaderLabels(
-            ["Дата", "Напрямок", "Запит", "Модель", "Результат", ""]
-        )
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -67,17 +60,35 @@ class HistoryWindow(QDialog):
 
         self._table.itemSelectionChanged.connect(self._on_row_selected)
 
-        detail_label = QLabel("Повний результат:")
+        self._detail_label = QLabel()
         self._detail_field = QTextEdit()
         self._detail_field.setReadOnly(True)
-        self._detail_field.setPlaceholderText("Оберіть рядок у таблиці…")
 
         layout.addLayout(top_row)
         layout.addWidget(self._table, stretch=2)
-        layout.addWidget(detail_label)
+        layout.addWidget(self._detail_label)
         layout.addWidget(self._detail_field, stretch=1)
 
         self._records: list[history.TranslationRecord] = []
+        self.retranslate_ui()
+        self.refresh()
+
+    def retranslate_ui(self) -> None:
+        self.setWindowTitle(tr("history.title"))
+        self._refresh_btn.setText(tr("history.refresh"))
+        self._clear_btn.setText(tr("history.clear"))
+        self._table.setHorizontalHeaderLabels(
+            [
+                tr("history.col_date"),
+                tr("history.col_direction"),
+                tr("history.col_query"),
+                tr("history.col_model"),
+                tr("history.col_result"),
+                "",
+            ]
+        )
+        self._detail_label.setText(tr("history.detail_label"))
+        self._detail_field.setPlaceholderText(tr("history.detail_placeholder"))
         self.refresh()
 
     def refresh(self) -> None:
@@ -85,12 +96,15 @@ class HistoryWindow(QDialog):
         self._records = history.get_all()
         shown = len(self._records)
 
-        self._summary_label.setText(
-            f"Усього записів: {stats['total']}  ·  "
-            f"Укр→Англ: {stats['ua_en']}  ·  "
-            f"Англ→Укр: {stats['en_ua']}"
-            + (f"  ·  показано останні {shown}" if shown < stats["total"] else "")
+        summary = tr(
+            "history.summary",
+            total=stats["total"],
+            ua_en=stats["ua_en"],
+            en_ua=stats["en_ua"],
         )
+        if shown < stats["total"]:
+            summary += tr("history.summary_shown", shown=shown)
+        self._summary_label.setText(summary)
 
         self._detail_field.clear()
 
@@ -101,7 +115,7 @@ class HistoryWindow(QDialog):
                 self._table.insertRow(row_idx)
                 values = [
                     record.created_at,
-                    _DIRECTION_LABELS.get(record.direction, record.direction),
+                    get_direction_label(record.direction),
                     record.source_text,
                     record.model,
                     _preview(record.result_text),
@@ -114,7 +128,7 @@ class HistoryWindow(QDialog):
                     self._table.setItem(row_idx, col, item)
 
                 delete_btn = QPushButton("✕")
-                delete_btn.setToolTip("Видалити")
+                delete_btn.setToolTip(tr("history.delete_tooltip"))
                 delete_btn.setFixedWidth(32)
                 delete_btn.clicked.connect(
                     lambda _checked=False, rid=record.id: self._delete_record(rid)
@@ -140,9 +154,8 @@ class HistoryWindow(QDialog):
 
         answer = QMessageBox.question(
             self,
-            "Очистити історію",
-            "Ви точно хочете очистити всю історію запитів?\n"
-            "Цю дію не можна скасувати.",
+            tr("history.clear_title"),
+            tr("history.clear_message"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

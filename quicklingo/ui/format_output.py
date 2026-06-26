@@ -8,6 +8,11 @@ _CONTEXT_LINE = re.compile(r"^(.+?) — (.+)$")
 _NUMBERED_LINE = re.compile(r"^(\[\d+\]\s*.+)$")
 
 
+def format_plain_output(text: str) -> str:
+    """Escape raw API text as simple HTML with line breaks."""
+    return _wrap(html.escape(text).replace("\n", "<br>"))
+
+
 def format_ua_en_output(text: str) -> str:
     """Turn ua-en API text into HTML cards for variants, context notes, and examples."""
     normalized = _normalize_ua_en_separators(text)

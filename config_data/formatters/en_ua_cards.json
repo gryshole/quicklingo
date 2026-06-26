@@ -1,0 +1,5 @@
+{
+  "id": "en_ua_cards",
+  "name": "EN→UA cards",
+  "engine": "builtin:en_ua_cards"
+}

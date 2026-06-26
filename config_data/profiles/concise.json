@@ -1,0 +1,14 @@
+{
+  "id": "concise",
+  "name": "Concise",
+  "description": "Short answers for faster responses; plain text output.",
+  "prompts": {
+    "ua-en": "prompts/ua-en-concise.txt",
+    "en-ua": "prompts/en-ua-concise.txt"
+  },
+  "formatters": {
+    "ua-en": "plain",
+    "en-ua": "plain"
+  },
+  "temperature": 0.2
+}

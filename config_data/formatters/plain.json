@@ -1,0 +1,5 @@
+{
+  "id": "plain",
+  "name": "Plain text",
+  "engine": "builtin:plain"
+}
