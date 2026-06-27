@@ -62,11 +62,22 @@ def _install_zoom_shortcuts(host, zoom_in, zoom_out, reset) -> None:
 
 
 class ZoomableLineEdit(QLineEdit):
+    submit_requested = Signal()
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._zoom_steps = 0
         self._base_point_size = _base_font_point_size(self)
         _install_zoom_shortcuts(self, self._zoom_in, self._zoom_out, self.reset_zoom)
+
+    def input_text(self) -> str:
+        return self.text().strip()
+
+    def clear_input(self) -> None:
+        self.clear()
+
+    def set_input_text(self, text: str) -> None:
+        self.setText(text)
 
     def reset_zoom(self) -> None:
         self._zoom_steps = 0
@@ -95,6 +106,9 @@ class ZoomableLineEdit(QLineEdit):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if _handle_zoom_key(event, self._zoom_in, self._zoom_out, self.reset_zoom):
+            return
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.submit_requested.emit()
             return
         super().keyPressEvent(event)
 
@@ -133,6 +147,9 @@ class ZoomableInputEdit(QTextEdit):
 
     def clear_input(self) -> None:
         self.clear()
+
+    def set_input_text(self, text: str) -> None:
+        self.setPlainText(text)
 
     def _zoom_in(self) -> None:
         self._zoom_steps += 1

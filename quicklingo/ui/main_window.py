@@ -59,7 +59,7 @@ from quicklingo.ui.learning_window import LearningWindow
 
 from quicklingo.ui.settings_dialog import SettingsDialog
 
-from quicklingo.ui.zoomable_text_edit import ZoomableInputEdit, ZoomableTextEdit
+from quicklingo.ui.zoomable_text_edit import ZoomableInputEdit, ZoomableLineEdit, ZoomableTextEdit
 
 from quicklingo.workers.translate_worker import TranslateWorker
 
@@ -199,8 +199,9 @@ class MainWindow(QMainWindow):
 
         self._input_label = QLabel()
 
-        self._input_field = ZoomableInputEdit()
-
+        self._input_single_line_mode: bool | None = None
+        self._input_field = self._create_input_field()
+        self._input_single_line_mode = self._single_line_input_enabled()
         self._input_field.submit_requested.connect(self._submit_translation)
 
 
@@ -295,6 +296,8 @@ class MainWindow(QMainWindow):
 
         self._input_label_ref = self._input_label
 
+        self._refresh_input_label()
+
         self._direction_group.buttonClicked.connect(lambda _: self._refresh_profile_combo())
 
         self.retranslate_ui()
@@ -319,8 +322,7 @@ class MainWindow(QMainWindow):
 
         self._profile_label.setText(tr("main.profile_label"))
 
-        self._input_label.setText(tr("main.input_label"))
-
+        self._refresh_input_label()
         self._input_field.setPlaceholderText(tr("main.input_placeholder"))
 
         self._output_label.setText(tr("main.output_label"))
@@ -391,6 +393,90 @@ class MainWindow(QMainWindow):
 
         self._output_field.set_text_selectable(True)
 
+        self._rebuild_input_field()
+
+        self._refresh_input_label()
+
+
+
+    def _single_line_input_enabled(self) -> bool:
+
+        return is_enabled("ui.single_line_input")
+
+
+
+    def _create_input_field(self):
+
+        if self._single_line_input_enabled():
+
+            return ZoomableLineEdit()
+
+        return ZoomableInputEdit()
+
+
+
+    def _rebuild_input_field(self) -> None:
+
+        if self._main_layout is None:
+
+            return
+
+        current_mode = self._single_line_input_enabled()
+
+        if self._input_single_line_mode == current_mode:
+
+            return
+
+        self._input_single_line_mode = current_mode
+
+        text = self._input_field.input_text()
+
+        zoom = self._input_field.zoom_steps()
+
+        enabled = self._input_field.isEnabled()
+
+        placeholder = self._input_field.placeholderText()
+
+        label_index = self._main_layout.indexOf(self._input_label)
+
+        self._main_layout.removeWidget(self._input_field)
+
+        self._input_field.deleteLater()
+
+        self._input_field = self._create_input_field()
+
+        self._input_field.submit_requested.connect(self._submit_translation)
+
+        self._input_field.set_zoom_steps(zoom)
+
+        self._input_field.setEnabled(enabled)
+
+        if placeholder:
+
+            self._input_field.setPlaceholderText(placeholder)
+
+        if text:
+
+            self._input_field.set_input_text(text)
+
+        self._main_layout.insertWidget(label_index + 1, self._input_field)
+
+
+
+    def _refresh_input_label(self) -> None:
+
+        label_key = (
+
+            "main.input_label_single"
+
+            if self._single_line_input_enabled()
+
+            else "main.input_label"
+
+        )
+
+        self._input_label.setText(tr(label_key))
+
 
 
     def translate_external_text(self, text: str, *, replace_in_place: bool = False) -> None:
@@ -409,7 +495,7 @@ class MainWindow(QMainWindow):
 
         self.activateWindow()
 
-        self._input_field.setPlainText(text)
+        self._input_field.set_input_text(text)
 
         self._submit_translation()
 
@@ -830,7 +916,7 @@ class MainWindow(QMainWindow):
 
             self._profile_combo.setCurrentIndex(index)
 
-        self._input_field.setPlainText(source_text)
+        self._input_field.set_input_text(source_text)
 
         self.raise_()
 
@@ -1166,7 +1252,7 @@ class MainWindow(QMainWindow):
 
             return
 
-        self._input_field.setPlainText(self._pending_source)
+        self._input_field.set_input_text(self._pending_source)
 
         self._submit_translation()
 

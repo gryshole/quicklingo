@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from quicklingo.config.loader import get_all_directions, get_all_formatters, get_all_profiles
 from quicklingo.config.store import delete_profile, read_prompt_body, save_profile
 from quicklingo.config.validation import ValidationError
+from quicklingo import settings
 from quicklingo.i18n import tr
 from quicklingo.ui.settings.base_tab import SettingsTab
 
@@ -48,7 +49,18 @@ class ProfilesTab(SettingsTab):
         btn_row.addWidget(self._add_btn)
         btn_row.addWidget(self._dup_btn)
         btn_row.addWidget(self._del_btn)
+        btn_row.addStretch()
         left_layout.addLayout(btn_row)
+
+        move_row = QHBoxLayout()
+        self._up_btn = QPushButton()
+        self._up_btn.clicked.connect(self._move_up)
+        self._down_btn = QPushButton()
+        self._down_btn.clicked.connect(self._move_down)
+        move_row.addWidget(self._up_btn)
+        move_row.addWidget(self._down_btn)
+        move_row.addStretch()
+        left_layout.addLayout(move_row)
         splitter.addWidget(left)
 
         right = QWidget()
@@ -101,6 +113,8 @@ class ProfilesTab(SettingsTab):
         self._add_btn.setText(tr("common.add"))
         self._dup_btn.setText(tr("common.duplicate"))
         self._del_btn.setText(tr("common.delete"))
+        self._up_btn.setText(tr("settings.models.move_up"))
+        self._down_btn.setText(tr("settings.models.move_down"))
         self._id_label.setText(tr("common.id"))
         self._name_label.setText(tr("settings.profiles.name"))
         self._desc_label.setText(tr("settings.profiles.description"))
@@ -120,7 +134,21 @@ class ProfilesTab(SettingsTab):
         self._refresh_add_direction_combo()
         if self._list.count() and self._list.currentRow() < 0:
             self._list.setCurrentRow(0)
+        self._update_move_buttons()
         self.mark_clean()
+
+    def _profile_ids_from_list(self) -> list[str]:
+        return [
+            self._list.item(row).data(256)
+            for row in range(self._list.count())
+            if self._list.item(row) is not None
+        ]
+
+    def _update_move_buttons(self) -> None:
+        row = self._list.currentRow()
+        count = self._list.count()
+        self._up_btn.setEnabled(row > 0)
+        self._down_btn.setEnabled(0 <= row < count - 1)
 
     def _populate_list(self) -> None:
         current = self._current_id
@@ -212,6 +240,27 @@ class ProfilesTab(SettingsTab):
             self._build_direction_tab(direction.id, direction.label, body, fmt_id)
         self._refresh_add_direction_combo()
         self.mark_clean()
+        self._update_move_buttons()
+
+    def _move_up(self) -> None:
+        row = self._list.currentRow()
+        if row <= 0:
+            return
+        item = self._list.takeItem(row)
+        self._list.insertItem(row - 1, item)
+        self._list.setCurrentRow(row - 1)
+        self._update_move_buttons()
+        self.mark_dirty()
+
+    def _move_down(self) -> None:
+        row = self._list.currentRow()
+        if row < 0 or row >= self._list.count() - 1:
+            return
+        item = self._list.takeItem(row)
+        self._list.insertItem(row + 1, item)
+        self._list.setCurrentRow(row + 1)
+        self._update_move_buttons()
+        self.mark_dirty()
 
     def _add_new(self) -> None:
         if not self.confirm_discard():
@@ -307,11 +356,20 @@ class ProfilesTab(SettingsTab):
         except ValidationError as exc:
             self.show_error(self, str(exc))
             return
+        deleted_id = self._current_id
+        settings.save_profile_order(
+            [profile_id for profile_id in settings.get_profile_order() if profile_id != deleted_id]
+        )
         self._current_id = None
         self.reload()
         self.config_saved.emit()
 
     def save(self) -> bool:
+        settings.save_profile_order(self._profile_ids_from_list())
         if self.is_dirty():
-            return self._save_current()
+            if not self._save_current():
+                return False
+            return True
+        self.config_saved.emit()
+        self.mark_clean()
         return True

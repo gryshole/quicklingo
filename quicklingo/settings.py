@@ -86,6 +86,27 @@ def save_window_geometry_state(state: bytes) -> None:
     _save(data)
 
 
+def get_tool_window_state(window_id: str) -> dict:
+    data = _load()
+    states = data.get("tool_windows")
+    if not isinstance(states, dict):
+        return {}
+    state = states.get(window_id)
+    return dict(state) if isinstance(state, dict) else {}
+
+
+def save_tool_window_state(window_id: str, patch: dict) -> None:
+    data = _load()
+    states = data.get("tool_windows")
+    if not isinstance(states, dict):
+        states = {}
+    entry = dict(states.get(window_id, {}))
+    entry.update(patch)
+    states[window_id] = entry
+    data["tool_windows"] = states
+    _save(data)
+
+
 def _default_active_profiles() -> dict[str, str]:
     from quicklingo.config.loader import get_directions
 
@@ -132,6 +153,20 @@ def save_ui_preferences(model_id: str, direction: str) -> None:
     data = _load()
     data["selected_model_id"] = model_id
     data["translation_direction"] = direction
+    _save(data)
+
+
+def get_profile_order() -> list[str]:
+    data = _load()
+    stored = data.get("profile_order")
+    if not isinstance(stored, list):
+        return []
+    return [item for item in stored if isinstance(item, str) and item.strip()]
+
+
+def save_profile_order(profile_ids: list[str]) -> None:
+    data = _load()
+    data["profile_order"] = profile_ids
     _save(data)
 
 

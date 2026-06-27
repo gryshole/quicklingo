@@ -1,5 +1,6 @@
 from PySide6.QtCore import Qt
 from pathlib import Path
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QHeaderView,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -28,13 +30,23 @@ from quicklingo.learning.corpus_analysis import select_candidates
 from quicklingo.learning.difficult_words import compute_difficult_words
 from quicklingo import settings
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
+from quicklingo.ui.window_state import (
+    bind_table_columns_persistence,
+    restore_table_columns,
+    restore_window_geometry,
+    save_table_columns,
+    save_window_geometry,
+)
 from quicklingo.workers.corpus_analysis_worker import CorpusAnalysisWorker
+
+
+_LEARNING_CARDS_TABLE_WIDTHS = [140, 140, 220, 80]
 
 
 class LearningWindow(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.resize(860, 640)
+        restore_window_geometry(self, "learning", default_width=860, default_height=640)
         self._worker: CorpusAnalysisWorker | None = None
         self._current_deck_id: int | None = None
         self._review_cards: list[learning.LearningCard] = []
@@ -53,6 +65,18 @@ class LearningWindow(QDialog):
         self._tabs.addTab(self._review_tab, "")
 
         layout.addWidget(self._tabs)
+        cards_header = self._cards_table.horizontalHeader()
+        cards_header.setMinimumSectionSize(48)
+        for col in range(3):
+            cards_header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+        cards_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        restore_table_columns(
+            self._cards_table,
+            "learning",
+            "cards",
+            default_widths=_LEARNING_CARDS_TABLE_WIDTHS,
+        )
+        bind_table_columns_persistence(self._cards_table, "learning", "cards")
         self.retranslate_ui()
         self._reload_tags()
         self._reload_decks()
@@ -527,3 +551,8 @@ class LearningWindow(QDialog):
         self._current_deck_id = deck.id
         self._reload_decks()
         self._load_cards()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        save_table_columns(self._cards_table, "learning", "cards")
+        save_window_geometry(self, "learning")
+        super().closeEvent(event)

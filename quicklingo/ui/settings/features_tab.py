@@ -19,6 +19,7 @@ _FEATURE_I18N: dict[str, tuple[str, str | None]] = {
     "ui.remember_geometry": ("settings.features.ui_remember_geometry", None),
     "ui.remember_zoom": ("settings.features.ui_remember_zoom", None),
     "ui.auto_copy_result": ("settings.features.ui_auto_copy_result", None),
+    "ui.single_line_input": ("settings.features.ui_single_line_input", None),
     "ui.system_tray": ("settings.features.ui_system_tray", "settings.features.ui_system_tray_note"),
     "ui.autostart": ("settings.features.ui_autostart", "settings.features.ui_autostart_note"),
     "history.auto_save": ("settings.features.history_auto_save", None),
@@ -138,6 +139,7 @@ class FeaturesTab(SettingsTab):
                     "input.global_hotkey.translate_clipboard",
                     "input.double_ctrl_c",
                     "input.replace_in_place",
+                    "ui.single_line_input",
                 ],
             ),
             "translation": (

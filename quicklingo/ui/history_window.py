@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, Signal, QDate
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -25,8 +25,19 @@ from quicklingo.features import get_feature, is_enabled
 from quicklingo.history.corpus_export import export_json, export_markdown
 from quicklingo.history.meeting_export import export_transcript_markdown, export_transcript_text
 from quicklingo.i18n import tr
+from quicklingo.ui.table_styles import apply_data_table_style, style_cell_action_button
 from quicklingo.ui.tag_wizard_dialog import TagWizardDialog
+from quicklingo.ui.window_state import (
+    bind_table_columns_persistence,
+    restore_table_columns,
+    restore_window_geometry,
+    save_table_columns,
+    save_window_geometry,
+)
 from quicklingo.ui.word_frequency_window import WordFrequencyWindow
+
+
+_HISTORY_TABLE_WIDTHS = [130, 85, 110, 100, 150, 90, 36, 36]
 
 
 class HistoryWindow(QDialog):
@@ -35,7 +46,7 @@ class HistoryWindow(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.resize(820, 580)
+        restore_window_geometry(self, "history", default_width=820, default_height=580)
         self._word_freq_window: WordFrequencyWindow | None = None
 
         layout = QVBoxLayout(self)
@@ -122,6 +133,7 @@ class HistoryWindow(QDialog):
         self._table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.verticalHeader().setVisible(False)
+        apply_data_table_style(self._table)
 
         header = self._table.horizontalHeader()
         header.setMinimumSectionSize(48)
@@ -129,14 +141,14 @@ class HistoryWindow(QDialog):
         for col in range(7):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(0, 130)
-        header.resizeSection(1, 85)
-        header.resizeSection(2, 110)
-        header.resizeSection(3, 100)
-        header.resizeSection(4, 150)
-        header.resizeSection(5, 90)
-        header.resizeSection(6, 36)
-        header.resizeSection(7, 36)
+        restore_table_columns(
+            self._table,
+            "history",
+            "main",
+            default_widths=_HISTORY_TABLE_WIDTHS,
+        )
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
+        bind_table_columns_persistence(self._table, "history", "main")
 
         self._table.itemSelectionChanged.connect(self._on_row_selected)
 
@@ -339,6 +351,7 @@ class HistoryWindow(QDialog):
                     star_btn = QPushButton("★" if record.is_starred else "☆")
                     star_btn.setFixedWidth(32)
                     star_btn.setToolTip(tr("history.star_tooltip"))
+                    style_cell_action_button(star_btn)
                     star_btn.clicked.connect(
                         lambda _checked=False, rid=record.id, starred=record.is_starred: self._toggle_star(
                             rid, starred
@@ -349,6 +362,7 @@ class HistoryWindow(QDialog):
                 delete_btn = QPushButton("✕")
                 delete_btn.setToolTip(tr("history.delete_tooltip"))
                 delete_btn.setFixedWidth(32)
+                style_cell_action_button(delete_btn)
                 delete_btn.clicked.connect(
                     lambda _checked=False, rid=record.id: self._delete_record(rid)
                 )
@@ -553,6 +567,11 @@ class HistoryWindow(QDialog):
             self._detail_field.clear()
             return
         self._detail_field.setPlainText(record.result_text)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        save_table_columns(self._table, "history", "main")
+        save_window_geometry(self, "history")
+        super().closeEvent(event)
 
 
 def _preview(text: str, max_len: int = 120) -> str:

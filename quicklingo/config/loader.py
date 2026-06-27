@@ -112,7 +112,26 @@ def get_all_directions() -> list[Direction]:
 def get_all_profiles() -> list[Profile]:
     if not _PROFILES:
         reload_config()
-    return list(_PROFILES.values())
+    return _ordered_profiles(list(_PROFILES.values()))
+
+
+def _ordered_profiles(profiles: list[Profile]) -> list[Profile]:
+    order = settings.get_profile_order()
+    by_id = {profile.id: profile for profile in profiles}
+    ordered: list[Profile] = []
+    seen: set[str] = set()
+    for profile_id in order:
+        profile = by_id.get(profile_id)
+        if profile is None:
+            continue
+        ordered.append(profile)
+        seen.add(profile_id)
+    remaining = sorted(
+        (profile for profile in profiles if profile.id not in seen),
+        key=lambda profile: profile.id,
+    )
+    ordered.extend(remaining)
+    return ordered
 
 
 def get_all_formatters() -> list[FormatterDef]:
@@ -141,11 +160,12 @@ def get_profile(profile_id: str) -> Profile | None:
 def get_profiles_for_direction(direction_id: str) -> list[Profile]:
     if not _PROFILES:
         reload_config()
-    return [
+    filtered = [
         profile
         for profile in _PROFILES.values()
         if direction_id in profile.prompts
     ]
+    return _ordered_profiles(filtered)
 
 
 def resolve_active_profile_id(direction_id: str) -> str:

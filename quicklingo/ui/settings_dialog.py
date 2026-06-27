@@ -1,4 +1,5 @@
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -19,6 +20,7 @@ from quicklingo.ui.settings.interface_tab import InterfaceTab
 from quicklingo.ui.settings.models_tab import ModelsTab
 from quicklingo.ui.settings.profiles_tab import ProfilesTab
 from quicklingo.ui.settings.usage_tab import UsageTab
+from quicklingo.ui.window_state import restore_window_geometry, save_window_geometry
 
 
 class SettingsDialog(QDialog):
@@ -27,7 +29,7 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.resize(860, 680)
+        restore_window_geometry(self, "settings", default_width=860, default_height=680)
 
         layout = QVBoxLayout(self)
         self._tabs = QTabWidget()
@@ -128,3 +130,7 @@ class SettingsDialog(QDialog):
             if tab.is_dirty() and not tab.confirm_discard():
                 return
         self.reject()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        save_window_geometry(self, "settings")
+        super().closeEvent(event)

@@ -12,6 +12,7 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
     "ui.remember_geometry": {"enabled": True},
     "ui.remember_zoom": {"enabled": True},
     "ui.auto_copy_result": {"enabled": False},
+    "ui.single_line_input": {"enabled": False},
     "ui.system_tray": {"enabled": False, "hotkey": "<ctrl>+<shift>+q"},
     "ui.autostart": {"enabled": False},
     "history.auto_save": {"enabled": True},

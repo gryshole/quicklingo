@@ -10,13 +10,14 @@ from PySide6.QtCharts import (
     QValueAxis,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QCloseEvent, QPainter
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QVBoxLayout
 
 from quicklingo import settings
 from quicklingo.db import history
 from quicklingo.features import is_enabled
 from quicklingo.i18n import tr
+from quicklingo.ui.window_state import restore_window_geometry, save_window_geometry
 
 
 class DashboardWindow(QDialog):
@@ -24,7 +25,7 @@ class DashboardWindow(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.resize(920, 620)
+        restore_window_geometry(self, "dashboard", default_width=920, default_height=620)
         layout = QVBoxLayout(self)
 
         self._summary_label = QLabel()
@@ -123,3 +124,7 @@ class DashboardWindow(QDialog):
         chart.addSeries(series)
         chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
         self._model_chart_view.setChart(chart)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        save_window_geometry(self, "dashboard")
+        super().closeEvent(event)
