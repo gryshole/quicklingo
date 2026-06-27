@@ -1,17 +1,27 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+# Onedir build: faster startup (no TEMP extraction). Zip dist/QuickLingo/ for distribution.
 
-datas = [('assets', 'assets'), ('quicklingo/i18n/locales', 'quicklingo/i18n/locales')]
-binaries = []
-hiddenimports = []
-tmp_ret = collect_all('PySide6')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+from pathlib import Path
 
+block_cipher = None
+
+project_root = Path(SPECPATH)
+
+datas = [
+    (str(project_root / "assets"), "assets"),
+    (str(project_root / "quicklingo" / "i18n" / "locales"), "quicklingo/i18n/locales"),
+]
+
+# Only modules QuickLingo imports. Avoid collect_all('PySide6') — it bundles Qt3D,
+# WebEngine, QML, etc. and slows every launch when using --onefile.
+hiddenimports = [
+    "PySide6.QtCharts",
+]
 
 a = Analysis(
-    ['main.py'],
-    pathex=[],
-    binaries=binaries,
+    ["main.py"],
+    pathex=[str(project_root)],
+    binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -26,21 +36,28 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
-    name='QuickLingo',
+    exclude_binaries=True,
+    name="QuickLingo",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets\\quicklingo_icon.ico'],
+    icon=[str(project_root / "assets" / "quicklingo_icon.ico")],
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="QuickLingo",
 )

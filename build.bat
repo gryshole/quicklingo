@@ -30,33 +30,29 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Building QuickLingo.exe...
-.venv\Scripts\pyinstaller --noconfirm --clean ^
-    --onefile ^
-    --windowed ^
-    --name QuickLingo ^
-    --icon assets\quicklingo_icon.ico ^
-    --add-data "assets;assets" ^
-    --add-data "quicklingo\i18n\locales;quicklingo\i18n\locales" ^
-    --collect-all PySide6 ^
-    main.py
-
+echo Building QuickLingo (onedir — faster startup)...
+.venv\Scripts\pyinstaller --noconfirm --clean QuickLingo.spec
 if errorlevel 1 (
     echo ERROR: PyInstaller build failed.
     pause
     exit /b 1
 )
 
-xcopy /E /I /Y "config_data" "dist\config_data" >nul
+xcopy /E /I /Y "config_data" "dist\QuickLingo\config_data" >nul
 
 echo.
 echo === Build complete ===
-echo   dist\QuickLingo.exe
-echo   dist\config_data\
+echo   dist\QuickLingo\QuickLingo.exe   ^<-- run THIS one
+echo   dist\QuickLingo\config_data\
+echo.
+echo IMPORTANT: Do NOT run build\QuickLingo\QuickLingo.exe — that folder has no _internal\.
+echo            Always launch from dist\QuickLingo\.
+echo.
+echo To distribute: zip the dist\QuickLingo\ folder.
 echo.
 echo To use on another PC:
-echo   1. Copy dist\QuickLingo.exe and dist\config_data\ to the target PC
-echo   2. Keep config_data in the same folder as QuickLingo.exe
-echo   3. Run QuickLingo and add API keys in Tools - Settings - API keys
+echo   1. Unzip so QuickLingo.exe and config_data\ stay in the same folder
+echo   2. Run QuickLingo.exe
+echo   3. Add API keys in Tools - Settings - API keys
 echo.
 pause

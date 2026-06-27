@@ -113,28 +113,24 @@ A fresh install with default settings behaves exactly like the pre-config QuickL
 
 Use **Tools → Settings → Directions → Add**, then add the direction to a profile under the **Profiles** tab.
 
-## Build (.exe)
+## Build (Windows app folder)
 
 ```powershell
 build.bat
 ```
 
-Or manually:
+Output: `dist/QuickLingo/` — a folder with `QuickLingo.exe`, `_internal/`, and `config_data/`. Zip this folder for distribution; **onedir** starts much faster than a single self-extracting exe.
+
+Manual build:
 
 ```powershell
 pip install pyinstaller pillow
 python scripts\make_icon.py
-pyinstaller --onefile --windowed --name QuickLingo ^
-    --icon assets\quicklingo_icon.ico ^
-    --add-data "assets;assets" ^
-    --collect-all PySide6 ^
-    main.py
-xcopy /E /I /Y config_data dist\config_data
+pyinstaller --noconfirm --clean QuickLingo.spec
+xcopy /E /I /Y config_data dist\QuickLingo\config_data
 ```
 
-Output: `dist/QuickLingo.exe` and `dist/config_data/` — keep both in the same folder.
-
-After first run, add API keys via **Tools → Settings → API keys**.
+Keep `config_data` next to `QuickLingo.exe`. After first run, add API keys via **Tools → Settings → API keys**.
 
 ## Project structure
 
