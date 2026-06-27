@@ -1,12 +1,27 @@
 from dataclasses import dataclass
 
 from quicklingo import settings
+from quicklingo.providers.anthropic import AnthropicProvider
 from quicklingo.providers.base import TranslationProvider
+from quicklingo.providers.extra_providers import (
+    DeepSeekProvider,
+    MistralProvider,
+    OllamaProvider,
+    OpenAIProvider,
+    OpenRouterProvider,
+)
 from quicklingo.providers.gemini import GeminiProvider
 from quicklingo.providers.groq import GroqProvider
+from quicklingo.settings import API_PROVIDERS
 
 _groq = GroqProvider()
 _gemini = GeminiProvider()
+_openrouter = OpenRouterProvider()
+_mistral = MistralProvider()
+_ollama = OllamaProvider()
+_deepseek = DeepSeekProvider()
+_openai = OpenAIProvider()
+_anthropic = AnthropicProvider()
 
 
 @dataclass(frozen=True)
@@ -40,11 +55,33 @@ _CATALOG_SPECS: tuple[tuple[str, str, str], ...] = (
     ("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite", "gemini"),
     ("gemini-2.0-flash", "Gemini 2.0 Flash", "gemini"),
     ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite", "gemini"),
+    ("meta-llama/llama-3.3-70b-instruct:free", "OR Llama 3.3 70B (free)", "openrouter"),
+    ("google/gemma-3-27b-it:free", "OR Gemma 3 27B (free)", "openrouter"),
+    ("mistralai/mistral-small-3.1-24b-instruct:free", "OR Mistral Small 3.1 (free)", "openrouter"),
+    ("mistral-small-latest", "Mistral Small", "mistral"),
+    ("open-mixtral-8x7b", "Mistral Mixtral 8x7B", "mistral"),
+    ("codestral-latest", "Mistral Codestral", "mistral"),
+    ("llama3.2", "Ollama Llama 3.2", "ollama"),
+    ("mistral", "Ollama Mistral", "ollama"),
+    ("qwen2.5", "Ollama Qwen 2.5", "ollama"),
+    ("gemma2", "Ollama Gemma 2", "ollama"),
+    ("deepseek-chat", "DeepSeek Chat", "deepseek"),
+    ("deepseek-reasoner", "DeepSeek Reasoner", "deepseek"),
+    ("gpt-4o-mini", "GPT-4o mini", "openai"),
+    ("gpt-4o", "GPT-4o", "openai"),
+    ("claude-sonnet-4-20250514", "Claude Sonnet 4", "anthropic"),
+    ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku", "anthropic"),
 )
 
 _PROVIDERS: dict[str, TranslationProvider] = {
     "groq": _groq,
     "gemini": _gemini,
+    "openrouter": _openrouter,
+    "mistral": _mistral,
+    "ollama": _ollama,
+    "deepseek": _deepseek,
+    "openai": _openai,
+    "anthropic": _anthropic,
 }
 
 MODEL_CATALOG: list[ModelEntry] = [
@@ -53,6 +90,17 @@ MODEL_CATALOG: list[ModelEntry] = [
 ]
 
 _CATALOG_BY_ID: dict[str, ModelEntry] = {entry.model_id: entry for entry in MODEL_CATALOG}
+
+_PREFIX_PROVIDERS: tuple[tuple[str, str], ...] = (
+    ("groq:", "groq"),
+    ("gemini:", "gemini"),
+    ("openrouter:", "openrouter"),
+    ("mistral:", "mistral"),
+    ("ollama:", "ollama"),
+    ("deepseek:", "deepseek"),
+    ("openai:", "openai"),
+    ("anthropic:", "anthropic"),
+)
 
 
 def infer_api_provider(model_id: str) -> str:
@@ -63,7 +111,7 @@ def infer_api_provider(model_id: str) -> str:
 def parse_model_id(model_id: str) -> tuple[str, str]:
     cleaned = model_id.strip()
     lowered = cleaned.lower()
-    for prefix, provider in (("groq:", "groq"), ("gemini:", "gemini")):
+    for prefix, provider in _PREFIX_PROVIDERS:
         if lowered.startswith(prefix):
             rest = cleaned[len(prefix) :].strip()
             if rest:
@@ -71,6 +119,14 @@ def parse_model_id(model_id: str) -> tuple[str, str]:
     normalized = cleaned.lower()
     if normalized.startswith("gemini"):
         return cleaned, "gemini"
+    if normalized.startswith("claude"):
+        return cleaned, "anthropic"
+    if normalized.startswith("gpt-"):
+        return cleaned, "openai"
+    if normalized.startswith("deepseek"):
+        return cleaned, "deepseek"
+    if normalized.startswith("mistral") or normalized.startswith("codestral"):
+        return cleaned, "mistral"
     return cleaned, "groq"
 
 
@@ -135,3 +191,7 @@ def get_model_by_index(index: int) -> ModelEntry:
     if index < 0 or index >= len(entries):
         return entries[0]
     return entries[index]
+
+
+def list_catalog_providers() -> tuple[str, ...]:
+    return API_PROVIDERS

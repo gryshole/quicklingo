@@ -12,12 +12,14 @@ from PySide6.QtWidgets import (
 
 from quicklingo import settings
 from quicklingo.i18n import tr
+from quicklingo.providers.ollama_models import fetch_ollama_model_ids
 from quicklingo.providers.registry import (
     DEFAULT_MAIN_MODEL_IDS,
     get_model_catalog,
     get_model_entry,
     parse_model_id,
 )
+from quicklingo.providers.setup_info import API_PROVIDERS
 from quicklingo.ui.settings.base_tab import SettingsTab
 
 _PROVIDER_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -43,8 +45,8 @@ class ModelsTab(SettingsTab):
 
         add_row = QHBoxLayout()
         self._provider_filter = QComboBox()
-        self._provider_filter.addItem("", "groq")
-        self._provider_filter.addItem("", "gemini")
+        for provider in API_PROVIDERS:
+            self._provider_filter.addItem("", provider)
         self._provider_filter.currentIndexChanged.connect(self._on_provider_filter_changed)
         self._add_combo = QComboBox()
         self._add_combo.setEditable(True)
@@ -88,8 +90,8 @@ class ModelsTab(SettingsTab):
         self._up_btn.setText(tr("settings.models.move_up"))
         self._down_btn.setText(tr("settings.models.move_down"))
         self._reset_btn.setText(tr("settings.models.reset_defaults"))
-        self._provider_filter.setItemText(0, tr("settings.api_keys.provider_groq"))
-        self._provider_filter.setItemText(1, tr("settings.api_keys.provider_gemini"))
+        for index, provider in enumerate(API_PROVIDERS):
+            self._provider_filter.setItemText(index, tr(f"settings.api_keys.provider_{provider}"))
         self._refresh_add_combo()
 
     def reload(self) -> None:
@@ -112,7 +114,7 @@ class ModelsTab(SettingsTab):
 
     def _filter_provider(self) -> str:
         provider = self._provider_filter.currentData()
-        return provider if provider in ("groq", "gemini") else "groq"
+        return provider if provider in API_PROVIDERS else "groq"
 
     def _display_name_for(self, model_id: str, provider: str | None = None) -> str:
         entry = get_model_entry(model_id)
@@ -158,7 +160,7 @@ class ModelsTab(SettingsTab):
             if not isinstance(model_id, str) or get_model_entry(model_id) is not None:
                 continue
             provider = item.data(_PROVIDER_ROLE)
-            if isinstance(provider, str) and provider in ("groq", "gemini"):
+            if isinstance(provider, str) and provider in API_PROVIDERS:
                 providers[model_id] = provider
         return providers
 
@@ -172,12 +174,18 @@ class ModelsTab(SettingsTab):
         filter_provider = self._filter_provider()
         self._add_combo.blockSignals(True)
         self._add_combo.clear()
+        catalog_ids = {entry.model_id for entry in get_model_catalog()}
         for entry in get_model_catalog():
             if entry.api_provider != filter_provider:
                 continue
             if entry.model_id in selected:
                 continue
             self._add_combo.addItem(entry.display_name, entry.model_id)
+        if filter_provider == "ollama":
+            for model_id in fetch_ollama_model_ids():
+                if model_id in selected or model_id in catalog_ids:
+                    continue
+                self._add_combo.addItem(model_id, model_id)
         self._add_combo.setEditText(typed)
         self._add_combo.blockSignals(False)
         self._update_add_button()
@@ -197,7 +205,7 @@ class ModelsTab(SettingsTab):
         if not cleaned:
             return None, None
         lowered = text.lower()
-        if lowered.startswith(("groq:", "gemini:")):
+        if lowered.startswith(tuple(f"{provider}:" for provider in API_PROVIDERS)):
             return cleaned, prefix_provider
         return cleaned, self._filter_provider()
 

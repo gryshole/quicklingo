@@ -6,6 +6,30 @@ from quicklingo.paths import user_data_dir
 
 _SETTINGS_FILE = "settings.json"
 
+API_KEY_FIELDS: dict[str, str] = {
+    "groq": "groq_api_key",
+    "gemini": "gemini_api_key",
+    "openrouter": "openrouter_api_key",
+    "mistral": "mistral_api_key",
+    "ollama": "ollama_api_key",
+    "deepseek": "deepseek_api_key",
+    "openai": "openai_api_key",
+    "anthropic": "anthropic_api_key",
+}
+
+API_PROVIDERS: tuple[str, ...] = (
+    "groq",
+    "gemini",
+    "openrouter",
+    "mistral",
+    "ollama",
+    "deepseek",
+    "openai",
+    "anthropic",
+)
+
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
+
 
 def _settings_path():
     return user_data_dir() / _SETTINGS_FILE
@@ -124,13 +148,10 @@ def save_ui_language(lang: str) -> None:
 
 
 def get_api_key(provider: str) -> str:
-    data = _load()
-    key_name = {
-        "groq": "groq_api_key",
-        "gemini": "gemini_api_key",
-    }.get(provider)
+    key_name = API_KEY_FIELDS.get(provider)
     if not key_name:
         return ""
+    data = _load()
     value = data.get(key_name, "")
     if not isinstance(value, str):
         return ""
@@ -160,14 +181,48 @@ def _encode_api_key_value(value: str) -> str:
     return value
 
 
-def get_api_keys() -> tuple[str, str]:
-    return get_api_key("groq"), get_api_key("gemini")
+def get_api_keys() -> dict[str, str]:
+    return {provider: get_api_key(provider) for provider in API_KEY_FIELDS}
 
 
-def save_api_keys(*, groq: str, gemini: str) -> None:
+def save_api_keys(
+    *,
+    groq: str = "",
+    gemini: str = "",
+    openrouter: str = "",
+    mistral: str = "",
+    ollama: str = "",
+    deepseek: str = "",
+    openai: str = "",
+    anthropic: str = "",
+) -> None:
     data = _load()
-    data["groq_api_key"] = _encode_api_key_value(groq.strip())
-    data["gemini_api_key"] = _encode_api_key_value(gemini.strip())
+    for provider, value in (
+        ("groq", groq),
+        ("gemini", gemini),
+        ("openrouter", openrouter),
+        ("mistral", mistral),
+        ("ollama", ollama),
+        ("deepseek", deepseek),
+        ("openai", openai),
+        ("anthropic", anthropic),
+    ):
+        data[API_KEY_FIELDS[provider]] = _encode_api_key_value(value.strip())
+    _save(data)
+
+
+def get_ollama_base_url() -> str:
+    data = _load()
+    url = data.get("ollama_base_url", DEFAULT_OLLAMA_BASE_URL)
+    if not isinstance(url, str) or not url.strip():
+        return DEFAULT_OLLAMA_BASE_URL
+    return url.strip().rstrip("/")
+
+
+def save_ollama_base_url(url: str) -> None:
+    data = _load()
+    cleaned = url.strip().rstrip("/") or DEFAULT_OLLAMA_BASE_URL
+    data["ollama_base_url"] = cleaned
     _save(data)
 
 
@@ -206,26 +261,26 @@ def get_custom_model_providers() -> dict[str, str]:
     return {
         key: value
         for key, value in stored.items()
-        if isinstance(key, str) and isinstance(value, str) and value in ("groq", "gemini")
+        if isinstance(key, str) and isinstance(value, str) and value in API_PROVIDERS
     }
 
 
 def get_models_add_provider() -> str:
     data = _load()
     provider = data.get("models_add_provider", "groq")
-    return provider if provider in ("groq", "gemini") else "groq"
+    return provider if provider in API_PROVIDERS else "groq"
 
 
 def save_models_add_provider(provider: str) -> None:
     data = _load()
-    data["models_add_provider"] = provider if provider in ("groq", "gemini") else "groq"
+    data["models_add_provider"] = provider if provider in API_PROVIDERS else "groq"
     _save(data)
 
 
 def migrate_api_keys_to_encrypted() -> None:
     data = _load()
     changed = False
-    for key_name in ("groq_api_key", "gemini_api_key"):
+    for key_name in API_KEY_FIELDS.values():
         value = data.get(key_name, "")
         if isinstance(value, str) and value and not value.startswith("dpapi:"):
             data[key_name] = _encode_api_key_value(value)

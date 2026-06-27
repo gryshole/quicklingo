@@ -49,6 +49,7 @@ from quicklingo.i18n import tr, translate_message
 from quicklingo.input.hotkeys import copy_selection_to_clipboard, paste_text
 
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
+from quicklingo.providers.setup_info import PROVIDER_HINT_KEYS, provider_needs_api_key
 
 from quicklingo import settings
 
@@ -237,6 +238,8 @@ class MainWindow(QMainWindow):
         self._status_label = QLabel()
 
         self._status_label.setWordWrap(True)
+        self._status_label.setTextFormat(Qt.TextFormat.RichText)
+        self._status_label.setOpenExternalLinks(True)
 
 
 
@@ -354,7 +357,7 @@ class MainWindow(QMainWindow):
 
             self._set_status(self._status_key, error=True, **self._status_params)
 
-        elif self._status_key == "main.status_api_key":
+        elif self._status_key == "main.status_api_key_hint":
 
             self._check_api_key()
 
@@ -840,23 +843,23 @@ class MainWindow(QMainWindow):
     def _check_api_key(self) -> None:
 
         entry = get_model_by_index(self._model_combo.currentIndex())
+        provider_id = entry.api_provider
 
-        api_key = settings.get_api_key(entry.api_provider)
+        if not provider_needs_api_key(provider_id):
+            if not self._worker or not self._worker.isRunning():
+                self._set_status("main.status_ready", error=False)
+            return
 
+        api_key = settings.get_api_key(provider_id)
         if not api_key:
-
+            hint_key = PROVIDER_HINT_KEYS.get(provider_id, "")
             self._set_status(
-
-                "main.status_api_key",
-
+                "main.status_api_key_hint",
                 error=True,
-
-                provider=tr(f"settings.api_keys.provider_{entry.api_provider}"),
-
+                provider=tr(f"settings.api_keys.provider_{provider_id}"),
+                hint=tr(hint_key) if hint_key else "",
             )
-
         elif not self._worker or not self._worker.isRunning():
-
             self._set_status("main.status_ready", error=False)
 
 
