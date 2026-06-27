@@ -1,3 +1,6 @@
+import json
+from collections.abc import AsyncIterator
+
 import httpx
 
 from quicklingo import settings
@@ -17,6 +20,23 @@ class GroqProvider(TranslationProvider):
             return self._api_key
         return settings.get_api_key("groq")
 
+    def _headers(self, api_key: str) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _payload(self, text: str, prompt: str, model: str, *, temperature: float, stream: bool) -> dict:
+        return {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": text},
+            ],
+            "temperature": temperature,
+            "stream": stream,
+        }
+
     async def translate(
         self,
         text: str,
@@ -29,22 +49,14 @@ class GroqProvider(TranslationProvider):
         if not api_key:
             raise TranslatableError("errors.groq_api_key_missing")
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": text},
-            ],
-            "temperature": temperature,
-        }
-
+        payload = self._payload(text, prompt, model, temperature=temperature, stream=False)
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.post(GROQ_API_URL, headers=headers, json=payload)
+                response = await client.post(
+                    GROQ_API_URL,
+                    headers=self._headers(api_key),
+                    json=payload,
+                )
         except httpx.TimeoutException as exc:
             raise TranslatableError("errors.api_timeout") from exc
         except httpx.RequestError as exc:
@@ -65,3 +77,53 @@ class GroqProvider(TranslationProvider):
             return data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError) as exc:
             raise TranslatableError("errors.groq_unexpected") from exc
+
+    async def translate_stream(
+        self,
+        text: str,
+        prompt: str,
+        model: str,
+        *,
+        temperature: float = 0.2,
+    ) -> AsyncIterator[str]:
+        api_key = self._get_api_key()
+        if not api_key:
+            raise TranslatableError("errors.groq_api_key_missing")
+
+        payload = self._payload(text, prompt, model, temperature=temperature, stream=True)
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                async with client.stream(
+                    "POST",
+                    GROQ_API_URL,
+                    headers=self._headers(api_key),
+                    json=payload,
+                ) as response:
+                    if response.status_code == 401:
+                        raise TranslatableError("errors.groq_invalid_key")
+                    if response.status_code >= 400:
+                        body = (await response.aread()).decode("utf-8", errors="replace")
+                        detail = body.strip() or response.reason_phrase
+                        raise TranslatableError(
+                            "errors.api_error",
+                            status=response.status_code,
+                            detail=detail,
+                        )
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data_str = line[5:].strip()
+                        if not data_str or data_str == "[DONE]":
+                            continue
+                        try:
+                            chunk = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        piece = delta.get("content")
+                        if piece:
+                            yield piece
+        except httpx.TimeoutException as exc:
+            raise TranslatableError("errors.api_timeout") from exc
+        except httpx.RequestError as exc:
+            raise TranslatableError("errors.network", detail=str(exc)) from exc

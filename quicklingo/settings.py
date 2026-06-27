@@ -132,7 +132,32 @@ def get_api_key(provider: str) -> str:
     if not key_name:
         return ""
     value = data.get(key_name, "")
-    return value.strip() if isinstance(value, str) else ""
+    if not isinstance(value, str):
+        return ""
+    return _decode_api_key_value(value.strip())
+
+
+def _decode_api_key_value(value: str) -> str:
+    if not value:
+        return ""
+    from quicklingo.privacy import dpapi
+
+    if value.startswith("dpapi:"):
+        if dpapi.dpapi_available():
+            return dpapi.decrypt(value)
+        return ""
+    return value
+
+
+def _encode_api_key_value(value: str) -> str:
+    if not value:
+        return ""
+    from quicklingo.features import is_enabled
+    from quicklingo.privacy import dpapi
+
+    if is_enabled("privacy.encrypted_keys") and dpapi.dpapi_available():
+        return dpapi.encrypt(value)
+    return value
 
 
 def get_api_keys() -> tuple[str, str]:
@@ -141,6 +166,108 @@ def get_api_keys() -> tuple[str, str]:
 
 def save_api_keys(*, groq: str, gemini: str) -> None:
     data = _load()
-    data["groq_api_key"] = groq.strip()
-    data["gemini_api_key"] = gemini.strip()
+    data["groq_api_key"] = _encode_api_key_value(groq.strip())
+    data["gemini_api_key"] = _encode_api_key_value(gemini.strip())
     _save(data)
+
+
+def get_main_model_ids() -> list[str]:
+    _defaults = (
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+    )
+    data = _load()
+    stored = data.get("main_model_ids")
+    if not isinstance(stored, list):
+        return list(_defaults)
+    ids = [item for item in stored if isinstance(item, str) and item.strip()]
+    return ids if ids else list(_defaults)
+
+
+def save_main_model_ids(
+    model_ids: list[str],
+    *,
+    custom_providers: dict[str, str] | None = None,
+) -> None:
+    data = _load()
+    data["main_model_ids"] = model_ids
+    if custom_providers is not None:
+        data["custom_model_providers"] = custom_providers
+    _save(data)
+
+
+def get_custom_model_providers() -> dict[str, str]:
+    data = _load()
+    stored = data.get("custom_model_providers")
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        key: value
+        for key, value in stored.items()
+        if isinstance(key, str) and isinstance(value, str) and value in ("groq", "gemini")
+    }
+
+
+def get_models_add_provider() -> str:
+    data = _load()
+    provider = data.get("models_add_provider", "groq")
+    return provider if provider in ("groq", "gemini") else "groq"
+
+
+def save_models_add_provider(provider: str) -> None:
+    data = _load()
+    data["models_add_provider"] = provider if provider in ("groq", "gemini") else "groq"
+    _save(data)
+
+
+def migrate_api_keys_to_encrypted() -> None:
+    data = _load()
+    changed = False
+    for key_name in ("groq_api_key", "gemini_api_key"):
+        value = data.get(key_name, "")
+        if isinstance(value, str) and value and not value.startswith("dpapi:"):
+            data[key_name] = _encode_api_key_value(value)
+            changed = True
+    if changed:
+        _save(data)
+
+
+def get_features_raw() -> dict:
+    data = _load()
+    stored = data.get("features")
+    return stored if isinstance(stored, dict) else {}
+
+
+def save_features_raw(features: dict) -> None:
+    data = _load()
+    data["features"] = features
+    _save(data)
+
+
+def get_learning_streak() -> tuple[int, str]:
+    data = _load()
+    streak = int(data.get("learning_streak", 0))
+    last = data.get("learning_last_review_date", "")
+    return streak, last if isinstance(last, str) else ""
+
+
+def record_learning_review_today() -> int:
+    from datetime import date, timedelta
+
+    data = _load()
+    today = date.today().isoformat()
+    last = data.get("learning_last_review_date", "")
+    streak = int(data.get("learning_streak", 0))
+    if last == today:
+        return streak
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    if last == yesterday:
+        streak += 1
+    else:
+        streak = 1
+    data["learning_streak"] = streak
+    data["learning_last_review_date"] = today
+    _save(data)
+    return streak

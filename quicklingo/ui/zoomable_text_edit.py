@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut, QWheelEvent
 from PySide6.QtWidgets import QLineEdit, QTextEdit
 
@@ -105,6 +105,69 @@ class ZoomableLineEdit(QLineEdit):
         super().wheelEvent(event)
 
 
+class ZoomableInputEdit(QTextEdit):
+    submit_requested = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._zoom_steps = 0
+        self._base_point_size = _base_font_point_size(self)
+        self.setAcceptRichText(False)
+        self.setTabChangesFocus(True)
+        self.setMaximumHeight(120)
+        _install_zoom_shortcuts(self, self._zoom_in, self._zoom_out, self.reset_zoom)
+
+    def reset_zoom(self) -> None:
+        self._zoom_steps = 0
+        self._apply_zoom()
+
+    def zoom_steps(self) -> int:
+        return self._zoom_steps
+
+    def set_zoom_steps(self, steps: int) -> None:
+        self._zoom_steps = steps
+        self._apply_zoom()
+
+    def input_text(self) -> str:
+        return self.toPlainText().strip()
+
+    def clear_input(self) -> None:
+        self.clear()
+
+    def _zoom_in(self) -> None:
+        self._zoom_steps += 1
+        self._apply_zoom()
+
+    def _zoom_out(self) -> None:
+        self._zoom_steps -= 1
+        self._apply_zoom()
+
+    def _apply_zoom(self) -> None:
+        font = self.font()
+        font.setPointSizeF(max(6.0, self._base_point_size + self._zoom_steps))
+        self.setFont(font)
+        self.updateGeometry()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if _handle_zoom_key(event, self._zoom_in, self._zoom_out, self.reset_zoom):
+            return
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if event.modifiers() & (
+                Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.AltModifier
+            ):
+                super().keyPressEvent(event)
+                return
+            self.submit_requested.emit()
+            return
+        super().keyPressEvent(event)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if _handle_zoom_wheel(event, self._zoom_in, self._zoom_out):
+            event.accept()
+            return
+        super().wheelEvent(event)
+
+
 class ZoomableTextEdit(QTextEdit):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -112,10 +175,24 @@ class ZoomableTextEdit(QTextEdit):
         self._base_point_size = _base_font_point_size(self)
         self._result_html: str | None = None
         self._result_plain: str | None = None
+        self._selectable = False
         self.setReadOnly(True)
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self._apply_interaction_flags()
         self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         _install_zoom_shortcuts(self, self._zoom_in, self._zoom_out, self.reset_zoom)
+
+    def set_text_selectable(self, selectable: bool) -> None:
+        self._selectable = selectable
+        self._apply_interaction_flags()
+
+    def _apply_interaction_flags(self) -> None:
+        if self._selectable:
+            self.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+                | Qt.TextInteractionFlag.TextSelectableByKeyboard
+            )
+        else:
+            self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
     def set_result_html(self, html: str) -> None:
         self._result_html = html
