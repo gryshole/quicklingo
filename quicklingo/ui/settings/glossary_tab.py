@@ -1,8 +1,10 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLineEdit,
     QPushButton,
     QTableWidget,
@@ -35,6 +37,13 @@ class GlossaryTab(SettingsTab):
         self._table = QTableWidget(0, 2)
         self._table.setHorizontalHeaderLabels(["", ""])
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.verticalHeader().setVisible(False)
+        header = self._table.horizontalHeader()
+        header.setMinimumSectionSize(120)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header.setStyleSheet("QHeaderView::section { padding-left: 10px; padding-right: 8px; }")
         form.addRow(tr("settings.glossary.direction"), self._direction_combo)
         form.addRow(tr("settings.glossary.source"), self._source_field)
         form.addRow(tr("settings.glossary.target"), self._target_field)
@@ -52,8 +61,20 @@ class GlossaryTab(SettingsTab):
         self._add_btn.setText(tr("settings.glossary.add"))
         self._remove_btn.setText(tr("settings.glossary.remove"))
         self._table.setHorizontalHeaderLabels(
-            [tr("settings.glossary.source"), tr("settings.glossary.target")]
+            [tr("settings.glossary.col_source"), tr("settings.glossary.col_target")]
         )
+        self._fit_table_columns()
+
+    def _fit_table_columns(self) -> None:
+        header = self._table.horizontalHeader()
+        metrics = header.fontMetrics()
+        padding = 28
+        for col in range(self._table.columnCount()):
+            item = self._table.horizontalHeaderItem(col)
+            if item is None:
+                continue
+            width = metrics.horizontalAdvance(item.text()) + padding
+            header.resizeSection(col, max(header.minimumSectionSize(), width))
 
     def reload(self) -> None:
         self._data = glossary.get_all()

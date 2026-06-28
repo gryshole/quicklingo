@@ -49,11 +49,11 @@ class SettingsDialog(QDialog):
             self._api_keys_tab,
             self._models_tab,
             self._features_tab,
-            self._glossary_tab,
-            self._usage_tab,
             self._directions_tab,
             self._profiles_tab,
+            self._usage_tab,
             self._formatters_tab,
+            self._glossary_tab,
         )
 
         layout.addWidget(self._tabs)
@@ -87,11 +87,11 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(self._api_keys_tab, tr("settings.tab_api_keys"))
         self._tabs.addTab(self._models_tab, tr("settings.tab_models"))
         self._tabs.addTab(self._features_tab, tr("settings.tab_features"))
-        self._tabs.addTab(self._glossary_tab, tr("settings.tab_glossary"))
-        self._tabs.addTab(self._usage_tab, tr("settings.tab_usage"))
         self._tabs.addTab(self._directions_tab, tr("settings.tab_directions"))
         self._tabs.addTab(self._profiles_tab, tr("settings.tab_profiles"))
+        self._tabs.addTab(self._usage_tab, tr("settings.tab_usage"))
         self._tabs.addTab(self._formatters_tab, tr("settings.tab_formatters"))
+        self._tabs.addTab(self._glossary_tab, tr("settings.tab_glossary"))
         self._apply_btn.setText(tr("settings.apply"))
         self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText(tr("common.ok"))
         self._buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(

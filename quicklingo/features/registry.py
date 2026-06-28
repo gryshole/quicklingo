@@ -12,7 +12,7 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
     "ui.remember_geometry": {"enabled": True},
     "ui.remember_zoom": {"enabled": True},
     "ui.auto_copy_result": {"enabled": False},
-    "ui.single_line_input": {"enabled": False},
+    "ui.single_line_input": {"enabled": True},
     "ui.system_tray": {"enabled": False, "hotkey": "<ctrl>+<shift>+q"},
     "ui.autostart": {"enabled": False},
     "history.auto_save": {"enabled": True},
@@ -40,7 +40,7 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
     "learning.extract_vocab": {"enabled": False},
     "translation.response_cache": {"enabled": True, "ttl_days": 30},
     "translation.context_window": {"enabled": False, "last_n": 3},
-    "translation.glossary": {"enabled": True},
+    "translation.glossary": {"enabled": False},
     "translation.streaming": {"enabled": True},
     "translation.request_queue": {"enabled": True},
     "input.global_hotkey.translate_selection": {

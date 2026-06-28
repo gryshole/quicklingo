@@ -53,6 +53,7 @@ from quicklingo.providers.setup_info import PROVIDER_HINT_KEYS, provider_needs_a
 
 from quicklingo import settings
 
+from quicklingo.ui.help_dialog import show_help
 from quicklingo.ui.history_window import HistoryWindow
 from quicklingo.ui.dashboard_window import DashboardWindow
 from quicklingo.ui.learning_window import LearningWindow
@@ -146,6 +147,26 @@ class MainWindow(QMainWindow):
         self._dashboard_action = None
 
         self._settings_action = None
+
+        self._help_menu = None
+
+        self._help_about_action = None
+
+        self._help_models_action = None
+
+        self._help_directions_profiles_action = None
+
+        self._help_formatters_action = None
+
+        self._help_features_action = None
+
+        self._help_history_action = None
+
+        self._help_learning_action = None
+
+        self._help_dashboard_action = None
+
+        self._help_glossary_action = None
 
         self._create_menu_bar()
 
@@ -354,6 +375,48 @@ class MainWindow(QMainWindow):
         if self._settings_action:
 
             self._settings_action.setText(tr("main.menu_settings"))
+
+        if self._help_menu:
+
+            self._help_menu.setTitle(tr("main.menu_help"))
+
+        if self._help_about_action:
+
+            self._help_about_action.setText(tr("main.menu_help_about"))
+
+        if self._help_models_action:
+
+            self._help_models_action.setText(tr("main.menu_help_models"))
+
+        if self._help_directions_profiles_action:
+
+            self._help_directions_profiles_action.setText(
+                tr("main.menu_help_directions_profiles")
+            )
+
+        if self._help_formatters_action:
+
+            self._help_formatters_action.setText(tr("main.menu_help_formatters"))
+
+        if self._help_features_action:
+
+            self._help_features_action.setText(tr("main.menu_help_features"))
+
+        if self._help_history_action:
+
+            self._help_history_action.setText(tr("main.menu_help_history"))
+
+        if self._help_learning_action:
+
+            self._help_learning_action.setText(tr("main.menu_help_learning"))
+
+        if self._help_dashboard_action:
+
+            self._help_dashboard_action.setText(tr("main.menu_help_dashboard"))
+
+        if self._help_glossary_action:
+
+            self._help_glossary_action.setText(tr("main.menu_help_glossary"))
 
         if self._status_is_error:
 
@@ -774,6 +837,100 @@ class MainWindow(QMainWindow):
         self._dashboard_action = self._tools_menu.addAction("")
 
         self._dashboard_action.triggered.connect(self._open_dashboard)
+
+        self._help_menu = menu_bar.addMenu("")
+
+        self._help_about_action = self._help_menu.addAction("")
+
+        self._help_about_action.triggered.connect(self._open_help_about)
+
+        self._help_models_action = self._help_menu.addAction("")
+
+        self._help_models_action.triggered.connect(self._open_help_models)
+
+        self._help_directions_profiles_action = self._help_menu.addAction("")
+
+        self._help_directions_profiles_action.triggered.connect(
+            self._open_help_directions_profiles
+        )
+
+        self._help_formatters_action = self._help_menu.addAction("")
+
+        self._help_formatters_action.triggered.connect(self._open_help_formatters)
+
+        self._help_features_action = self._help_menu.addAction("")
+
+        self._help_features_action.triggered.connect(self._open_help_features)
+
+        self._help_history_action = self._help_menu.addAction("")
+
+        self._help_history_action.triggered.connect(self._open_help_history)
+
+        self._help_learning_action = self._help_menu.addAction("")
+
+        self._help_learning_action.triggered.connect(self._open_help_learning)
+
+        self._help_dashboard_action = self._help_menu.addAction("")
+
+        self._help_dashboard_action.triggered.connect(self._open_help_dashboard)
+
+        self._help_glossary_action = self._help_menu.addAction("")
+
+        self._help_glossary_action.triggered.connect(self._open_help_glossary)
+
+
+
+    def _open_help_about(self) -> None:
+
+        show_help("about", self)
+
+
+
+    def _open_help_models(self) -> None:
+
+        show_help("models", self)
+
+
+
+    def _open_help_directions_profiles(self) -> None:
+
+        show_help("directions_profiles", self)
+
+
+
+    def _open_help_formatters(self) -> None:
+
+        show_help("formatters", self)
+
+
+
+    def _open_help_features(self) -> None:
+
+        show_help("features", self)
+
+
+
+    def _open_help_history(self) -> None:
+
+        show_help("history", self)
+
+
+
+    def _open_help_learning(self) -> None:
+
+        show_help("learning", self)
+
+
+
+    def _open_help_dashboard(self) -> None:
+
+        show_help("dashboard", self)
+
+
+
+    def _open_help_glossary(self) -> None:
+
+        show_help("glossary", self)
 
 
 
