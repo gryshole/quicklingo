@@ -38,6 +38,7 @@ class HotkeyManager(QObject):
     translate_selection = Signal()
     translate_clipboard = Signal()
     toggle_window = Signal()
+    tutor_capture_toggle = Signal()
     double_ctrl_c = Signal()
 
     def __init__(self, parent=None) -> None:
@@ -78,6 +79,10 @@ class HotkeyManager(QObject):
         if is_enabled("ui.system_tray"):
             combo = str(get_feature("ui.system_tray").get("hotkey", "<ctrl>+<shift>+q"))
             bindings[combo] = lambda: self.toggle_window.emit()
+
+        tutor_combo = str(get_feature("input.tutor_capture").get("hotkey", "")).strip()
+        if tutor_combo:
+            bindings[tutor_combo] = lambda: self.tutor_capture_toggle.emit()
 
         if bindings:
             self._hotkeys = keyboard.GlobalHotKeys(bindings)

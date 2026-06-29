@@ -1,8 +1,10 @@
-from PySide6.QtCore import Qt, QByteArray
+from PySide6.QtCore import Qt, QByteArray, Signal
 
-from PySide6.QtGui import QCloseEvent, QGuiApplication
+from PySide6.QtGui import QCloseEvent, QGuiApplication, QHideEvent, QShowEvent
 
 from PySide6.QtWidgets import (
+
+    QApplication,
 
     QButtonGroup,
 
@@ -17,6 +19,8 @@ from PySide6.QtWidgets import (
     QPushButton,
 
     QRadioButton,
+
+    QSizePolicy,
 
     QVBoxLayout,
 
@@ -42,11 +46,12 @@ from quicklingo.config.loader import (
 
 from quicklingo.db import history
 
-from quicklingo.features import feature_changed, get_feature, is_enabled
+from quicklingo.features import feature_changed, get_feature, is_enabled, save_features
 
 from quicklingo.i18n import tr, translate_message
 
 from quicklingo.input.hotkeys import copy_selection_to_clipboard, paste_text
+from quicklingo.input.tutor_capture_log import log_debug
 
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.providers.setup_info import PROVIDER_HINT_KEYS, provider_needs_api_key
@@ -89,6 +94,8 @@ class _QueuedRequest:
 
 
 class MainWindow(QMainWindow):
+
+    visibility_changed = Signal(bool)
 
     def __init__(self) -> None:
 
@@ -220,6 +227,26 @@ class MainWindow(QMainWindow):
 
         self._input_label = QLabel()
 
+        self._tutor_capture_btn = QPushButton()
+
+        self._tutor_capture_btn.setCheckable(True)
+
+        self._tutor_capture_btn.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+
+        self._tutor_capture_btn.toggled.connect(self._on_tutor_capture_btn_toggled)
+
+        self._input_header = QHBoxLayout()
+
+        self._input_header.setContentsMargins(0, 0, 0, 0)
+
+        self._input_header.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        self._input_header.addWidget(self._input_label, stretch=1)
+
+        self._input_header.addWidget(self._tutor_capture_btn)
+
         self._input_single_line_mode: bool | None = None
         self._input_field = self._create_input_field()
         self._input_single_line_mode = self._single_line_input_enabled()
@@ -301,7 +328,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self._profile_combo)
 
-        layout.addWidget(self._input_label)
+        layout.addLayout(self._input_header)
 
         layout.addWidget(self._input_field)
 
@@ -318,6 +345,8 @@ class MainWindow(QMainWindow):
         self._input_label_ref = self._input_label
 
         self._refresh_input_label()
+
+        self.sync_tutor_capture_ui()
 
         self._direction_group.buttonClicked.connect(lambda _: self._refresh_profile_combo())
 
@@ -418,6 +447,10 @@ class MainWindow(QMainWindow):
 
             self._help_glossary_action.setText(tr("main.menu_help_glossary"))
 
+        self._tutor_capture_btn.setText(tr("main.tutor_capture_btn"))
+
+        self.sync_tutor_capture_ui()
+
         if self._status_is_error:
 
             self._set_status(self._status_key, error=True, **self._status_params)
@@ -460,6 +493,177 @@ class MainWindow(QMainWindow):
 
         self._refresh_input_label()
 
+        self.sync_tutor_capture_ui()
+
+
+
+    def sync_tutor_capture_ui(self) -> None:
+
+        import sys
+
+        enabled = is_enabled("input.tutor_capture")
+
+        self._tutor_capture_btn.blockSignals(True)
+
+        self._tutor_capture_btn.setChecked(enabled)
+
+        self._tutor_capture_btn.blockSignals(False)
+
+        self._tutor_capture_btn.setEnabled(sys.platform == "win32")
+
+        self._apply_tutor_capture_btn_style(enabled)
+
+        self._render_status()
+
+
+
+    def _apply_tutor_capture_btn_style(self, enabled: bool) -> None:
+
+        import sys
+
+        # Same box model in both states so the input label row does not shift.
+        box = "border: 1px solid; padding: 4px 10px; min-width: 72px; min-height: 24px; max-height: 24px;"
+        if sys.platform != "win32":
+
+            self._tutor_capture_btn.setToolTip(tr("main.tutor_capture_btn_tooltip_unsupported"))
+
+            self._tutor_capture_btn.setStyleSheet(
+                f"QPushButton {{ {box} border-color: #c8c8c8; background: #f3f4f6; }}"
+            )
+
+        elif enabled:
+
+            self._tutor_capture_btn.setStyleSheet(
+                "QPushButton { "
+                f"{box} "
+                "background-color: #dbeafe; border-color: #93c5fd; font-weight: bold; "
+                "}"
+            )
+
+            self._tutor_capture_btn.setToolTip(tr("main.tutor_capture_btn_tooltip_on"))
+
+        else:
+
+            self._tutor_capture_btn.setStyleSheet(
+                "QPushButton { "
+                f"{box} "
+                "background-color: #f9fafb; border-color: #d1d5db; "
+                "}"
+            )
+
+            self._tutor_capture_btn.setToolTip(tr("main.tutor_capture_btn_tooltip_off"))
+
+
+
+    def _on_tutor_capture_btn_toggled(self, checked: bool) -> None:
+
+        if checked == is_enabled("input.tutor_capture"):
+
+            return
+
+        self._apply_tutor_capture_btn_style(checked)
+
+        if self._status_key == "main.status_ready" and not self._status_is_error:
+
+            if checked:
+
+                self._status_label.setStyleSheet("color: #555555;")
+
+                self._status_label.setText(tr("main.status_tutor_capture_active"))
+
+            else:
+
+                self._status_label.setStyleSheet("color: #555555;")
+
+                self._status_label.setText(tr("main.status_ready"))
+
+        save_features({"input.tutor_capture": {"enabled": checked}})
+
+
+
+    def is_translation_busy(self) -> bool:
+
+        return self._worker is not None and self._worker.isRunning()
+
+
+
+    def _tutor_input_block_reason(self) -> str | None:
+        if not is_enabled("input.tutor_capture"):
+            return "feature_disabled"
+        modal = QApplication.activeModalWidget()
+        if modal is not None:
+            return f"modal_open:{type(modal).__name__}"
+        if self.is_translation_busy():
+            return "translation_busy"
+        return None
+
+    def _tutor_input_allowed(self) -> bool:
+        return self._tutor_input_block_reason() is None
+
+    def on_tutor_character(self, char: str) -> None:
+        reason = self._tutor_input_block_reason()
+        if reason is not None:
+            log_debug(f"UI reject char={char!r} reason={reason}")
+            return
+
+        if isinstance(self._input_field, ZoomableLineEdit):
+
+            self._input_field.setText(self._input_field.text() + char)
+
+        else:
+
+            self._input_field.setPlainText(self._input_field.toPlainText() + char)
+
+
+
+    def on_tutor_backspace(self) -> None:
+        reason = self._tutor_input_block_reason()
+        if reason is not None:
+            log_debug(f"UI reject backspace reason={reason}")
+            return
+
+        if isinstance(self._input_field, ZoomableLineEdit):
+
+            text = self._input_field.text()
+
+            if text:
+
+                self._input_field.setText(text[:-1])
+
+        else:
+
+            text = self._input_field.toPlainText()
+
+            if text:
+
+                self._input_field.setPlainText(text[:-1])
+
+
+
+    def on_tutor_enter(self) -> None:
+        reason = self._tutor_input_block_reason()
+        if reason is not None:
+            log_debug(f"UI reject enter reason={reason}")
+            return
+
+        self._submit_translation()
+
+
+
+    def showEvent(self, event: QShowEvent) -> None:
+
+        super().showEvent(event)
+
+        self.visibility_changed.emit(True)
+
+
+
+    def hideEvent(self, event: QHideEvent) -> None:
+
+        super().hideEvent(event)
+
+        self.visibility_changed.emit(False)
+
 
 
     def _single_line_input_enabled(self) -> bool:
@@ -500,7 +704,7 @@ class MainWindow(QMainWindow):
 
         placeholder = self._input_field.placeholderText()
 
-        label_index = self._main_layout.indexOf(self._input_label)
+        field_index = self._main_layout.indexOf(self._input_field)
 
         self._main_layout.removeWidget(self._input_field)
 
@@ -522,7 +726,7 @@ class MainWindow(QMainWindow):
 
             self._input_field.set_input_text(text)
 
-        self._main_layout.insertWidget(label_index + 1, self._input_field)
+        self._main_layout.insertWidget(field_index, self._input_field)
 
 
 
@@ -608,14 +812,18 @@ class MainWindow(QMainWindow):
 
     def _apply_window_features(self) -> None:
 
-        flags = Qt.WindowType.Window
+        want_on_top = is_enabled("ui.always_on_top")
+        has_on_top = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+        if want_on_top == has_on_top:
+            return
 
-        if is_enabled("ui.always_on_top"):
-
+        flags = self.windowFlags()
+        if want_on_top:
             flags |= Qt.WindowType.WindowStaysOnTopHint
+        else:
+            flags &= ~Qt.WindowType.WindowStaysOnTopHint
 
         self.setWindowFlags(flags)
-
         self.show()
 
 
@@ -1227,7 +1435,31 @@ class MainWindow(QMainWindow):
 
         self._status_is_error = error
 
-        if key == "main.status_error":
+        self._render_status()
+
+
+
+    def _render_status(self) -> None:
+
+        key = self._status_key
+
+        params = self._status_params
+
+        error = self._status_is_error
+
+        if (
+
+            is_enabled("input.tutor_capture")
+
+            and key == "main.status_ready"
+
+            and not error
+
+        ):
+
+            message = tr("main.status_tutor_capture_active")
+
+        elif key == "main.status_error":
 
             message = tr(key, message=translate_message(params.get("message", "")))
 

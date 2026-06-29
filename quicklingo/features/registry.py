@@ -52,13 +52,17 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
         "combo": "<ctrl>+<shift>+v",
     },
     "input.double_ctrl_c": {"enabled": False},
+    "input.tutor_capture": {
+        "enabled": False,
+        "hotkey": "<ctrl>+<alt>+g",
+    },
     "input.replace_in_place": {"enabled": False},
     "privacy.encrypted_keys": {"enabled": False},
 }
 
 
 class _FeatureNotifier(QObject):
-    changed = Signal()
+    changed = Signal(list)
 
 
 _notifier = _FeatureNotifier()
@@ -115,7 +119,7 @@ def save_features(features: dict[str, dict[str, Any]]) -> None:
         {key: merged[key] for key in FEATURE_DEFAULTS if key in merged}
     )
     _apply_side_effects(merged)
-    _notifier.changed.emit()
+    _notifier.changed.emit(list(patch.keys()))
 
 
 def _apply_side_effects(features: dict[str, dict[str, Any]]) -> None:

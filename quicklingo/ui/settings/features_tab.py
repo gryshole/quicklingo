@@ -64,6 +64,10 @@ _FEATURE_I18N: dict[str, tuple[str, str | None]] = {
         "settings.features.hotkey_note",
     ),
     "input.double_ctrl_c": ("settings.features.input_double_ctrl_c", None),
+    "input.tutor_capture": (
+        "settings.features.input_tutor_capture",
+        "settings.features.input_tutor_capture_note",
+    ),
     "input.replace_in_place": (
         "settings.features.input_replace_in_place",
         "settings.features.input_replace_in_place_note",
@@ -138,6 +142,7 @@ class FeaturesTab(SettingsTab):
                     "input.global_hotkey.translate_selection",
                     "input.global_hotkey.translate_clipboard",
                     "input.double_ctrl_c",
+                    "input.tutor_capture",
                     "input.replace_in_place",
                     "ui.single_line_input",
                 ],
@@ -203,6 +208,12 @@ class FeaturesTab(SettingsTab):
                     "input.global_hotkey.translate_clipboard",
                     "combo",
                     "settings.features.hotkey_combo",
+                )
+                self._add_combo_field(
+                    form,
+                    "input.tutor_capture",
+                    "hotkey",
+                    "settings.features.tutor_capture_hotkey",
                 )
             if group_id == "translation":
                 self._add_spin(
