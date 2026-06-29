@@ -90,13 +90,16 @@ def _safe_extract_zip(archive: zipfile.ZipFile, dest_dir: Path) -> None:
     dest_root = dest_dir.resolve()
     for member in archive.namelist():
         if member.endswith("/"):
+            (dest_root / member).mkdir(parents=True, exist_ok=True)
             continue
         target = (dest_root / member).resolve()
         try:
             target.relative_to(dest_root)
         except ValueError as exc:
             raise ValueError(f"Unsafe path in update zip: {member!r}") from exc
-    archive.extractall(dest_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(member) as source, target.open("wb") as dest:
+            shutil.copyfileobj(source, dest)
 
 
 def extract_zip(zip_path: Path, dest_dir: Path) -> Path:

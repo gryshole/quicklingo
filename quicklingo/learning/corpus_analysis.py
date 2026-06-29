@@ -141,7 +141,10 @@ def build_analysis_prompt(candidates: list[CorpusCandidate], *, tag: str, direct
 def parse_analysis_response(raw: str) -> tuple[list[dict], AnalysisSummary]:
     text = raw.strip()
     if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = text[3:]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.lstrip()
         text = text.removesuffix("```").rstrip()
     data = json.loads(text)
     cards = data.get("cards", [])

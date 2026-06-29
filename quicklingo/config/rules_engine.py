@@ -14,9 +14,31 @@ from quicklingo.ui.format_output import (
 )
 
 _CYRILLIC = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
-_SEPARATOR_LINE = re.compile(r"^[-─_=]{3,}$")
-_CONTEXT_LINE = re.compile(r"^([^—\n]{1,200}) — ([^—\n]{1,500})$")
-_NUMBERED_LINE = re.compile(r"^\[\d+\]\s*[^\r\n]+$")
+_SEPARATOR_CHARS = frozenset("-─_=")
+
+
+def _is_separator_line(line: str) -> bool:
+    stripped = line.strip()
+    return len(stripped) >= 3 and all(ch in _SEPARATOR_CHARS for ch in stripped)
+
+
+def _parse_context_line(line: str) -> tuple[str, str] | None:
+    parts = line.split(" — ", 1)
+    if len(parts) != 2:
+        return None
+    left, right = parts[0].strip(), parts[1].strip()
+    if not left or not right or len(left) > 200 or len(right) > 500:
+        return None
+    return left, right
+
+
+def _is_numbered_line(line: str) -> bool:
+    if not line.startswith("["):
+        return False
+    end = line.find("]")
+    if end <= 1:
+        return False
+    return line[1:end].isdigit()
 
 
 def run_rules_v1(rules: list[dict[str, Any]], text: str) -> str:
@@ -109,7 +131,7 @@ def _apply_line_style(rule: dict[str, Any], ctx: dict[str, Any]) -> None:
 def _normalize_separators(text: str) -> str:
     lines: list[str] = []
     for line in text.split("\n"):
-        if _SEPARATOR_LINE.match(line.strip()):
+        if _is_separator_line(line):
             lines.append("──────────────────")
         else:
             lines.append(line)
@@ -161,7 +183,7 @@ def _format_ua_en_block_rules(block: str) -> str:
         if stripped.startswith("Example:"):
             parts.append(_example_block(stripped.removeprefix("Example:").strip()))
             continue
-        if _NUMBERED_LINE.match(stripped):
+        if _is_numbered_line(stripped):
             parts.append(_header_line(stripped))
             continue
         if stripped.startswith("—") and _CYRILLIC.search(stripped):
@@ -170,10 +192,10 @@ def _format_ua_en_block_rules(block: str) -> str:
                 f"{html.escape(stripped)}</div>"
             )
             continue
-        context_match = _CONTEXT_LINE.match(stripped)
-        if context_match and _CYRILLIC.search(context_match.group(2)):
-            english = html.escape(context_match.group(1).strip())
-            note = html.escape(context_match.group(2).strip())
+        context_match = _parse_context_line(stripped)
+        if context_match and _CYRILLIC.search(context_match[1]):
+            english = html.escape(context_match[0])
+            note = html.escape(context_match[1])
             parts.append(
                 f'<div style="margin:4px 0">'
                 f'<span style="font-weight:600;color:#1e40af">{english}</span>'
