@@ -67,10 +67,42 @@ def wait_for_pid(pid: int, timeout_ms: int = 90000) -> bool:
         kernel32.CloseHandle(handle)
 
 
+def _validated_install_dir(path: Path) -> Path:
+    resolved = path.resolve()
+    if not resolved.is_dir():
+        raise ValueError(f"Install directory not found: {resolved}")
+    exe = resolved / "QuickLingo.exe"
+    if not exe.is_file():
+        raise ValueError(f"QuickLingo.exe not found in install directory: {resolved}")
+    return resolved
+
+
+def _validated_zip(path: Path) -> Path:
+    resolved = path.resolve()
+    if resolved.suffix.lower() != ".zip":
+        raise ValueError(f"Update file must be a .zip: {resolved}")
+    if not resolved.is_file():
+        raise ValueError(f"Update zip not found: {resolved}")
+    return resolved
+
+
+def _safe_extract_zip(archive: zipfile.ZipFile, dest_dir: Path) -> None:
+    dest_root = dest_dir.resolve()
+    for member in archive.namelist():
+        if member.endswith("/"):
+            continue
+        target = (dest_root / member).resolve()
+        try:
+            target.relative_to(dest_root)
+        except ValueError as exc:
+            raise ValueError(f"Unsafe path in update zip: {member!r}") from exc
+    archive.extractall(dest_root)
+
+
 def extract_zip(zip_path: Path, dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path, "r") as archive:
-        archive.extractall(dest_dir)
+        _safe_extract_zip(archive, dest_dir)
 
     entries = list(dest_dir.iterdir())
     if len(entries) == 1 and entries[0].is_dir():
@@ -149,13 +181,12 @@ def apply_update(install_dir: Path, extracted_root: Path) -> None:
 
 
 def restart_app(install_dir: Path) -> None:
-    exe = install_dir / "QuickLingo.exe"
-    if not exe.is_file():
-        raise FileNotFoundError(f"QuickLingo.exe not found after update: {exe}")
+    validated = _validated_install_dir(install_dir)
+    exe = validated / "QuickLingo.exe"
     log(f"Restarting {exe}")
     subprocess.Popen(
         [str(exe)],
-        cwd=str(install_dir),
+        cwd=str(validated),
         creationflags=0x00000008,
         close_fds=True,
     )
@@ -169,8 +200,8 @@ def main() -> int:
     parser.add_argument("--restart", action="store_true")
     args = parser.parse_args()
 
-    install_dir = Path(args.install_dir)
-    zip_path = Path(args.zip)
+    install_dir = _validated_install_dir(Path(args.install_dir))
+    zip_path = _validated_zip(Path(args.zip))
     log(f"Updater started install_dir={install_dir} zip={zip_path} pid={args.pid}")
 
     try:

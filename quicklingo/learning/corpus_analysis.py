@@ -142,7 +142,7 @@ def parse_analysis_response(raw: str) -> tuple[list[dict], AnalysisSummary]:
     text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
+        text = text.removesuffix("```").rstrip()
     data = json.loads(text)
     cards = data.get("cards", [])
     summary_raw = data.get("summary", {})

@@ -14,9 +14,9 @@ from quicklingo.ui.format_output import (
 )
 
 _CYRILLIC = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
-_SEPARATOR_LINE = re.compile(r"^_+\s*$")
-_CONTEXT_LINE = re.compile(r"^(.+?) — (.+)$")
-_NUMBERED_LINE = re.compile(r"^(\[\d+\]\s*.+)$")
+_SEPARATOR_LINE = re.compile(r"^[-─_=]{3,}$")
+_CONTEXT_LINE = re.compile(r"^([^—\n]{1,200}) — ([^—\n]{1,500})$")
+_NUMBERED_LINE = re.compile(r"^\[\d+\]\s*[^\r\n]+$")
 
 
 def run_rules_v1(rules: list[dict[str, Any]], text: str) -> str:
