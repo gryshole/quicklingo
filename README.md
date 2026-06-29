@@ -22,6 +22,7 @@ A lightweight Windows assistant for quick translation during online meetings and
 ## Quick start
 
 ```powershell
+git clone https://github.com/gryshole/quicklingo.git
 cd quicklingo
 python -m venv .venv
 .venv\Scripts\Activate.ps1
