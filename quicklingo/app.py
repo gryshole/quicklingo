@@ -13,6 +13,12 @@ from quicklingo.input.tutor_capture_log import log_info, log_file_path
 from quicklingo.ui.main_window import MainWindow
 from quicklingo.ui.tray import TrayManager
 
+_app: "QuickLingoApp | None" = None
+
+
+def get_app() -> "QuickLingoApp | None":
+    return _app
+
 
 class QuickLingoApp:
     def __init__(self, qt_app: QApplication) -> None:
@@ -125,8 +131,16 @@ class QuickLingoApp:
         self._hotkeys.start()
         self._apply_tutor_capture()
 
+    def prepare_quit_for_update(self) -> None:
+        self._hotkeys.stop()
+        self._tutor_capture.stop()
+        if self._tray is not None:
+            self._tray.hide()
+        self._window._force_quit = True
+
 
 def run() -> int:
+    global _app
     configure_windows_app_id()
     history.init_db()
     init_language()
@@ -137,5 +151,5 @@ def run() -> int:
     if icon is not None:
         app.setWindowIcon(icon)
 
-    QuickLingoApp(app)
+    _app = QuickLingoApp(app)
     return app.exec()

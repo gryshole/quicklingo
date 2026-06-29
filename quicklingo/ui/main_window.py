@@ -1,6 +1,6 @@
-from PySide6.QtCore import Qt, QByteArray, Signal
+from PySide6.QtCore import Qt, QByteArray, QUrl, Signal
 
-from PySide6.QtGui import QCloseEvent, QGuiApplication, QHideEvent, QShowEvent
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication, QHideEvent, QShowEvent
 
 from PySide6.QtWidgets import (
 
@@ -16,6 +16,10 @@ from PySide6.QtWidgets import (
 
     QMainWindow,
 
+    QMessageBox,
+
+    QProgressDialog,
+
     QPushButton,
 
     QRadioButton,
@@ -30,6 +34,13 @@ from PySide6.QtWidgets import (
 
 
 
+import os
+import sys
+from pathlib import Path
+
+
+
+from quicklingo import app as ql_app
 from quicklingo.config.loader import (
 
     get_directions,
@@ -67,7 +78,16 @@ from quicklingo.ui.settings_dialog import SettingsDialog
 
 from quicklingo.ui.zoomable_text_edit import ZoomableInputEdit, ZoomableLineEdit, ZoomableTextEdit
 
+from quicklingo.update.checker import (
+    UpdateInfo,
+    current_version,
+    default_download_path,
+    is_newer,
+)
+from quicklingo.update.install import launch_update, updater_available
+from quicklingo.version import __version__
 from quicklingo.workers.translate_worker import TranslateWorker
+from quicklingo.workers.update_worker import UpdateCheckWorker, UpdateDownloadWorker
 
 
 
@@ -159,6 +179,8 @@ class MainWindow(QMainWindow):
 
         self._help_about_action = None
 
+        self._help_check_updates_action = None
+
         self._help_models_action = None
 
         self._help_directions_profiles_action = None
@@ -174,6 +196,14 @@ class MainWindow(QMainWindow):
         self._help_dashboard_action = None
 
         self._help_glossary_action = None
+
+        self._update_check_worker: UpdateCheckWorker | None = None
+
+        self._update_download_worker: UpdateDownloadWorker | None = None
+
+        self._update_progress: QProgressDialog | None = None
+
+        self._pending_update_info: UpdateInfo | None = None
 
         self._create_menu_bar()
 
@@ -366,6 +396,8 @@ class MainWindow(QMainWindow):
 
     def retranslate_ui(self) -> None:
 
+        self.setWindowTitle(f"QuickLingo {__version__}")
+
         self._model_label.setText(tr("main.model_label"))
 
         self._direction_label.setText(tr("main.direction_label"))
@@ -412,6 +444,10 @@ class MainWindow(QMainWindow):
         if self._help_about_action:
 
             self._help_about_action.setText(tr("main.menu_help_about"))
+
+        if self._help_check_updates_action:
+
+            self._help_check_updates_action.setText(tr("main.menu_help_check_updates"))
 
         if self._help_models_action:
 
@@ -1052,6 +1088,12 @@ class MainWindow(QMainWindow):
 
         self._help_about_action.triggered.connect(self._open_help_about)
 
+        self._help_check_updates_action = self._help_menu.addAction("")
+
+        self._help_check_updates_action.triggered.connect(self._check_for_updates)
+
+        self._help_menu.addSeparator()
+
         self._help_models_action = self._help_menu.addAction("")
 
         self._help_models_action.triggered.connect(self._open_help_models)
@@ -1091,6 +1133,135 @@ class MainWindow(QMainWindow):
     def _open_help_about(self) -> None:
 
         show_help("about", self)
+
+    def _check_for_updates(self) -> None:
+        if self._update_check_worker is not None and self._update_check_worker.isRunning():
+            return
+
+        self._update_check_worker = UpdateCheckWorker(self)
+        self._update_check_worker.finished_ok.connect(self._on_update_check_ok)
+        self._update_check_worker.finished_error.connect(self._on_update_check_error)
+        self._update_check_worker.start()
+
+    def _on_update_check_error(self, message: str) -> None:
+        QMessageBox.warning(
+            self,
+            tr("common.error"),
+            tr("update.error").format(message=message),
+        )
+
+    def _on_update_check_ok(self, info: UpdateInfo) -> None:
+        current = current_version()
+        if not is_newer(info.latest_version, current):
+            QMessageBox.information(
+                self,
+                tr("main.menu_help_check_updates"),
+                tr("update.up_to_date").format(version=current),
+            )
+            return
+
+        self._pending_update_info = info
+        message = tr("update.available").format(current=current, latest=info.latest_version)
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("main.menu_help_check_updates"))
+        box.setText(message)
+        box.setIcon(QMessageBox.Icon.Information)
+
+        install_btn = box.addButton(tr("update.install_now"), QMessageBox.ButtonRole.AcceptRole)
+        browser_btn = box.addButton(tr("update.open_browser"), QMessageBox.ButtonRole.ActionRole)
+        box.addButton(tr("common.cancel"), QMessageBox.ButtonRole.RejectRole)
+
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is browser_btn and info.release_url:
+            QDesktopServices.openUrl(QUrl(info.release_url))
+        elif clicked is install_btn:
+            self._start_update_download(info)
+
+    def _start_update_download(self, info: UpdateInfo) -> None:
+        if sys.platform != "win32":
+            QMessageBox.warning(self, tr("common.error"), tr("update.windows_only"))
+            return
+
+        if not updater_available():
+            QMessageBox.warning(self, tr("common.error"), tr("update.updater_missing"))
+            if info.release_url:
+                QDesktopServices.openUrl(QUrl(info.release_url))
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            tr("common.confirm"),
+            tr("update.confirm_quit"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        dest = default_download_path(info.latest_version)
+        self._update_progress = QProgressDialog(tr("update.downloading"), tr("common.cancel"), 0, 100, self)
+        self._update_progress.setWindowTitle(tr("main.menu_help_check_updates"))
+        self._update_progress.setWindowModality(Qt.WindowModality.WindowModal)
+        self._update_progress.setMinimumDuration(0)
+        self._update_progress.canceled.connect(self._cancel_update_download)
+        self._update_progress.show()
+
+        self._update_download_worker = UpdateDownloadWorker(info, dest, self)
+        self._update_download_worker.progress.connect(self._on_update_download_progress)
+        self._update_download_worker.finished_ok.connect(self._on_update_download_ok)
+        self._update_download_worker.finished_error.connect(self._on_update_download_error)
+        self._update_download_worker.start()
+
+    def _cancel_update_download(self) -> None:
+        if self._update_download_worker is not None and self._update_download_worker.isRunning():
+            self._update_download_worker.terminate()
+            self._update_download_worker.wait(2000)
+
+    def _on_update_download_progress(self, downloaded: int, total: object) -> None:
+        if self._update_progress is None:
+            return
+        if total is None:
+            self._update_progress.setRange(0, 0)
+            return
+        total_int = int(total)
+        if total_int <= 0:
+            return
+        self._update_progress.setRange(0, total_int)
+        self._update_progress.setValue(min(downloaded, total_int))
+
+    def _on_update_download_error(self, message: str) -> None:
+        if self._update_progress is not None:
+            self._update_progress.close()
+            self._update_progress = None
+        QMessageBox.warning(
+            self,
+            tr("common.error"),
+            tr("update.error").format(message=message),
+        )
+
+    def _on_update_download_ok(self, zip_path: str) -> None:
+        if self._update_progress is not None:
+            self._update_progress.close()
+            self._update_progress = None
+
+        app_instance = ql_app.get_app()
+        if app_instance is None:
+            QMessageBox.warning(self, tr("common.error"), tr("update.error").format(message="app"))
+            return
+
+        try:
+            app_instance.prepare_quit_for_update()
+            launch_update(Path(zip_path), pid=os.getpid())
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                tr("common.error"),
+                tr("update.error").format(message=str(exc)),
+            )
+            return
+
+        QApplication.quit()
 
 
 

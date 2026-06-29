@@ -2,6 +2,8 @@
 
 A lightweight Windows assistant for quick translation during online meetings and TV series.
 
+**Download:** [Latest release](https://github.com/gryshole/quicklingo/releases/latest) (Windows zip)
+
 ## Features
 
 - **Always on Top** window (~18% of screen width, docked to the right)
@@ -38,6 +40,33 @@ On first launch, open **Tools → Settings → API keys** and add your key(s):
 - Gemini: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
 Keys are saved in `%APPDATA%/QuickLingo/settings.json`.
+
+## Download and updates
+
+### First install
+
+1. Download `QuickLingo-0.x.y-win64.zip` from [GitHub Releases](https://github.com/gryshole/quicklingo/releases/latest).
+2. Unzip to a folder you can write to (e.g. `Documents\QuickLingo` or `%LOCALAPPDATA%\QuickLingo`). Avoid `Program Files` — in-app updates need write access.
+3. Run `QuickLingo.exe`.
+4. Add API keys in **Tools → Settings → API keys**.
+
+Your settings, history, and config live in `%APPDATA%/QuickLingo/` and are **not** removed when you update the app folder.
+
+### In-app update (0.1.0+)
+
+**Help → Check for updates → Update now** — downloads the latest release, replaces the app files, and restarts QuickLingo. You can also open the release page in the browser and unzip manually.
+
+### For developers: publish a release
+
+1. Bump `__version__` in `quicklingo/version.py`.
+2. Commit, tag, and push:
+
+```powershell
+git tag v0.2.0
+git push origin main --tags
+```
+
+GitHub Actions builds the Windows zip and attaches it to the release.
 
 ## Usage
 
@@ -119,7 +148,7 @@ Use **Tools → Settings → Directions → Add**, then add the direction to a p
 build.bat
 ```
 
-Output: `dist/QuickLingo/` — a folder with `QuickLingo.exe`, `_internal/`, and `config_data/`. Zip this folder for distribution; **onedir** starts much faster than a single self-extracting exe.
+Output: `dist/QuickLingo/` — a folder with `QuickLingo.exe`, `QuickLingoUpdater.exe`, `_internal/`, and `config_data/`. Zip this folder for distribution; **onedir** starts much faster than a single self-extracting exe.
 
 Manual build:
 
@@ -127,6 +156,8 @@ Manual build:
 pip install pyinstaller pillow
 python scripts\make_icon.py
 pyinstaller --noconfirm --clean QuickLingo.spec
+pyinstaller --noconfirm --clean QuickLingoUpdater.spec
+copy dist\QuickLingoUpdater.exe dist\QuickLingo\
 xcopy /E /I /Y config_data dist\QuickLingo\config_data
 ```
 

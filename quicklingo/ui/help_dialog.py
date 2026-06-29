@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from quicklingo.i18n import tr
+from quicklingo.version import __version__
 
 HELP_TOPICS = (
     "about",
@@ -53,7 +54,11 @@ class HelpDialog(QDialog):
 
     def retranslate_ui(self) -> None:
         self.setWindowTitle(tr(help_title_key(self._topic)))
-        self._body.setPlainText(tr(help_body_key(self._topic)))
+        body = tr(help_body_key(self._topic))
+        if self._topic == "about":
+            version_line = tr("help.about.version_line").format(version=__version__)
+            body = f"{version_line}\n\n{body}"
+        self._body.setPlainText(body)
         if self._close_btn is not None:
             self._close_btn.setText(tr("common.close"))
 

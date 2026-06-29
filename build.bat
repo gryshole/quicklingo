@@ -40,9 +40,20 @@ if errorlevel 1 (
 
 xcopy /E /I /Y "config_data" "dist\QuickLingo\config_data" >nul
 
+echo Building QuickLingoUpdater (onefile)...
+.venv\Scripts\pyinstaller --noconfirm --clean QuickLingoUpdater.spec
+if errorlevel 1 (
+    echo ERROR: Updater build failed.
+    pause
+    exit /b 1
+)
+
+copy /Y "dist\QuickLingoUpdater.exe" "dist\QuickLingo\QuickLingoUpdater.exe" >nul
+
 echo.
 echo === Build complete ===
 echo   dist\QuickLingo\QuickLingo.exe   ^<-- run THIS one
+echo   dist\QuickLingo\QuickLingoUpdater.exe
 echo   dist\QuickLingo\config_data\
 echo.
 echo IMPORTANT: Do NOT run build\QuickLingo\QuickLingo.exe — that folder has no _internal\.
