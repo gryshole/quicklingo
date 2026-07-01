@@ -14,6 +14,7 @@ from quicklingo.i18n import language_changed, tr
 from quicklingo.ui.settings.api_keys_tab import ApiKeysTab
 from quicklingo.ui.settings.directions_tab import DirectionsTab
 from quicklingo.ui.settings.features_tab import FeaturesTab
+from quicklingo.ui.settings.learning_features_tab import LearningFeaturesTab
 from quicklingo.ui.settings.formatters_tab import FormattersTab
 from quicklingo.ui.settings.glossary_tab import GlossaryTab
 from quicklingo.ui.settings.interface_tab import InterfaceTab
@@ -38,6 +39,7 @@ class SettingsDialog(QDialog):
         self._api_keys_tab = ApiKeysTab()
         self._models_tab = ModelsTab()
         self._features_tab = FeaturesTab()
+        self._learning_features_tab = LearningFeaturesTab()
         self._glossary_tab = GlossaryTab()
         self._usage_tab = UsageTab()
         self._directions_tab = DirectionsTab()
@@ -49,6 +51,7 @@ class SettingsDialog(QDialog):
             self._api_keys_tab,
             self._models_tab,
             self._features_tab,
+            self._learning_features_tab,
             self._directions_tab,
             self._profiles_tab,
             self._usage_tab,
@@ -59,7 +62,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._tabs)
 
         for tab in self._tab_widgets:
-            if tab not in (self._interface_tab, self._features_tab):
+            if tab not in (self._interface_tab, self._features_tab, self._learning_features_tab):
                 tab.config_saved.connect(self._on_config_saved)
         self._api_keys_tab.api_keys_saved.connect(self.api_keys_changed.emit)
 
@@ -87,6 +90,7 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(self._api_keys_tab, tr("settings.tab_api_keys"))
         self._tabs.addTab(self._models_tab, tr("settings.tab_models"))
         self._tabs.addTab(self._features_tab, tr("settings.tab_features"))
+        self._tabs.addTab(self._learning_features_tab, tr("settings.tab_learning"))
         self._tabs.addTab(self._directions_tab, tr("settings.tab_directions"))
         self._tabs.addTab(self._profiles_tab, tr("settings.tab_profiles"))
         self._tabs.addTab(self._usage_tab, tr("settings.tab_usage"))

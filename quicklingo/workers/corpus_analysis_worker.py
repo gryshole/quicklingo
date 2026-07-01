@@ -1,10 +1,13 @@
 import asyncio
+import json
 
 from PySide6.QtCore import QThread, Signal
 
 from quicklingo.db import learning
+from quicklingo.learning.card_prompt import enrich_card_fields
 from quicklingo.learning.corpus_analysis import (
     AnalysisSummary,
+    CorpusCandidate,
     build_analysis_prompt,
     format_summary_text,
     parse_analysis_response,
@@ -15,7 +18,7 @@ from quicklingo.providers.registry import ModelEntry
 
 
 class CorpusAnalysisWorker(QThread):
-    finished = Signal(int, str)
+    finished = Signal(int, str, dict)
     error = Signal(str)
     progress = Signal(str)
 
@@ -47,7 +50,7 @@ class CorpusAnalysisWorker(QThread):
 
     def run(self) -> None:
         try:
-            deck_id, summary_text = asyncio.run(self._analyze())
+            deck_id, summary_text, media_meta = asyncio.run(self._analyze())
         except Exception as exc:
             if self._cancelled:
                 return
@@ -55,9 +58,9 @@ class CorpusAnalysisWorker(QThread):
             return
         if self._cancelled:
             return
-        self.finished.emit(deck_id, summary_text)
+        self.finished.emit(deck_id, summary_text, media_meta)
 
-    async def _analyze(self) -> tuple[int, str]:
+    async def _analyze(self) -> tuple[int, str, dict]:
         candidates = select_candidates(
             self._records,
             max_candidates=self._max_candidates,
@@ -76,7 +79,7 @@ class CorpusAnalysisWorker(QThread):
                 difficult=difficult,
             )
             learning.update_deck_summary(deck.id, summary)
-            return deck.id, summary
+            return deck.id, summary, {"card_ids": [], "imageable": {}, "image_prompts": {}}
 
         all_cards: list[dict] = []
         summaries: list[AnalysisSummary] = []
@@ -88,14 +91,7 @@ class CorpusAnalysisWorker(QThread):
             if self._cancelled:
                 raise asyncio.CancelledError()
             self.progress.emit(f"Batch {index}/{len(batches)}")
-            prompt = build_analysis_prompt(batch, tag=self._tag, direction=self._direction)
-            raw = await self._model_entry.provider.complete(
-                "You are a language learning assistant. Output JSON only.",
-                prompt,
-                self._model_entry.model_id,
-                temperature=0.3,
-            )
-            cards, summary = parse_analysis_response(raw)
+            cards, summary = await self._analyze_batch(batch)
             all_cards.extend(cards)
             summaries.append(summary)
 
@@ -109,18 +105,84 @@ class CorpusAnalysisWorker(QThread):
         )
 
         prepared: list[dict] = []
+        sources = {candidate.record_id: candidate.source_text for candidate in candidates}
         for card in all_cards:
             if self._cancelled:
                 raise asyncio.CancelledError()
             front = str(card.get("front", "")).strip()
             back = str(card.get("back", "")).strip()
-            if front and back:
-                prepared.append(card)
-        learning.batch_upsert_cards(deck.id, prepared)
+            if not front or not back:
+                continue
+            item = dict(card)
+            if not item.get("imageable"):
+                item["image_prompt"] = ""
+            source_text = ""
+            record_id = item.get("source_record_id")
+            try:
+                if record_id is not None:
+                    source_text = sources.get(int(record_id), "")
+            except (TypeError, ValueError):
+                source_text = ""
+            prepared.append(
+                enrich_card_fields(
+                    item,
+                    direction=self._direction,
+                    source_text=source_text,
+                )
+            )
+
+        card_ids = learning.batch_upsert_cards(deck.id, prepared)
+        imageable: dict[int, bool] = {}
+        image_prompts: dict[int, str] = {}
+        for card_id, card in zip(card_ids, prepared[: len(card_ids)]):
+            imageable[card_id] = bool(card.get("imageable"))
+            prompt = str(card.get("image_prompt", "")).strip()
+            if prompt:
+                image_prompts[card_id] = prompt
 
         summary_text = format_summary_text(merged, difficult=difficult)
         learning.update_deck_summary(deck.id, summary_text)
-        return deck.id, summary_text
+        media_meta = {
+            "card_ids": card_ids,
+            "imageable": imageable,
+            "image_prompts": image_prompts,
+        }
+        return deck.id, summary_text, media_meta
+
+    async def _analyze_batch(
+        self, batch: list[CorpusCandidate]
+    ) -> tuple[list[dict], AnalysisSummary]:
+        try:
+            return await self._request_batch(batch)
+        except (json.JSONDecodeError, ValueError):
+            if len(batch) <= 1:
+                raise
+            mid = len(batch) // 2
+            left_cards, left_summary = await self._analyze_batch(batch[:mid])
+            right_cards, right_summary = await self._analyze_batch(batch[mid:])
+            merged_summary = AnalysisSummary(
+                themes=_merge_unique([left_summary.themes, right_summary.themes]),
+                recommended_daily_count=max(
+                    left_summary.recommended_daily_count,
+                    right_summary.recommended_daily_count,
+                ),
+                total_unique=len(left_cards) + len(right_cards),
+                comment=left_summary.comment or right_summary.comment,
+            )
+            return left_cards + right_cards, merged_summary
+
+    async def _request_batch(
+        self, batch: list[CorpusCandidate]
+    ) -> tuple[list[dict], AnalysisSummary]:
+        prompt = build_analysis_prompt(batch, tag=self._tag, direction=self._direction)
+        raw = await self._model_entry.provider.complete(
+            "You are a language learning assistant creating flashcards for active recall. "
+            "The learner must recall back without spoilers in hint. Output JSON only.",
+            prompt,
+            self._model_entry.model_id,
+            temperature=0.3,
+        )
+        return parse_analysis_response(raw)
 
 
 def _merge_unique(groups) -> list[str]:

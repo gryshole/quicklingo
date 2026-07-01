@@ -25,7 +25,7 @@ from quicklingo.features import get_feature, is_enabled
 from quicklingo.history.corpus_export import export_json, export_markdown
 from quicklingo.history.meeting_export import export_transcript_markdown, export_transcript_text
 from quicklingo.i18n import tr
-from quicklingo.ui.qt_utils import raise_window, reload_combo
+from quicklingo.ui.qt_utils import reload_combo
 from quicklingo.ui.table_styles import apply_data_table_style, style_cell_action_button
 from quicklingo.ui.tag_wizard_dialog import TagWizardDialog
 from quicklingo.ui.window_state import (
@@ -35,7 +35,6 @@ from quicklingo.ui.window_state import (
     save_table_columns,
     save_window_geometry,
 )
-from quicklingo.ui.word_frequency_window import WordFrequencyWindow
 
 
 _HISTORY_TABLE_WIDTHS = [130, 85, 110, 100, 150, 90, 36, 36]
@@ -48,7 +47,6 @@ class HistoryWindow(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         restore_window_geometry(self, "history", default_width=820, default_height=580)
-        self._word_freq_window: WordFrequencyWindow | None = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -95,8 +93,6 @@ class HistoryWindow(QDialog):
         self._export_btn.clicked.connect(self._export_history)
         self._transcript_btn = QPushButton()
         self._transcript_btn.clicked.connect(self._export_transcript)
-        self._word_freq_btn = QPushButton()
-        self._word_freq_btn.clicked.connect(self._open_word_frequency)
         self._edit_tags_btn = QPushButton()
         self._edit_tags_btn.clicked.connect(self._edit_selected_tags)
         self._tag_wizard_btn = QPushButton()
@@ -125,7 +121,6 @@ class HistoryWindow(QDialog):
 
         top_row = QHBoxLayout()
         top_row.addWidget(self._summary_label, stretch=1)
-        top_row.addWidget(self._word_freq_btn)
         top_row.addWidget(self._transcript_btn)
         top_row.addWidget(self._export_btn)
         top_row.addWidget(self._edit_tags_btn)
@@ -187,7 +182,6 @@ class HistoryWindow(QDialog):
         self._clear_btn.setText(tr("history.clear"))
         self._export_btn.setText(tr("history.export"))
         self._transcript_btn.setText(tr("history.export_transcript"))
-        self._word_freq_btn.setText(tr("history.word_frequency"))
         self._edit_tags_btn.setText(tr("history.edit_tags"))
         self._tag_wizard_btn.setText(tr("history.tag_wizard"))
         self._search_label.setText(tr("history.search_label"))
@@ -214,8 +208,6 @@ class HistoryWindow(QDialog):
         self._reload_model_filter()
         self._reload_tag_filter()
         self.refresh()
-        if self._word_freq_window is not None:
-            self._word_freq_window.retranslate_ui()
 
     def _reload_direction_filter(self) -> None:
         reload_combo(
@@ -250,7 +242,6 @@ class HistoryWindow(QDialog):
         show_export = is_enabled("history.export")
         show_phrasebook = is_enabled("learning.phrasebook")
         show_transcript = is_enabled("history.meeting_transcript")
-        show_word_freq = is_enabled("learning.word_frequency")
         self._search_label.setVisible(show_search)
         self._search_field.setVisible(show_search)
         self._direction_filter.setVisible(show_filters)
@@ -263,7 +254,6 @@ class HistoryWindow(QDialog):
         self._starred_only.setVisible(show_filters and show_phrasebook)
         self._export_btn.setVisible(show_export)
         self._transcript_btn.setVisible(show_transcript)
-        self._word_freq_btn.setVisible(show_word_freq)
         self._edit_tags_btn.setVisible(show_tags)
         self._tag_wizard_btn.setVisible(show_tags)
         self._table.setColumnHidden(5, not show_tags)
@@ -509,13 +499,6 @@ class HistoryWindow(QDialog):
             content = export_transcript_markdown(self._records, gap_minutes=gap)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(content)
-
-    def _open_word_frequency(self) -> None:
-        if not is_enabled("learning.word_frequency"):
-            return
-        if self._word_freq_window is None:
-            self._word_freq_window = WordFrequencyWindow(self)
-        raise_window(self._word_freq_window)
 
     def _reopen_selected(self) -> None:
         record = self._selected_record()

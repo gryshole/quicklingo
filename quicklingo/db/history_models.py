@@ -27,7 +27,7 @@ def parse_tags(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
-def format_tags(tags: list[str]) -> str:
+def normalize_tag_names(tags: list[str]) -> list[str]:
     cleaned: list[str] = []
     seen: set[str] = set()
     for tag in tags:
@@ -39,7 +39,11 @@ def format_tags(tags: list[str]) -> str:
             continue
         seen.add(key)
         cleaned.append(value)
-    return ", ".join(cleaned)
+    return cleaned
+
+
+def format_tags(tags: list[str]) -> str:
+    return ", ".join(normalize_tag_names(tags))
 
 
 def make_content_hash(source_text: str, direction: str, profile_id: str) -> str:
@@ -59,5 +63,5 @@ def row_to_record(row: sqlite3.Row) -> TranslationRecord:
         profile_id=row["profile_id"],
         content_hash=row["content_hash"],
         is_starred=bool(row["is_starred"]),
-        tags=row["tags"],
+        tags=row["tags"] or "",
     )

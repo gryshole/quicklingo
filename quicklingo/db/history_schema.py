@@ -15,6 +15,7 @@ def init_db() -> None:
         elif row[0] and "CHECK" in row[0].upper():
             _migrate_remove_direction_check(conn)
         _migrate_columns(conn)
+        _setup_tag_tables(conn)
         _setup_fts(conn)
         _ensure_indexes(conn)
     from quicklingo.db.learning import init_learning_tables
@@ -91,6 +92,18 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE translations ADD COLUMN tags TEXT NOT NULL DEFAULT ''"
         )
+
+
+def _setup_tag_tables(conn: sqlite3.Connection) -> None:
+    from quicklingo.db.history_tags import (
+        cleanup_orphan_tags,
+        init_tag_tables,
+        migrate_legacy_tags_column,
+    )
+
+    init_tag_tables(conn)
+    migrate_legacy_tags_column(conn)
+    cleanup_orphan_tags(conn)
 
 
 def _ensure_indexes(conn: sqlite3.Connection) -> None:

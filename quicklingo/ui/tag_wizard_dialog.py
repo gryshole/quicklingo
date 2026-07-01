@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -33,6 +33,8 @@ class TagWizardDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
+        self._scope_group_box = QGroupBox()
+        scope_layout = QVBoxLayout(self._scope_group_box)
         self._scope_visible = QRadioButton()
         self._scope_selected = QRadioButton()
         self._scope_group = QButtonGroup(self)
@@ -43,12 +45,12 @@ class TagWizardDialog(QDialog):
         else:
             self._scope_visible.setChecked(True)
             self._scope_selected.setEnabled(False)
-
-        scope_layout = QVBoxLayout()
         scope_layout.addWidget(self._scope_visible)
         scope_layout.addWidget(self._scope_selected)
-        layout.addLayout(scope_layout)
+        layout.addWidget(self._scope_group_box)
 
+        self._action_group_box = QGroupBox()
+        action_layout = QVBoxLayout(self._action_group_box)
         self._action_add = QRadioButton()
         self._action_replace = QRadioButton()
         self._action_remove = QRadioButton()
@@ -57,12 +59,10 @@ class TagWizardDialog(QDialog):
         self._action_group.addButton(self._action_replace, 1)
         self._action_group.addButton(self._action_remove, 2)
         self._action_add.setChecked(True)
-
-        action_layout = QVBoxLayout()
         action_layout.addWidget(self._action_add)
         action_layout.addWidget(self._action_replace)
         action_layout.addWidget(self._action_remove)
-        layout.addLayout(action_layout)
+        layout.addWidget(self._action_group_box)
 
         tags_row = QHBoxLayout()
         self._tags_field = QLineEdit()
@@ -96,6 +96,8 @@ class TagWizardDialog(QDialog):
 
     def retranslate_ui(self) -> None:
         self.setWindowTitle(tr("history.tag_wizard_title"))
+        self._scope_group_box.setTitle(tr("history.tag_wizard_scope_group"))
+        self._action_group_box.setTitle(tr("history.tag_wizard_action_group"))
         self._scope_visible.setText(
             tr("history.tag_wizard_scope_visible", count=self._visible_count)
         )

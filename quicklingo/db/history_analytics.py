@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from quicklingo.config.loader import resolve_learning_direction
 from quicklingo.db.connection import get_connection
-from quicklingo.db.history_models import parse_tags
 
 
 def get_translation_stats() -> dict[str, int]:
@@ -21,10 +21,11 @@ def get_translation_stats() -> dict[str, int]:
     stats: dict[str, int] = {"total": total, "ua_en": 0, "en_ua": 0}
     for row in by_direction:
         stats[row["direction"]] = row["cnt"]
-        if row["direction"] == "ua-en":
-            stats["ua_en"] = row["cnt"]
-        elif row["direction"] == "en-ua":
-            stats["en_ua"] = row["cnt"]
+        kind = resolve_learning_direction(row["direction"])
+        if kind == "ua-en":
+            stats["ua_en"] += row["cnt"]
+        elif kind == "en-ua":
+            stats["en_ua"] += row["cnt"]
     return stats
 
 
@@ -91,14 +92,13 @@ def get_model_counts() -> list[tuple[str, int]]:
 
 def get_distinct_tags() -> list[str]:
     rows = get_connection().execute(
-        "SELECT tags FROM translations WHERE tags != ''"
+        """
+        SELECT MIN(tg.name) AS name
+        FROM tags tg
+        INNER JOIN translation_tags tt ON tt.tag_id = tg.id
+        INNER JOIN translations t ON t.id = tt.translation_id
+        GROUP BY lower(trim(tg.name))
+        ORDER BY lower(trim(tg.name))
+        """
     ).fetchall()
-    found: set[str] = set()
-    result: list[str] = []
-    for row in rows:
-        for tag in parse_tags(row["tags"]):
-            key = tag.lower()
-            if key not in found:
-                found.add(key)
-                result.append(tag)
-    return sorted(result, key=str.lower)
+    return [str(row["name"]) for row in rows]

@@ -46,9 +46,13 @@ from quicklingo.config.loader import (
 
     resolve_active_profile_id,
 
+    resolve_learning_direction,
+
 )
 
 
+from quicklingo import settings
+from quicklingo.db import history
 from quicklingo.features import feature_changed, is_enabled, save_features
 
 from quicklingo.i18n import tr, translate_message
@@ -59,12 +63,16 @@ from quicklingo.input.tutor_capture_log import log_debug
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.providers.setup_info import PROVIDER_HINT_KEYS, provider_needs_api_key
 
-from quicklingo import settings
-
 from quicklingo.ui.controllers.translation_controller import TranslationController
 from quicklingo.ui.controllers.tutor_input import append_character, backspace as tutor_backspace
 from quicklingo.ui.controllers.update_controller import UpdateController
-from quicklingo.ui.qt_utils import open_help, raise_window, reload_combo
+from quicklingo.ui.qt_utils import (
+    configure_single_line_combo,
+    labeled_combo_row,
+    open_help,
+    raise_window,
+    reload_combo,
+)
 from quicklingo.ui.history_window import HistoryWindow
 from quicklingo.ui.dashboard_window import DashboardWindow
 from quicklingo.ui.learning_window import LearningWindow
@@ -169,6 +177,8 @@ class MainWindow(QMainWindow):
 
         self._model_combo.currentIndexChanged.connect(lambda _: self._check_api_key())
 
+        configure_single_line_combo(self._model_combo)
+
         self._reload_model_combo()
 
 
@@ -186,6 +196,18 @@ class MainWindow(QMainWindow):
         self._profile_combo = QComboBox()
 
         self._profile_combo.currentIndexChanged.connect(self._on_profile_changed)
+
+        configure_single_line_combo(self._profile_combo)
+
+
+
+        self._tag_label = QLabel()
+
+        self._tag_combo = QComboBox()
+
+        self._tag_combo.setEditable(True)
+
+        self._reload_tag_combo()
 
 
 
@@ -272,9 +294,7 @@ class MainWindow(QMainWindow):
 
 
 
-        layout.addWidget(self._model_label)
-
-        layout.addWidget(self._model_combo)
+        layout.addLayout(labeled_combo_row(self._model_label, self._model_combo))
 
         layout.addWidget(self._direction_label)
 
@@ -294,9 +314,9 @@ class MainWindow(QMainWindow):
 
 
 
-        layout.addWidget(self._profile_label)
+        layout.addLayout(labeled_combo_row(self._profile_label, self._profile_combo))
 
-        layout.addWidget(self._profile_combo)
+        layout.addLayout(labeled_combo_row(self._tag_label, self._tag_combo))
 
         layout.addLayout(self._input_header)
 
@@ -330,6 +350,8 @@ class MainWindow(QMainWindow):
 
         self._check_api_key()
 
+        self._apply_tag_visibility()
+
         self._restore_window_geometry()
 
 
@@ -343,6 +365,8 @@ class MainWindow(QMainWindow):
         self._direction_label.setText(tr("main.direction_label"))
 
         self._profile_label.setText(tr("main.profile_label"))
+
+        self._tag_label.setText(tr("main.tag_label"))
 
         self._refresh_input_label()
         self._input_field.setPlaceholderText(tr("main.input_placeholder"))
@@ -462,6 +486,8 @@ class MainWindow(QMainWindow):
     def apply_features(self) -> None:
 
         self._apply_window_features()
+
+        self._apply_tag_visibility()
 
         self._output_field.set_text_selectable(True)
 
@@ -1078,6 +1104,8 @@ class MainWindow(QMainWindow):
 
         self._history_window.refresh()
 
+        self._reload_tag_combo()
+
         raise_window(self._history_window)
 
     def _open_learning(self) -> None:
@@ -1108,7 +1136,7 @@ class MainWindow(QMainWindow):
         if self._learning_window is None:
             self._learning_window = LearningWindow(self)
             self._learning_window.finished.connect(self._on_learning_closed)
-        if direction == "en-ua":
+        if resolve_learning_direction(direction) == "en-ua":
             front, back = word, source.strip()
         else:
             front, back = source.strip() or word, word
@@ -1170,6 +1198,60 @@ class MainWindow(QMainWindow):
     def _on_history_closed(self) -> None:
 
         self._history_window = None
+
+        self._reload_tag_combo()
+
+
+
+    def _current_tag(self) -> str:
+
+        if not is_enabled("history.tags"):
+
+            return ""
+
+        return self._tag_combo.currentText().strip()
+
+
+
+    def _reload_tag_combo(self) -> None:
+
+        if not is_enabled("history.tags"):
+
+            return
+
+        current = self._tag_combo.currentText()
+
+        self._tag_combo.blockSignals(True)
+
+        self._tag_combo.clear()
+
+        self._tag_combo.addItem("")
+
+        for tag in history.get_distinct_tags():
+
+            self._tag_combo.addItem(tag)
+
+        index = self._tag_combo.findText(current)
+
+        if index >= 0:
+
+            self._tag_combo.setCurrentIndex(index)
+
+        else:
+
+            self._tag_combo.setEditText(current)
+
+        self._tag_combo.blockSignals(False)
+
+
+
+    def _apply_tag_visibility(self) -> None:
+
+        show = is_enabled("history.tags")
+
+        self._tag_label.setVisible(show)
+
+        self._tag_combo.setVisible(show)
 
 
 
@@ -1392,6 +1474,8 @@ class MainWindow(QMainWindow):
         self._model_combo.setEnabled(not busy)
 
         self._profile_combo.setEnabled(not busy)
+
+        self._tag_combo.setEnabled(not busy)
 
         self._swap_direction_btn.setEnabled(not busy)
 

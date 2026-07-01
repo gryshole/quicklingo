@@ -161,13 +161,17 @@ class TranslationController:
         from_cache = self._pending_from_cache
         self._window._show_result(result, self._pending_direction, self._pending_profile_id)
         if is_enabled("history.auto_save") and not from_cache:
+            tag = self._window._current_tag()
             history.save_translation(
                 self._pending_direction,
                 self._pending_source,
                 result,
                 self._pending_model_id,
                 profile_id=self._pending_profile_id,
+                tags=[tag] if tag else None,
             )
+            if tag and is_enabled("history.tags"):
+                self._window._reload_tag_combo()
         if is_enabled("ui.auto_copy_result"):
             QGuiApplication.clipboard().setText(result)
         if self._replace_after_translate:

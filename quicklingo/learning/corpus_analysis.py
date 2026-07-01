@@ -6,8 +6,13 @@ from dataclasses import dataclass
 
 from quicklingo.db import history
 from quicklingo.learning.difficult_words import DifficultItem, compute_difficult_words
+from quicklingo.learning.text_normalize import normalize_source as _normalize_source
 
 _WORD_RE = re.compile(r"[\w']+", re.UNICODE)
+_CARD_OBJECT_RE = re.compile(
+    r'\{\s*"front"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*"back"\s*:\s*"(?:[^"\\]|\\.)*"[^}]*\}',
+    re.DOTALL,
+)
 
 
 @dataclass
@@ -120,34 +125,87 @@ def select_candidates(
 
 
 def build_analysis_prompt(candidates: list[CorpusCandidate], *, tag: str, direction: str) -> str:
-    lines = [
-        "You analyze translation history from a TV series / immersion corpus.",
-        f"Corpus tag: {tag}",
-        f"Direction: {direction}",
-        "Return ONLY valid JSON with this schema:",
-        '{"cards":[{"front":"...","back":"...","context":"...","priority":1-5,"source_record_id":123}],',
-        '"summary":{"themes":["..."],"recommended_daily_count":20,"total_unique":0,"comment":"..."}}',
-        "Create concise flashcards from the items below. front=term in source language, back=translation.",
-        "Merge duplicates. priority 5 = most important for a learner.",
-        "Items:",
-    ]
-    for index, candidate in enumerate(candidates, start=1):
-        lines.append(
-            f"{index}. id={candidate.record_id} [{candidate.reason}] "
-            f"source={candidate.source_text!r} result={candidate.result_text!r}"
-        )
-    return "\n".join(lines)
+    from quicklingo.learning.card_prompt import build_card_analysis_prompt
+
+    return build_card_analysis_prompt(candidates, tag=tag, direction=direction)
+
+
+def _strip_code_fence(text: str) -> str:
+    text = text.strip()
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _extract_json_object(text: str) -> str:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        return text[start : end + 1]
+    return text
+
+
+def _salvage_truncated_json(text: str, error: json.JSONDecodeError) -> dict:
+    """Best-effort recovery when the model returns truncated JSON."""
+    cut = text[: error.pos].rstrip() if error.pos else text.rstrip()
+    while cut and cut[-1] not in "}]":
+        cut = cut[:-1]
+    cut = cut.rstrip().rstrip(",")
+    if not cut or cut.endswith("{"):
+        raise error
+    if '"cards"' in cut:
+        if not cut.rstrip().endswith("]"):
+            cut += (
+                '], "summary": {"themes": [], "recommended_daily_count": 20, '
+                '"total_unique": 0, "comment": "Partial response (truncated)."}}'
+            )
+        elif cut.count("{") > cut.count("}"):
+            cut += "}"
+    elif cut.count("{") > cut.count("}"):
+        cut += "}"
+    return json.loads(cut)
+
+
+def _salvage_cards_regex(text: str) -> dict:
+    cards: list[dict] = []
+    for match in _CARD_OBJECT_RE.finditer(text):
+        try:
+            card = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(card, dict) and card.get("front") and card.get("back"):
+            cards.append(card)
+    if not cards:
+        raise ValueError("no cards recovered")
+    return {
+        "cards": cards,
+        "summary": {
+            "themes": [],
+            "recommended_daily_count": 20,
+            "total_unique": len(cards),
+            "comment": "Partial response (recovered cards).",
+        },
+    }
+
+
+def _load_json_from_llm(raw: str) -> dict:
+    text = _extract_json_object(_strip_code_fence(raw))
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        try:
+            return _salvage_truncated_json(text, exc)
+        except json.JSONDecodeError:
+            return _salvage_cards_regex(text)
 
 
 def parse_analysis_response(raw: str) -> tuple[list[dict], AnalysisSummary]:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text[3:]
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.lstrip()
-        text = text.removesuffix("```").rstrip()
-    data = json.loads(text)
+    data = _load_json_from_llm(raw)
     cards = data.get("cards", [])
     summary_raw = data.get("summary", {})
     summary = AnalysisSummary(
@@ -173,9 +231,6 @@ def format_summary_text(summary: AnalysisSummary, *, difficult: list[DifficultIt
         preview = ", ".join(item.term for item in difficult[:12])
         lines.append(f"Difficult (local): {preview}")
     return "\n".join(lines)
-
-
-from quicklingo.learning.text_normalize import normalize_source as _normalize_source
 
 
 def _top_tokens_from_records(

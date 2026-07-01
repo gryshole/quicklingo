@@ -17,6 +17,7 @@ from quicklingo import settings
 from quicklingo.db import history
 from quicklingo.features import is_enabled
 from quicklingo.i18n import tr
+from quicklingo.learning.review_queue import count_due_today_all_decks
 from quicklingo.ui.window_state import restore_window_geometry, save_window_geometry
 
 
@@ -70,6 +71,10 @@ class DashboardWindow(QDialog):
         if is_enabled("learning.streak"):
             streak, _last = settings.get_learning_streak()
             parts.append(tr("dashboard.streak", streak=streak))
+        if is_enabled("learning.daily_review"):
+            due = count_due_today_all_decks()
+            if due:
+                parts.append(tr("dashboard.due_cards", count=due))
         self._summary_label.setText("  ·  ".join(parts))
 
     def _build_daily_chart(self) -> None:

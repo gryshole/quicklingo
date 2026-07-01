@@ -6,10 +6,14 @@ import io
 from quicklingo.db.connection import connection, get_connection
 from quicklingo.db.history_models import (
     TranslationRecord,
-    format_tags,
     make_content_hash,
-    parse_tags,
+    normalize_tag_names,
     row_to_record,
+)
+from quicklingo.db.history_tags import (
+    get_translation_tag_names,
+    set_translation_tags,
+    tags_subquery_sql,
 )
 
 
@@ -28,6 +32,7 @@ def save_translation(
     *,
     profile_id: str = "",
     content_hash: str = "",
+    tags: list[str] | None = None,
 ) -> int:
     _validate_direction(direction)
     if not content_hash:
@@ -41,7 +46,10 @@ def save_translation(
             """,
             (direction, source_text, result_text, model, profile_id, content_hash),
         )
-    return cursor.lastrowid or 0
+        record_id = int(cursor.lastrowid or 0)
+        if tags:
+            set_translation_tags(conn, record_id, tags)
+    return record_id
 
 
 def find_cached(
@@ -100,9 +108,17 @@ def search_records(
 
     if tag:
         clauses.append(
-            "(t.tags = ? OR t.tags LIKE ? || ',%' OR t.tags LIKE '%,' || ? OR t.tags LIKE '%,' || ? || ',%')"
+            """
+            EXISTS (
+                SELECT 1
+                FROM translation_tags tt
+                JOIN tags tg ON tg.id = tt.tag_id
+                WHERE tt.translation_id = t.id
+                  AND lower(trim(tg.name)) = lower(trim(?))
+            )
+            """
         )
-        params.extend([tag, tag, tag, tag])
+        params.append(tag)
 
     if date_from:
         clauses.append("date(t.created_at) >= date(?)")
@@ -123,7 +139,8 @@ def search_records(
 
     sql = f"""
         SELECT t.id, t.created_at, t.direction, t.source_text, t.result_text,
-               t.model, t.profile_id, t.content_hash, t.is_starred, t.tags
+               t.model, t.profile_id, t.content_hash, t.is_starred,
+               COALESCE({tags_subquery_sql()}, '') AS tags
         FROM translations t
         WHERE {' AND '.join(clauses)}
         ORDER BY t.id DESC
@@ -180,6 +197,17 @@ def delete_by_id(record_id: int) -> bool:
     return cursor.rowcount > 0
 
 
+def get_source_text(record_id: int) -> str:
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT source_text FROM translations WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+    if row is None:
+        return ""
+    return str(row["source_text"] or "").strip()
+
+
 def set_starred(record_id: int, starred: bool) -> bool:
     with connection() as conn:
         cursor = conn.execute(
@@ -190,13 +218,15 @@ def set_starred(record_id: int, starred: bool) -> bool:
 
 
 def set_tags(record_id: int, tags: list[str]) -> bool:
-    value = format_tags(tags)
     with connection() as conn:
-        cursor = conn.execute(
-            "UPDATE translations SET tags = ? WHERE id = ?",
-            (value, record_id),
-        )
-    return cursor.rowcount > 0
+        row = conn.execute(
+            "SELECT id FROM translations WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        set_translation_tags(conn, record_id, tags)
+    return True
 
 
 def bulk_apply_tags(
@@ -210,32 +240,32 @@ def bulk_apply_tags(
         return 0
     add_tags = add or []
     remove_tags = {tag.strip().lower() for tag in remove or [] if tag.strip()}
-    conn = get_connection()
-    placeholders = ",".join("?" * len(record_ids))
-    rows = conn.execute(
-        f"SELECT id, tags FROM translations WHERE id IN ({placeholders})",
-        record_ids,
-    ).fetchall()
-    updates: list[tuple[str, int]] = []
-    for row in rows:
-        record_id = row["id"]
-        if replace is not None:
-            new_tags = format_tags(replace)
-        else:
-            current = parse_tags(row["tags"])
-            if add_tags:
-                current = parse_tags(format_tags(current + add_tags))
-            if remove_tags:
-                current = [tag for tag in current if tag.lower() not in remove_tags]
-            new_tags = format_tags(current)
-        if new_tags == (row["tags"] or ""):
-            continue
-        updates.append((new_tags, record_id))
-    if not updates:
-        return 0
+    updated = 0
     with connection() as conn:
-        conn.executemany("UPDATE translations SET tags = ? WHERE id = ?", updates)
-    return len(updates)
+        placeholders = ",".join("?" * len(record_ids))
+        rows = conn.execute(
+            f"SELECT id FROM translations WHERE id IN ({placeholders})",
+            record_ids,
+        ).fetchall()
+        for row in rows:
+            record_id = int(row["id"])
+            if replace is not None:
+                new_tags = normalize_tag_names(replace)
+            else:
+                current = get_translation_tag_names(conn, record_id)
+                if add_tags:
+                    current = normalize_tag_names(current + add_tags)
+                if remove_tags:
+                    current = [
+                        tag for tag in current if tag.lower() not in remove_tags
+                    ]
+                new_tags = current
+            before = get_translation_tag_names(conn, record_id)
+            if before == new_tags:
+                continue
+            set_translation_tags(conn, record_id, new_tags)
+            updated += 1
+    return updated
 
 
 def export_csv(records: list[TranslationRecord] | None = None) -> str:

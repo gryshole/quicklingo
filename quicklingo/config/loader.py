@@ -13,6 +13,9 @@ _DIRECTIONS: dict[str, Direction] = {}
 _PROFILES: dict[str, Profile] = {}
 _FORMATTERS: dict[str, FormatterDef] = {}
 
+_UK_LANG_CODES = frozenset({"uk", "ua", "ukr", "ukrainian"})
+_EN_LANG_CODES = frozenset({"en", "eng", "english"})
+
 
 def reload_config() -> None:
     global _DIRECTIONS, _PROFILES, _FORMATTERS
@@ -141,6 +144,38 @@ def get_direction(direction_id: str) -> Direction | None:
 def get_direction_label(direction_id: str) -> str:
     direction = get_direction(direction_id)
     return direction.label if direction else direction_id
+
+
+def _normalize_lang_code(code: str) -> str:
+    cleaned = code.strip().lower()
+    if cleaned in _UK_LANG_CODES:
+        return "uk"
+    if cleaned in _EN_LANG_CODES:
+        return "en"
+    return cleaned
+
+
+def resolve_learning_direction(direction_id: str) -> str:
+    """Map any direction id to canonical learning kind: ua-en or en-ua."""
+    if direction_id in ("ua-en", "en-ua"):
+        return direction_id
+
+    direction = get_direction(direction_id)
+    if direction:
+        source = _normalize_lang_code(direction.source_lang)
+        target = _normalize_lang_code(direction.target_lang)
+        if source == "uk" and target == "en":
+            return "ua-en"
+        if source == "en" and target == "uk":
+            return "en-ua"
+
+    normalized_id = direction_id.lower().replace("_", "-")
+    if normalized_id.startswith(("en-ua", "en-uk")):
+        return "en-ua"
+    if normalized_id.startswith(("ua-en", "uk-en")):
+        return "ua-en"
+
+    return "ua-en"
 
 
 def get_profile(profile_id: str) -> Profile | None:

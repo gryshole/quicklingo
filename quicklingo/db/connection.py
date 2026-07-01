@@ -28,6 +28,7 @@ def get_connection() -> sqlite3.Connection:
         if not _wal_initialized:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA foreign_keys=ON")
             _wal_initialized = True
     return conn
 

@@ -1,10 +1,11 @@
-from PySide6.QtCore import Qt
 from pathlib import Path
+
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QHeaderView,
     QTabWidget,
@@ -19,18 +21,22 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
-from quicklingo.config.loader import get_direction_label, get_directions
+from quicklingo import settings
+from quicklingo.config.loader import get_direction_label, get_directions, resolve_learning_direction
 from quicklingo.db import history, learning
 from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.anki_export import export_anki_apkg, export_anki_csv
+from quicklingo.learning.card_display import parse_context, serialize_context
 from quicklingo.learning.corpus_analysis import select_candidates
 from quicklingo.learning.difficult_words import compute_difficult_words
-from quicklingo import settings
+from quicklingo.learning.review_queue import card_bucket, count_due_cards
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
-from quicklingo.ui.qt_utils import reload_combo
+from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
+from quicklingo.ui.widgets.review_session import ReviewSessionWidget
 from quicklingo.ui.window_state import (
     bind_table_columns_persistence,
     restore_table_columns,
@@ -38,10 +44,62 @@ from quicklingo.ui.window_state import (
     save_table_columns,
     save_window_geometry,
 )
+from quicklingo.workers.card_media_worker import CardMediaWorker
 from quicklingo.workers.corpus_analysis_worker import CorpusAnalysisWorker
 
 
-_LEARNING_CARDS_TABLE_WIDTHS = [140, 140, 220, 80]
+_LEARNING_CARDS_TABLE_WIDTHS = [140, 140, 100, 160, 80, 52]
+_LEARNING_CARDS_PRIORITY_WIDTH = 52
+
+
+class _CardEditDialog(QDialog):
+    def __init__(self, card: learning.LearningCard, *, direction: str = "ua-en", parent=None) -> None:
+        super().__init__(parent)
+        self._direction = direction
+        self._learning_kind = resolve_learning_direction(direction)
+        self.setWindowTitle(tr("learning.edit_card_title"))
+        layout = QFormLayout(self)
+        self._front = QLineEdit(card.front)
+        self._back = QLineEdit(card.back)
+        if self._learning_kind == "ua-en" or self._learning_kind == "en-ua":
+            examples = parse_context(card.context, direction=direction)
+            self._context = QPlainTextEdit("\n".join(examples))
+            self._context.setMaximumHeight(90)
+            self._context.setPlaceholderText("One English example sentence per line")
+        else:
+            self._context = QLineEdit(card.context)
+        self._hint = QLineEdit(card.hint)
+        self._notes = QTextEdit(card.notes)
+        self._notes.setMaximumHeight(80)
+        layout.addRow(tr("learning.card_front"), self._front)
+        layout.addRow(tr("learning.card_back"), self._back)
+        layout.addRow(tr("learning.card_context"), self._context)
+        layout.addRow(tr("learning.card_hint"), self._hint)
+        layout.addRow(tr("learning.card_notes"), self._notes)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    def values(self) -> dict[str, str]:
+        if self._learning_kind in ("ua-en", "en-ua"):
+            lines = [
+                line.strip()
+                for line in self._context.toPlainText().splitlines()
+                if line.strip()
+            ]
+            context = serialize_context(lines, direction=self._direction)
+        else:
+            context = self._context.text().strip()
+        return {
+            "front": self._front.text().strip(),
+            "back": self._back.text().strip(),
+            "context": context,
+            "hint": self._hint.text().strip(),
+            "notes": self._notes.toPlainText().strip(),
+        }
 
 
 class LearningWindow(QDialog):
@@ -49,10 +107,8 @@ class LearningWindow(QDialog):
         super().__init__(parent)
         restore_window_geometry(self, "learning", default_width=860, default_height=640)
         self._worker: CorpusAnalysisWorker | None = None
+        self._media_worker: CardMediaWorker | None = None
         self._current_deck_id: int | None = None
-        self._review_cards: list[learning.LearningCard] = []
-        self._review_index = 0
-        self._showing_back = False
 
         layout = QVBoxLayout(self)
         self._tabs = QTabWidget()
@@ -64,29 +120,27 @@ class LearningWindow(QDialog):
         self._tabs.addTab(self._analyze_tab, "")
         self._tabs.addTab(self._cards_tab, "")
         self._tabs.addTab(self._review_tab, "")
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         layout.addWidget(self._tabs)
-        cards_header = self._cards_table.horizontalHeader()
-        cards_header.setMinimumSectionSize(48)
-        for col in range(3):
-            cards_header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-        cards_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         restore_table_columns(
             self._cards_table,
             "learning",
             "cards",
             default_widths=_LEARNING_CARDS_TABLE_WIDTHS,
         )
+        self._configure_cards_table_columns()
         bind_table_columns_persistence(self._cards_table, "learning", "cards")
         self.retranslate_ui()
         self._reload_tags()
         self._reload_decks()
 
-    def _build_analyze_tab(self) -> QDialog:
-        widget = QDialog()
+    def _build_analyze_tab(self) -> QWidget:
+        widget = QWidget()
         layout = QVBoxLayout(widget)
 
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
         self._tag_combo = QComboBox()
         self._tag_combo.setEditable(True)
         self._direction_combo = QComboBox()
@@ -94,6 +148,7 @@ class LearningWindow(QDialog):
             self._direction_combo.addItem(direction.label, direction.id)
         self._starred_only = QCheckBox()
         self._model_combo = QComboBox()
+        configure_single_line_combo(self._model_combo)
         self._reload_model_combo()
         self._tag_label = QLabel()
         self._direction_label = QLabel()
@@ -133,77 +188,54 @@ class LearningWindow(QDialog):
         layout.addWidget(self._summary_field, stretch=1)
         return widget
 
-    def _build_cards_tab(self) -> QDialog:
-        widget = QDialog()
+    def _build_cards_tab(self) -> QWidget:
+        widget = QWidget()
         layout = QVBoxLayout(widget)
         top = QHBoxLayout()
         self._deck_combo = QComboBox()
         self._deck_combo.currentIndexChanged.connect(self._load_cards)
         self._export_btn = QPushButton()
         self._export_btn.clicked.connect(self._export_anki)
+        self._edit_card_btn = QPushButton()
+        self._edit_card_btn.clicked.connect(self._edit_selected_card)
+        self._media_btn = QPushButton()
+        self._media_btn.clicked.connect(self._generate_media_for_deck)
         self._delete_card_btn = QPushButton()
         self._delete_card_btn.clicked.connect(self._delete_selected_card)
+        self._delete_deck_btn = QPushButton()
+        self._delete_deck_btn.clicked.connect(self._delete_selected_deck)
         self._deck_label = QLabel()
         top.addWidget(self._deck_label)
         top.addWidget(self._deck_combo, stretch=1)
         top.addWidget(self._export_btn)
+        top.addWidget(self._edit_card_btn)
+        top.addWidget(self._media_btn)
         top.addWidget(self._delete_card_btn)
+        top.addWidget(self._delete_deck_btn)
         layout.addLayout(top)
 
-        self._cards_table = QTableWidget(0, 4)
+        self._cards_table = QTableWidget(0, 6)
         self._cards_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._cards_table.horizontalHeader().setStretchLastSection(True)
+        self._cards_table.doubleClicked.connect(self._edit_selected_card)
+        self._cards_table.horizontalHeader().setStretchLastSection(False)
         layout.addWidget(self._cards_table, stretch=1)
         return widget
 
-    def _build_review_tab(self) -> QDialog:
-        widget = QDialog()
+    def _build_review_tab(self) -> QWidget:
+        widget = QWidget()
         layout = QVBoxLayout(widget)
         top = QHBoxLayout()
         self._review_deck_combo = QComboBox()
-        self._review_deck_combo.currentIndexChanged.connect(self._reset_review)
-        self._start_review_btn = QPushButton()
-        self._start_review_btn.clicked.connect(self._start_review)
+        self._review_deck_combo.currentIndexChanged.connect(self._on_review_deck_changed)
         self._review_deck_label = QLabel()
         top.addWidget(self._review_deck_label)
         top.addWidget(self._review_deck_combo, stretch=1)
-        top.addWidget(self._start_review_btn)
         layout.addLayout(top)
-
-        self._streak_label = QLabel()
-        self._review_progress = QLabel()
-        self._review_front = QTextEdit()
-        self._review_front.setReadOnly(True)
-        self._review_back = QTextEdit()
-        self._review_back.setReadOnly(True)
-        self._review_back.setVisible(False)
-
-        btn_row = QHBoxLayout()
-        self._show_answer_btn = QPushButton()
-        self._show_answer_btn.clicked.connect(self._show_answer)
-        self._again_btn = QPushButton()
-        self._again_btn.clicked.connect(lambda: self._submit_grade(1))
-        self._hard_btn = QPushButton()
-        self._hard_btn.clicked.connect(lambda: self._submit_grade(2))
-        self._good_btn = QPushButton()
-        self._good_btn.clicked.connect(lambda: self._submit_grade(3))
-        self._easy_btn = QPushButton()
-        self._easy_btn.clicked.connect(lambda: self._submit_grade(4))
-        self._again_btn.setVisible(False)
-        self._hard_btn.setVisible(False)
-        self._good_btn.setVisible(False)
-        self._easy_btn.setVisible(False)
-        btn_row.addWidget(self._show_answer_btn)
-        btn_row.addWidget(self._again_btn)
-        btn_row.addWidget(self._hard_btn)
-        btn_row.addWidget(self._good_btn)
-        btn_row.addWidget(self._easy_btn)
-        btn_row.addStretch()
-        layout.addWidget(self._streak_label)
-        layout.addWidget(self._review_progress)
-        layout.addWidget(self._review_front, stretch=1)
-        layout.addWidget(self._review_back, stretch=1)
-        layout.addLayout(btn_row)
+        self._review_session = ReviewSessionWidget()
+        self._review_session.grade_submitted.connect(self._review_session.update_streak)
+        self._review_session.session_finished.connect(self._review_session.update_streak)
+        self._review_session.session_finished.connect(self._refresh_deck_combo_due_counts)
+        layout.addWidget(self._review_session, stretch=1)
         return widget
 
     def retranslate_ui(self) -> None:
@@ -222,21 +254,35 @@ class LearningWindow(QDialog):
         self._summary_title.setText(tr("learning.analysis_summary"))
         self._deck_label.setText(tr("learning.deck"))
         self._export_btn.setText(tr("learning.export_anki"))
+        self._edit_card_btn.setText(tr("learning.edit_card"))
+        self._media_btn.setText(tr("learning.generate_media"))
         self._delete_card_btn.setText(tr("learning.delete_card"))
+        self._delete_deck_btn.setText(tr("learning.delete_deck"))
         self._cards_table.setHorizontalHeaderLabels(
-            [tr("learning.card_front"), tr("learning.card_back"), tr("learning.card_context"), tr("learning.card_priority")]
+            [
+                tr("learning.card_front"),
+                tr("learning.card_back"),
+                tr("learning.card_hint"),
+                tr("learning.card_notes"),
+                tr("learning.card_status"),
+                tr("learning.card_priority"),
+            ]
         )
         self._review_deck_label.setText(tr("learning.deck"))
-        self._start_review_btn.setText(tr("learning.start_review"))
-        self._show_answer_btn.setText(tr("learning.show_answer"))
-        self._again_btn.setText(tr("learning.review_again"))
-        self._hard_btn.setText(tr("learning.review_hard"))
-        self._good_btn.setText(tr("learning.review_good"))
-        self._easy_btn.setText(tr("learning.review_easy"))
-        self._update_streak_label()
+        self._review_session.retranslate_ui()
+
+    def _configure_cards_table_columns(self) -> None:
+        header = self._cards_table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setMinimumSectionSize(40)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(5, min(header.sectionSize(5), _LEARNING_CARDS_PRIORITY_WIDTH))
 
     def _reload_model_combo(self) -> None:
         current = self._model_combo.currentData() if self._model_combo.count() else None
+        if current is None:
+            stored_model, _ = settings.get_ui_preferences()
+            current = stored_model
         reload_combo(
             self._model_combo,
             [(entry.model_id, entry.display_name) for entry in get_model_entries()],
@@ -268,7 +314,8 @@ class LearningWindow(QDialog):
             combo.blockSignals(True)
             combo.clear()
             for deck in decks:
-                label = f"{deck.name} ({get_direction_label(deck.direction)})"
+                due = count_due_cards(deck.id)
+                label = f"{deck.name} ({get_direction_label(deck.direction)}) · {due}"
                 combo.addItem(label, deck.id)
             if current is not None:
                 index = combo.findData(current)
@@ -279,6 +326,31 @@ class LearningWindow(QDialog):
             index = self._deck_combo.findData(self._current_deck_id)
             if index >= 0:
                 self._deck_combo.setCurrentIndex(index)
+        self._load_cards()
+        self._on_review_deck_changed()
+
+    def _refresh_deck_combo_due_counts(self) -> None:
+        for combo in (self._deck_combo, self._review_deck_combo):
+            for index in range(combo.count()):
+                deck_id = combo.itemData(index)
+                deck = learning.get_deck(deck_id)
+                if deck is None:
+                    continue
+                due = count_due_cards(deck.id)
+                label = f"{deck.name} ({get_direction_label(deck.direction)}) · {due}"
+                combo.setItemText(index, label)
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == 1:
+            self._load_cards()
+        if index == 2:
+            self._on_review_deck_changed()
+
+    def _on_review_deck_changed(self) -> None:
+        deck_id = self._review_deck_combo.currentData()
+        deck = learning.get_deck(deck_id) if deck_id else None
+        direction = deck.direction if deck else "ua-en"
+        self._review_session.set_deck(deck_id, direction=direction)
 
     def _corpus_records(self) -> list[history.TranslationRecord]:
         tag = self._tag_combo.currentText().strip()
@@ -345,7 +417,7 @@ class LearningWindow(QDialog):
         if self._worker is not None and self._worker.isRunning():
             self._worker.cancel()
 
-    def _on_analysis_finished(self, deck_id: int, summary: str) -> None:
+    def _on_analysis_finished(self, deck_id: int, summary: str, media_meta: dict) -> None:
         self._worker = None
         self._current_deck_id = deck_id
         self._analyze_btn.setEnabled(True)
@@ -355,12 +427,58 @@ class LearningWindow(QDialog):
         self._reload_decks()
         self._load_cards()
         self._tabs.setCurrentIndex(1)
+        self._start_media_worker(deck_id, media_meta)
 
     def _on_analysis_error(self, message: str) -> None:
         self._worker = None
         self._analyze_btn.setEnabled(True)
         self._cancel_btn.setVisible(False)
         self._status_label.setText(tr("main.status_error", message=message))
+
+    def _start_media_worker(self, deck_id: int, media_meta: dict) -> None:
+        card_ids = media_meta.get("card_ids", [])
+        if not card_ids:
+            return
+        if self._media_worker is not None and self._media_worker.isRunning():
+            self._media_worker.cancel()
+        deck = learning.get_deck(deck_id)
+        if deck is None:
+            return
+        self._media_worker = CardMediaWorker(
+            deck_id,
+            card_ids,
+            direction=deck.direction,
+            image_prompts=media_meta.get("image_prompts", {}),
+            imageable=media_meta.get("imageable", {}),
+            parent=self,
+        )
+        self._media_worker.progress.connect(
+            lambda msg: self._status_label.setText(tr("learning.media_progress", msg=msg))
+        )
+        self._media_worker.finished.connect(self._on_media_finished)
+        self._media_worker.start()
+
+    def _on_media_finished(self, _deck_id: int) -> None:
+        self._media_worker = None
+        self._load_cards()
+        self._status_label.setText(tr("learning.media_done"))
+
+    def _generate_media_for_deck(self) -> None:
+        deck_id = self._deck_combo.currentData()
+        deck = learning.get_deck(deck_id) if deck_id else None
+        if deck is None:
+            return
+        cards = learning.list_cards(deck.id)
+        imageable = {card.id: bool(card.image_prompt) for card in cards}
+        image_prompts = {card.id: card.image_prompt for card in cards if card.image_prompt}
+        self._start_media_worker(
+            deck.id,
+            {"card_ids": [card.id for card in cards], "imageable": imageable, "image_prompts": image_prompts},
+        )
+
+    def _status_label_for_card(self, card: learning.LearningCard) -> str:
+        bucket = card_bucket(card)
+        return tr(f"learning.status_{bucket}")
 
     def _load_cards(self) -> None:
         if not is_enabled("learning.anki_preview"):
@@ -373,12 +491,54 @@ class LearningWindow(QDialog):
         if deck and deck.analysis_summary:
             self._summary_field.setPlainText(deck.analysis_summary)
         cards = learning.list_cards(deck_id)
+        learning.backfill_card_fields(deck_id)
+        cards = learning.list_cards(deck_id)
         self._cards_table.setRowCount(len(cards))
         for row, card in enumerate(cards):
-            self._cards_table.setItem(row, 0, QTableWidgetItem(card.front))
-            self._cards_table.setItem(row, 1, QTableWidgetItem(card.back))
-            self._cards_table.setItem(row, 2, QTableWidgetItem(card.context))
-            self._cards_table.setItem(row, 3, QTableWidgetItem(str(card.priority)))
+            for col, text in enumerate(
+                (
+                    card.front,
+                    card.back,
+                    card.hint,
+                    card.notes,
+                    self._status_label_for_card(card),
+                    str(card.priority),
+                )
+            ):
+                item = QTableWidgetItem(text)
+                if col < 4 and text:
+                    item.setToolTip(text)
+                self._cards_table.setItem(row, col, item)
+
+    def _edit_selected_card(self) -> None:
+        rows = self._cards_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        deck_id = self._deck_combo.currentData()
+        if deck_id is None:
+            return
+        cards = learning.list_cards(deck_id)
+        row = rows[0].row()
+        if row < 0 or row >= len(cards):
+            return
+        card = cards[row]
+        deck = learning.get_deck(deck_id)
+        direction = deck.direction if deck else "ua-en"
+        dialog = _CardEditDialog(card, direction=direction, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.values()
+        if not values["front"] or not values["back"]:
+            return
+        learning.update_card(
+            card.id,
+            front=values["front"],
+            back=values["back"],
+            context=values["context"],
+            hint=values["hint"],
+            notes=values["notes"],
+        )
+        self._load_cards()
 
     def _export_anki(self) -> None:
         if not is_enabled("learning.anki_export"):
@@ -421,116 +581,27 @@ class LearningWindow(QDialog):
         learning.delete_card(cards[row].id)
         self._load_cards()
 
-    def _update_streak_label(self) -> None:
-        if not is_enabled("learning.streak"):
-            self._streak_label.setText("")
+    def _delete_selected_deck(self) -> None:
+        deck_id = self._deck_combo.currentData()
+        deck = learning.get_deck(deck_id) if deck_id is not None else None
+        if deck is None:
             return
-        streak, _last = settings.get_learning_streak()
-        self._streak_label.setText(tr("learning.streak_label", streak=streak))
-
-    def _reset_review(self) -> None:
-        self._review_cards = []
-        self._review_index = 0
-        self._showing_back = False
-        self._review_front.clear()
-        self._review_back.clear()
-        self._review_back.setVisible(False)
-        self._again_btn.setVisible(False)
-        self._hard_btn.setVisible(False)
-        self._good_btn.setVisible(False)
-        self._easy_btn.setVisible(False)
-        self._review_progress.setText("")
-
-    def _uses_fsrs(self) -> bool:
-        return is_enabled("learning.srs_review")
-
-    def _hide_grade_buttons(self) -> None:
-        self._again_btn.setVisible(False)
-        self._hard_btn.setVisible(False)
-        self._good_btn.setVisible(False)
-        self._easy_btn.setVisible(False)
-
-    def _show_grade_buttons(self) -> None:
-        if self._uses_fsrs():
-            self._again_btn.setVisible(True)
-            self._hard_btn.setVisible(True)
-            self._good_btn.setVisible(True)
-            self._easy_btn.setVisible(True)
-        else:
-            self._again_btn.setVisible(True)
-            self._good_btn.setVisible(True)
-            self._hard_btn.setVisible(False)
-            self._easy_btn.setVisible(False)
-
-    def _start_review(self) -> None:
-        if not is_enabled("learning.daily_review"):
-            return
-        deck_id = self._review_deck_combo.currentData()
-        if deck_id is None:
-            return
-        limit = int(get_feature("learning.daily_review").get("daily_limit", 20))
-        self._review_cards = learning.get_due_cards(deck_id, limit=limit)
-        self._review_index = 0
-        self._showing_back = False
-        if not self._review_cards:
-            self._review_progress.setText(tr("learning.no_due_cards"))
-            return
-        self._show_current_review_card()
-
-    def _show_current_review_card(self) -> None:
-        if self._review_index >= len(self._review_cards):
-            self._review_progress.setText(tr("learning.review_complete"))
-            self._review_front.clear()
-            self._review_back.clear()
-            self._hide_grade_buttons()
-            return
-        card = self._review_cards[self._review_index]
-        self._review_progress.setText(
-            tr("learning.review_progress", current=self._review_index + 1, total=len(self._review_cards))
+        card_count = learning.count_cards(deck.id)
+        deck_name = deck.name or deck.tag or str(deck.id)
+        reply = QMessageBox.question(
+            self,
+            tr("learning.delete_deck_title"),
+            tr("learning.delete_deck_confirm", name=deck_name, count=card_count),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        self._review_front.setPlainText(card.front)
-        self._review_back.setPlainText(card.back + ("\n\n" + card.context if card.context else ""))
-        self._review_back.setVisible(False)
-        self._showing_back = False
-        self._hide_grade_buttons()
-
-    def _show_answer(self) -> None:
-        if self._review_index >= len(self._review_cards):
+        if reply != QMessageBox.StandardButton.Yes:
             return
-        self._review_back.setVisible(True)
-        self._showing_back = True
-        self._show_grade_buttons()
-
-    def _after_grade(self) -> None:
-        if is_enabled("learning.streak"):
-            settings.record_learning_review_today()
-            self._update_streak_label()
-        self._review_index += 1
-        self._show_current_review_card()
-
-    def _submit_grade(self, rating_value: int) -> None:
-        if self._uses_fsrs():
-            self._grade_fsrs(rating_value)
-        elif rating_value == 1:
-            self._grade_review(True)
-        elif rating_value == 3:
-            self._grade_review(False)
-
-    def _grade_review(self, again: bool) -> None:
-        if self._review_index >= len(self._review_cards):
-            return
-        card = self._review_cards[self._review_index]
-        learning.record_review(card.id, again=again)
-        self._after_grade()
-
-    def _grade_fsrs(self, rating_value: int) -> None:
-        if self._review_index >= len(self._review_cards):
-            return
-        from fsrs import Rating
-
-        card = self._review_cards[self._review_index]
-        learning.record_review(card.id, fsrs_rating=Rating(rating_value))
-        self._after_grade()
+        learning.delete_deck(deck.id)
+        if self._current_deck_id == deck.id:
+            self._current_deck_id = None
+        self._reload_decks()
+        self._load_cards()
 
     def add_vocab_card(self, front: str, back: str, *, context: str = "", tag: str = "", direction: str = "") -> None:
         if not front.strip() or not back.strip():
@@ -552,6 +623,8 @@ class LearningWindow(QDialog):
         self._load_cards()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._media_worker is not None and self._media_worker.isRunning():
+            self._media_worker.cancel()
         save_table_columns(self._cards_table, "learning", "cards")
         save_window_geometry(self, "learning")
         super().closeEvent(event)

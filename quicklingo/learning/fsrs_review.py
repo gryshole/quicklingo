@@ -7,7 +7,7 @@ from fsrs import Card as FsrsCard
 from fsrs import Rating, Scheduler, State
 
 from quicklingo.db.connection import connection, get_connection
-from quicklingo.db.learning import LearningCard
+from quicklingo.db.learning import LearningCard, _CARD_SELECT
 
 _scheduler: Scheduler | None = None
 
@@ -15,8 +15,18 @@ _scheduler: Scheduler | None = None
 def get_scheduler() -> Scheduler:
     global _scheduler
     if _scheduler is None:
-        _scheduler = Scheduler()
+        from quicklingo.features import get_feature
+
+        retention = float(get_feature("learning.srs_review").get("desired_retention", 90))
+        if retention > 1:
+            retention /= 100.0
+        _scheduler = Scheduler(desired_retention=retention)
     return _scheduler
+
+
+def reset_scheduler() -> None:
+    global _scheduler
+    _scheduler = None
 
 
 def apply_fsrs_review(card_id: int, rating: Rating) -> None:
@@ -67,12 +77,7 @@ def _save_fsrs_state(card_id: int, fsrs_card: FsrsCard) -> None:
 
 def _fetch_card_row(card_id: int):
     return get_connection().execute(
-        """
-        SELECT id, deck_id, front, back, context, priority, source_record_id,
-               ease, interval_days, next_review_date, last_reviewed, fsrs_state
-        FROM learning_cards
-        WHERE id = ?
-        """,
+        f"{_CARD_SELECT} WHERE id = ?",
         (card_id,),
     ).fetchone()
 
@@ -94,14 +99,21 @@ def _parse_due_date(value: str) -> datetime:
     return datetime.now(timezone.utc)
 
 
-
 def _row_to_learning_card(row) -> LearningCard:
+    keys = row.keys()
     return LearningCard(
         id=row["id"],
         deck_id=row["deck_id"],
         front=row["front"],
         back=row["back"],
         context=row["context"] or "",
+        hint=row["hint"] if "hint" in keys else "",
+        notes=row["notes"] if "notes" in keys else "",
+        image_path=row["image_path"] if "image_path" in keys else "",
+        image_prompt=row["image_prompt"] if "image_prompt" in keys else "",
+        phonetic=row["phonetic"] if "phonetic" in keys else "",
+        audio_path=row["audio_path"] if "audio_path" in keys else "",
+        card_type=row["card_type"] if "card_type" in keys else "basic",
         priority=int(row["priority"]),
         source_record_id=row["source_record_id"],
         ease=float(row["ease"]),
