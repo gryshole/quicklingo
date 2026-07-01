@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from quicklingo.config.formatter_registry import get_formatter_callable
+from quicklingo.config.json_io import load_json_dir, read_json
 from quicklingo.config.models import Direction, FormatterDef, Profile
 from quicklingo.config.seed import ensure_user_config
 from quicklingo.paths import user_config_dir
@@ -26,20 +26,12 @@ def _config_root() -> Path:
     return user_config_dir()
 
 
-def _read_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def _load_json_dir(subdir: str) -> dict[str, dict]:
-    items: dict[str, dict] = {}
-    base = _config_root() / subdir
-    if not base.is_dir():
-        return items
-    for path in sorted(base.glob("*.json")):
-        data = _read_json(path)
-        item_id = data.get("id") or path.stem
-        items[item_id] = data
-    return items
+    return load_json_dir(_config_root(), subdir)
+
+
+def _read_json(path: Path) -> dict:
+    return read_json(path)
 
 
 def _resolve_prompt_path(relative: str) -> tuple[str, Path | None]:
@@ -172,7 +164,7 @@ def resolve_active_profile_id(direction_id: str) -> str:
     active = settings.get_active_profiles()
     if direction_id in active:
         profile_id = active[direction_id]
-        if profile_id in _PROFILES or get_profile(profile_id):
+        if get_profile(profile_id):
             return profile_id
     direction = get_direction(direction_id)
     if direction:

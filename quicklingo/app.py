@@ -11,6 +11,7 @@ from quicklingo.input.hotkeys import HotkeyManager
 from quicklingo.input.tutor_capture import TutorCaptureManager
 from quicklingo.input.tutor_capture_log import log_info, log_file_path
 from quicklingo.ui.main_window import MainWindow
+from quicklingo.ui.qt_utils import raise_window
 from quicklingo.ui.tray import TrayManager
 
 _app: "QuickLingoApp | None" = None
@@ -56,9 +57,7 @@ class QuickLingoApp:
         elif self._window.isVisible():
             self._window.hide()
         else:
-            self._window.show()
-            self._window.raise_()
-            self._window.activateWindow()
+            raise_window(self._window)
 
     def _toggle_tutor_capture(self) -> None:
         new_state = not is_enabled("input.tutor_capture")

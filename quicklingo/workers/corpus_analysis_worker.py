@@ -108,26 +108,15 @@ class CorpusAnalysisWorker(QThread):
             comment=next((s.comment for s in summaries if s.comment), ""),
         )
 
+        prepared: list[dict] = []
         for card in all_cards:
             if self._cancelled:
                 raise asyncio.CancelledError()
             front = str(card.get("front", "")).strip()
             back = str(card.get("back", "")).strip()
-            if not front or not back:
-                continue
-            source_id = card.get("source_record_id")
-            try:
-                source_id = int(source_id) if source_id is not None else None
-            except (TypeError, ValueError):
-                source_id = None
-            learning.upsert_card(
-                deck.id,
-                front=front,
-                back=back,
-                context=str(card.get("context", "")),
-                priority=int(card.get("priority", 3)),
-                source_record_id=source_id,
-            )
+            if front and back:
+                prepared.append(card)
+        learning.batch_upsert_cards(deck.id, prepared)
 
         summary_text = format_summary_text(merged, difficult=difficult)
         learning.update_deck_summary(deck.id, summary_text)

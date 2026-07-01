@@ -31,25 +31,46 @@ API_PROVIDERS: tuple[str, ...] = (
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 
 
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
+
+
+class SettingsStore:
+    """JSON settings file with load/save/update helpers."""
+
+    def load(self) -> dict:
+        path = _settings_path()
+        if not path.is_file():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def save(self, data: dict) -> None:
+        _settings_path().write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+    def update(self, patch: dict) -> None:
+        data = self.load()
+        data.update(patch)
+        self.save(data)
+
+
+_store = SettingsStore()
+
+
 def _settings_path():
     return user_data_dir() / _SETTINGS_FILE
 
 
 def _load() -> dict:
-    path = _settings_path()
-    if not path.is_file():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+    return _store.load()
 
 
 def _save(data: dict) -> None:
-    _settings_path().write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    _store.save(data)
 
 
 def get_zoom_steps() -> tuple[int, int]:

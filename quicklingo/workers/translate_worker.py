@@ -56,6 +56,7 @@ class TranslateWorker(QThread):
         self._model_entry = model_entry
         self._profile_id = profile_id or resolve_active_profile_id(direction)
         self._cancelled = False
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def cancel(self) -> None:
         self._cancelled = True
@@ -65,8 +66,10 @@ class TranslateWorker(QThread):
         if self._cancelled:
             self.cancelled.emit()
             return
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
         try:
-            result = asyncio.run(self._translate())
+            result = self._loop.run_until_complete(self._translate())
         except asyncio.CancelledError:
             self.cancelled.emit()
             return
@@ -76,6 +79,9 @@ class TranslateWorker(QThread):
                 return
             self.error.emit(str(exc))
             return
+        finally:
+            self._loop.close()
+            self._loop = None
         if self._cancelled or self.isInterruptionRequested():
             self.cancelled.emit()
             return
@@ -100,7 +106,7 @@ class TranslateWorker(QThread):
                 if self._cancelled or self.isInterruptionRequested():
                     raise asyncio.CancelledError()
                 parts.append(piece)
-                self.chunk.emit("".join(parts))
+                self.chunk.emit(piece)
             return "".join(parts).strip()
 
         return await provider.translate(

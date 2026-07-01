@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from quicklingo.db.history import _connect
+from quicklingo.db.connection import connection
 
 
 @dataclass
@@ -47,7 +47,7 @@ def _migrate_learning_columns(conn: sqlite3.Connection) -> None:
 
 
 def init_learning_tables() -> None:
-    with _connect() as conn:
+    with connection() as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS learning_decks (
@@ -102,7 +102,7 @@ _CARD_SELECT = """
 
 
 def get_or_create_deck(name: str, tag: str, direction: str) -> LearningDeck:
-    with _connect() as conn:
+    with connection() as conn:
         row = conn.execute(
             """
             SELECT id, name, tag, direction, created_at, analysis_summary
@@ -134,7 +134,7 @@ def get_or_create_deck(name: str, tag: str, direction: str) -> LearningDeck:
 
 
 def update_deck_summary(deck_id: int, summary: str) -> None:
-    with _connect() as conn:
+    with connection() as conn:
         conn.execute(
             "UPDATE learning_decks SET analysis_summary = ? WHERE id = ?",
             (summary, deck_id),
@@ -142,7 +142,7 @@ def update_deck_summary(deck_id: int, summary: str) -> None:
 
 
 def list_decks() -> list[LearningDeck]:
-    with _connect() as conn:
+    with connection() as conn:
         rows = conn.execute(
             """
             SELECT id, name, tag, direction, created_at, analysis_summary
@@ -154,7 +154,7 @@ def list_decks() -> list[LearningDeck]:
 
 
 def get_deck(deck_id: int) -> LearningDeck | None:
-    with _connect() as conn:
+    with connection() as conn:
         row = conn.execute(
             """
             SELECT id, name, tag, direction, created_at, analysis_summary
@@ -165,23 +165,8 @@ def get_deck(deck_id: int) -> LearningDeck | None:
     return _row_to_deck(row) if row else None
 
 
-def get_deck_by_tag(tag: str, direction: str) -> LearningDeck | None:
-    with _connect() as conn:
-        row = conn.execute(
-            """
-            SELECT id, name, tag, direction, created_at, analysis_summary
-            FROM learning_decks
-            WHERE tag = ? AND direction = ?
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (tag, direction),
-        ).fetchone()
-    return _row_to_deck(row) if row else None
-
-
 def list_cards(deck_id: int) -> list[LearningCard]:
-    with _connect() as conn:
+    with connection() as conn:
         rows = conn.execute(
             f"""
             {_CARD_SELECT}
@@ -203,7 +188,7 @@ def upsert_card(
     source_record_id: int | None = None,
 ) -> int:
     normalized_front = " ".join(front.split()).lower()
-    with _connect() as conn:
+    with connection() as conn:
         existing = conn.execute(
             """
             SELECT id FROM learning_cards
@@ -233,6 +218,58 @@ def upsert_card(
         return cursor.lastrowid or 0
 
 
+def batch_upsert_cards(
+    deck_id: int,
+    cards: list[dict[str, object]],
+) -> int:
+    """Insert or update many cards in one transaction."""
+    if not cards:
+        return 0
+    today = date.today().isoformat()
+    count = 0
+    with connection() as conn:
+        for card in cards:
+            front = str(card.get("front", "")).strip()
+            back = str(card.get("back", "")).strip()
+            if not front or not back:
+                continue
+            context = str(card.get("context", ""))
+            priority = int(card.get("priority", 3))
+            source_record_id = card.get("source_record_id")
+            try:
+                source_record_id = int(source_record_id) if source_record_id is not None else None
+            except (TypeError, ValueError):
+                source_record_id = None
+            normalized_front = " ".join(front.split()).lower()
+            existing = conn.execute(
+                """
+                SELECT id FROM learning_cards
+                WHERE deck_id = ? AND lower(trim(front)) = ?
+                """,
+                (deck_id, normalized_front),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE learning_cards
+                    SET back = ?, context = ?, priority = ?, source_record_id = ?
+                    WHERE id = ?
+                    """,
+                    (back, context, priority, source_record_id, existing["id"]),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO learning_cards
+                        (deck_id, front, back, context, priority, source_record_id, next_review_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (deck_id, front, back, context, priority, source_record_id, today),
+                )
+            count += 1
+    return count
+
+
 def update_card(
     card_id: int,
     *,
@@ -258,7 +295,7 @@ def update_card(
     if not fields:
         return False
     params.append(card_id)
-    with _connect() as conn:
+    with connection() as conn:
         cursor = conn.execute(
             f"UPDATE learning_cards SET {', '.join(fields)} WHERE id = ?",
             params,
@@ -267,14 +304,14 @@ def update_card(
 
 
 def delete_card(card_id: int) -> bool:
-    with _connect() as conn:
+    with connection() as conn:
         cursor = conn.execute("DELETE FROM learning_cards WHERE id = ?", (card_id,))
         return cursor.rowcount > 0
 
 
 def get_due_cards(deck_id: int, *, limit: int = 20) -> list[LearningCard]:
     today = date.today().isoformat()
-    with _connect() as conn:
+    with connection() as conn:
         rows = conn.execute(
             f"""
             {_CARD_SELECT}
@@ -302,7 +339,7 @@ def record_review(card_id: int, *, again: bool | None = None, fsrs_rating=None) 
 def _record_review_lite(card_id: int, *, again: bool) -> None:
     today = date.today()
     today_str = today.isoformat()
-    with _connect() as conn:
+    with connection() as conn:
         row = conn.execute(
             """
             SELECT interval_days FROM learning_cards WHERE id = ?

@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal, QDate
+from PySide6.QtCore import Qt, Signal, QDate, QTimer
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -25,6 +25,7 @@ from quicklingo.features import get_feature, is_enabled
 from quicklingo.history.corpus_export import export_json, export_markdown
 from quicklingo.history.meeting_export import export_transcript_markdown, export_transcript_text
 from quicklingo.i18n import tr
+from quicklingo.ui.qt_utils import raise_window, reload_combo
 from quicklingo.ui.table_styles import apply_data_table_style, style_cell_action_button
 from quicklingo.ui.tag_wizard_dialog import TagWizardDialog
 from quicklingo.ui.window_state import (
@@ -57,7 +58,11 @@ class HistoryWindow(QDialog):
 
         self._search_label = QLabel()
         self._search_field = QLineEdit()
-        self._search_field.textChanged.connect(self.refresh)
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(250)
+        self._refresh_timer.timeout.connect(self.refresh)
+        self._search_field.textChanged.connect(self._schedule_refresh)
 
         self._direction_filter = QComboBox()
         self._direction_filter.currentIndexChanged.connect(self.refresh)
@@ -173,7 +178,6 @@ class HistoryWindow(QDialog):
         layout.addWidget(self._detail_field, stretch=1)
 
         self._records: list[history.TranslationRecord] = []
-        self._add_to_deck_action: QAction | None = None
         self.retranslate_ui()
         self.refresh()
 
@@ -214,41 +218,30 @@ class HistoryWindow(QDialog):
             self._word_freq_window.retranslate_ui()
 
     def _reload_direction_filter(self) -> None:
-        current = self._direction_filter.currentData()
-        self._direction_filter.blockSignals(True)
-        self._direction_filter.clear()
-        self._direction_filter.addItem(tr("history.filter_all_directions"), "")
-        for direction in get_directions():
-            self._direction_filter.addItem(direction.label, direction.id)
-        index = self._direction_filter.findData(current)
-        if index >= 0:
-            self._direction_filter.setCurrentIndex(index)
-        self._direction_filter.blockSignals(False)
+        reload_combo(
+            self._direction_filter,
+            [("", tr("history.filter_all_directions"))]
+            + [(d.id, d.label) for d in get_directions()],
+            current_data=self._direction_filter.currentData(),
+        )
 
     def _reload_model_filter(self) -> None:
-        current = self._model_filter.currentData()
-        self._model_filter.blockSignals(True)
-        self._model_filter.clear()
-        self._model_filter.addItem(tr("history.filter_all_models"), "")
-        for model in history.get_distinct_models():
-            self._model_filter.addItem(model, model)
-        index = self._model_filter.findData(current)
-        if index >= 0:
-            self._model_filter.setCurrentIndex(index)
-        self._model_filter.blockSignals(False)
+        reload_combo(
+            self._model_filter,
+            [("", tr("history.filter_all_models"))]
+            + [(model, model) for model in history.get_distinct_models()],
+            current_data=self._model_filter.currentData(),
+        )
 
     def _reload_tag_filter(self) -> None:
-        current = self._tag_filter.currentData()
-        self._tag_filter.blockSignals(True)
-        self._tag_filter.clear()
-        self._tag_filter.addItem(tr("history.filter_all_tags"), "")
+        tag_items: list[tuple[str, str]] = [("", tr("history.filter_all_tags"))]
         if is_enabled("history.tags"):
-            for tag in history.get_distinct_tags():
-                self._tag_filter.addItem(tag, tag)
-        index = self._tag_filter.findData(current)
-        if index >= 0:
-            self._tag_filter.setCurrentIndex(index)
-        self._tag_filter.blockSignals(False)
+            tag_items.extend((tag, tag) for tag in history.get_distinct_tags())
+        reload_combo(
+            self._tag_filter,
+            tag_items,
+            current_data=self._tag_filter.currentData(),
+        )
 
     def _apply_feature_visibility(self) -> None:
         show_search = is_enabled("history.search")
@@ -285,9 +278,12 @@ class HistoryWindow(QDialog):
             date_to = self._date_to.date().toString("yyyy-MM-dd")
         return date_from, date_to
 
+    def _schedule_refresh(self) -> None:
+        self._refresh_timer.start()
+
     def refresh(self) -> None:
         self._apply_feature_visibility()
-        stats = history.get_stats()
+        stats = history.get_translation_stats()
         query = self._search_field.text().strip() if is_enabled("history.search") else ""
         direction = None
         model = None
@@ -519,9 +515,7 @@ class HistoryWindow(QDialog):
             return
         if self._word_freq_window is None:
             self._word_freq_window = WordFrequencyWindow(self)
-        self._word_freq_window.show()
-        self._word_freq_window.raise_()
-        self._word_freq_window.activateWindow()
+        raise_window(self._word_freq_window)
 
     def _reopen_selected(self) -> None:
         record = self._selected_record()
@@ -546,7 +540,7 @@ class HistoryWindow(QDialog):
         self.refresh()
 
     def _clear_history(self) -> None:
-        stats = history.get_stats()
+        stats = history.get_translation_stats()
         if stats["total"] == 0:
             return
         answer = QMessageBox.question(

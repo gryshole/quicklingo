@@ -4,6 +4,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from quicklingo.i18n import tr
+from quicklingo.ui.qt_utils import raise_window
 
 
 class TrayManager:
@@ -45,9 +46,7 @@ class TrayManager:
         if self._window.isVisible():
             self._window.hide()
         else:
-            self._window.show()
-            self._window.raise_()
-            self._window.activateWindow()
+            raise_window(self._window)
 
     def _on_activated(self, reason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:

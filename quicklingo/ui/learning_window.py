@@ -30,6 +30,7 @@ from quicklingo.learning.corpus_analysis import select_candidates
 from quicklingo.learning.difficult_words import compute_difficult_words
 from quicklingo import settings
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
+from quicklingo.ui.qt_utils import reload_combo
 from quicklingo.ui.window_state import (
     bind_table_columns_persistence,
     restore_table_columns,
@@ -236,16 +237,13 @@ class LearningWindow(QDialog):
 
     def _reload_model_combo(self) -> None:
         current = self._model_combo.currentData() if self._model_combo.count() else None
-        self._model_combo.blockSignals(True)
-        self._model_combo.clear()
-        for entry in get_model_entries():
-            self._model_combo.addItem(entry.display_name, entry.model_id)
-        index = self._model_combo.findData(current)
-        if index >= 0:
-            self._model_combo.setCurrentIndex(index)
-        elif self._model_combo.count():
+        reload_combo(
+            self._model_combo,
+            [(entry.model_id, entry.display_name) for entry in get_model_entries()],
+            current_data=current,
+        )
+        if self._model_combo.count() and self._model_combo.currentIndex() < 0:
             self._model_combo.setCurrentIndex(0)
-        self._model_combo.blockSignals(False)
 
     def _reload_tags(self) -> None:
         if not is_enabled("history.tags"):
@@ -301,6 +299,7 @@ class LearningWindow(QDialog):
             records,
             max_candidates=max_candidates,
             starred_only=self._starred_only.isChecked(),
+            difficult_items=difficult,
         )
         lines = [
             tr("learning.preview_stats", records=len(records), candidates=len(candidates)),

@@ -103,11 +103,6 @@ _PREFIX_PROVIDERS: tuple[tuple[str, str], ...] = (
 )
 
 
-def infer_api_provider(model_id: str) -> str:
-    _, provider = parse_model_id(model_id)
-    return provider
-
-
 def parse_model_id(model_id: str) -> tuple[str, str]:
     cleaned = model_id.strip()
     lowered = cleaned.lower()
@@ -191,7 +186,3 @@ def get_model_by_index(index: int) -> ModelEntry:
     if index < 0 or index >= len(entries):
         return entries[0]
     return entries[index]
-
-
-def list_catalog_providers() -> tuple[str, ...]:
-    return API_PROVIDERS

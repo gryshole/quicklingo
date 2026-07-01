@@ -1,6 +1,6 @@
-from PySide6.QtCore import Qt, QByteArray, QUrl, Signal
+from PySide6.QtCore import Qt, QByteArray, Signal
 
-from PySide6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication, QHideEvent, QShowEvent
+from PySide6.QtGui import QCloseEvent, QGuiApplication, QHideEvent, QShowEvent
 
 from PySide6.QtWidgets import (
 
@@ -18,8 +18,6 @@ from PySide6.QtWidgets import (
 
     QMessageBox,
 
-    QProgressDialog,
-
     QPushButton,
 
     QRadioButton,
@@ -34,13 +32,8 @@ from PySide6.QtWidgets import (
 
 
 
-import os
 import sys
-from pathlib import Path
 
-
-
-from quicklingo import app as ql_app
 from quicklingo.config.loader import (
 
     get_directions,
@@ -55,13 +48,12 @@ from quicklingo.config.loader import (
 
 )
 
-from quicklingo.db import history
 
-from quicklingo.features import feature_changed, get_feature, is_enabled, save_features
+from quicklingo.features import feature_changed, is_enabled, save_features
 
 from quicklingo.i18n import tr, translate_message
 
-from quicklingo.input.hotkeys import copy_selection_to_clipboard, paste_text
+from quicklingo.input.hotkeys import copy_selection_to_clipboard
 from quicklingo.input.tutor_capture_log import log_debug
 
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
@@ -69,7 +61,10 @@ from quicklingo.providers.setup_info import PROVIDER_HINT_KEYS, provider_needs_a
 
 from quicklingo import settings
 
-from quicklingo.ui.help_dialog import show_help
+from quicklingo.ui.controllers.translation_controller import TranslationController
+from quicklingo.ui.controllers.tutor_input import append_character, backspace as tutor_backspace
+from quicklingo.ui.controllers.update_controller import UpdateController
+from quicklingo.ui.qt_utils import open_help, raise_window, reload_combo
 from quicklingo.ui.history_window import HistoryWindow
 from quicklingo.ui.dashboard_window import DashboardWindow
 from quicklingo.ui.learning_window import LearningWindow
@@ -78,39 +73,7 @@ from quicklingo.ui.settings_dialog import SettingsDialog
 
 from quicklingo.ui.zoomable_text_edit import ZoomableInputEdit, ZoomableLineEdit, ZoomableTextEdit
 
-from quicklingo.update.checker import (
-    UpdateInfo,
-    current_version,
-    default_download_path,
-    is_newer,
-)
-from quicklingo.update.install import launch_update, updater_available
 from quicklingo.version import __version__
-from quicklingo.workers.translate_worker import TranslateWorker
-from quicklingo.workers.update_worker import UpdateCheckWorker, UpdateDownloadWorker
-
-
-
-
-
-class _QueuedRequest:
-
-    __slots__ = ("text", "direction", "profile_id", "model_index")
-
-
-
-    def __init__(self, text: str, direction: str, profile_id: str, model_index: int) -> None:
-
-        self.text = text
-
-        self.direction = direction
-
-        self.profile_id = profile_id
-
-        self.model_index = model_index
-
-
-
 
 
 class MainWindow(QMainWindow):
@@ -121,23 +84,8 @@ class MainWindow(QMainWindow):
 
         super().__init__()
 
-        self._worker: TranslateWorker | None = None
-
-        self._pending_source = ""
-
-        self._pending_direction = "ua-en"
-
-        self._pending_profile_id = "detailed"
-
-        self._pending_model_id = ""
-
-        self._pending_from_cache = False
-
-        self._last_error_message = ""
-
-        self._request_queue: list[_QueuedRequest] = []
-
-        self._replace_after_translate = False
+        self._translation = TranslationController(self)
+        self._updates = UpdateController(self)
 
         self._force_quit = False
         self._tray_manager = None
@@ -196,14 +144,6 @@ class MainWindow(QMainWindow):
         self._help_dashboard_action = None
 
         self._help_glossary_action = None
-
-        self._update_check_worker: UpdateCheckWorker | None = None
-
-        self._update_download_worker: UpdateDownloadWorker | None = None
-
-        self._update_progress: QProgressDialog | None = None
-
-        self._pending_update_info: UpdateInfo | None = None
 
         self._create_menu_bar()
 
@@ -618,8 +558,7 @@ class MainWindow(QMainWindow):
 
 
     def is_translation_busy(self) -> bool:
-
-        return self._worker is not None and self._worker.isRunning()
+        return self._translation.is_busy()
 
 
 
@@ -642,13 +581,7 @@ class MainWindow(QMainWindow):
             log_debug(f"UI reject char={char!r} reason={reason}")
             return
 
-        if isinstance(self._input_field, ZoomableLineEdit):
-
-            self._input_field.setText(self._input_field.text() + char)
-
-        else:
-
-            self._input_field.setPlainText(self._input_field.toPlainText() + char)
+        append_character(self._input_field, char)
 
 
 
@@ -658,21 +591,7 @@ class MainWindow(QMainWindow):
             log_debug(f"UI reject backspace reason={reason}")
             return
 
-        if isinstance(self._input_field, ZoomableLineEdit):
-
-            text = self._input_field.text()
-
-            if text:
-
-                self._input_field.setText(text[:-1])
-
-        else:
-
-            text = self._input_field.toPlainText()
-
-            if text:
-
-                self._input_field.setPlainText(text[:-1])
+        tutor_backspace(self._input_field)
 
 
 
@@ -790,13 +709,11 @@ class MainWindow(QMainWindow):
 
             return
 
-        self._replace_after_translate = replace_in_place and is_enabled("input.replace_in_place")
+        self._translation.set_replace_after_translate(
+            replace_in_place and is_enabled("input.replace_in_place")
+        )
 
-        self.show()
-
-        self.raise_()
-
-        self.activateWindow()
+        raise_window(self)
 
         self._input_field.set_input_text(text)
 
@@ -1086,7 +1003,7 @@ class MainWindow(QMainWindow):
 
         self._help_about_action = self._help_menu.addAction("")
 
-        self._help_about_action.triggered.connect(self._open_help_about)
+        self._help_about_action.triggered.connect(lambda: self._open_help_topic("about"))
 
         self._help_check_updates_action = self._help_menu.addAction("")
 
@@ -1096,222 +1013,57 @@ class MainWindow(QMainWindow):
 
         self._help_models_action = self._help_menu.addAction("")
 
-        self._help_models_action.triggered.connect(self._open_help_models)
+        self._help_models_action.triggered.connect(lambda: self._open_help_topic("models"))
 
         self._help_directions_profiles_action = self._help_menu.addAction("")
 
         self._help_directions_profiles_action.triggered.connect(
-            self._open_help_directions_profiles
+            lambda: self._open_help_topic("directions_profiles")
         )
 
         self._help_formatters_action = self._help_menu.addAction("")
 
-        self._help_formatters_action.triggered.connect(self._open_help_formatters)
+        self._help_formatters_action.triggered.connect(
+            lambda: self._open_help_topic("formatters")
+        )
 
         self._help_features_action = self._help_menu.addAction("")
 
-        self._help_features_action.triggered.connect(self._open_help_features)
+        self._help_features_action.triggered.connect(
+            lambda: self._open_help_topic("features")
+        )
 
         self._help_history_action = self._help_menu.addAction("")
 
-        self._help_history_action.triggered.connect(self._open_help_history)
+        self._help_history_action.triggered.connect(
+            lambda: self._open_help_topic("history")
+        )
 
         self._help_learning_action = self._help_menu.addAction("")
 
-        self._help_learning_action.triggered.connect(self._open_help_learning)
+        self._help_learning_action.triggered.connect(
+            lambda: self._open_help_topic("learning")
+        )
 
         self._help_dashboard_action = self._help_menu.addAction("")
 
-        self._help_dashboard_action.triggered.connect(self._open_help_dashboard)
+        self._help_dashboard_action.triggered.connect(
+            lambda: self._open_help_topic("dashboard")
+        )
 
         self._help_glossary_action = self._help_menu.addAction("")
 
-        self._help_glossary_action.triggered.connect(self._open_help_glossary)
+        self._help_glossary_action.triggered.connect(
+            lambda: self._open_help_topic("glossary")
+        )
 
 
 
-    def _open_help_about(self) -> None:
-
-        show_help("about", self)
+    def _open_help_topic(self, topic: str) -> None:
+        open_help(topic, self)
 
     def _check_for_updates(self) -> None:
-        if self._update_check_worker is not None and self._update_check_worker.isRunning():
-            return
-
-        self._update_check_worker = UpdateCheckWorker(self)
-        self._update_check_worker.finished_ok.connect(self._on_update_check_ok)
-        self._update_check_worker.finished_error.connect(self._on_update_check_error)
-        self._update_check_worker.start()
-
-    def _on_update_check_error(self, message: str) -> None:
-        QMessageBox.warning(
-            self,
-            tr("common.error"),
-            tr("update.error").format(message=message),
-        )
-
-    def _on_update_check_ok(self, info: UpdateInfo) -> None:
-        current = current_version()
-        if not is_newer(info.latest_version, current):
-            QMessageBox.information(
-                self,
-                tr("main.menu_help_check_updates"),
-                tr("update.up_to_date").format(version=current),
-            )
-            return
-
-        self._pending_update_info = info
-        message = tr("update.available").format(current=current, latest=info.latest_version)
-        box = QMessageBox(self)
-        box.setWindowTitle(tr("main.menu_help_check_updates"))
-        box.setText(message)
-        box.setIcon(QMessageBox.Icon.Information)
-
-        install_btn = box.addButton(tr("update.install_now"), QMessageBox.ButtonRole.AcceptRole)
-        browser_btn = box.addButton(tr("update.open_browser"), QMessageBox.ButtonRole.ActionRole)
-        box.addButton(tr("common.cancel"), QMessageBox.ButtonRole.RejectRole)
-
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is browser_btn and info.release_url:
-            QDesktopServices.openUrl(QUrl(info.release_url))
-        elif clicked is install_btn:
-            self._start_update_download(info)
-
-    def _start_update_download(self, info: UpdateInfo) -> None:
-        if sys.platform != "win32":
-            QMessageBox.warning(self, tr("common.error"), tr("update.windows_only"))
-            return
-
-        if not updater_available():
-            QMessageBox.warning(self, tr("common.error"), tr("update.updater_missing"))
-            if info.release_url:
-                QDesktopServices.openUrl(QUrl(info.release_url))
-            return
-
-        confirm = QMessageBox.question(
-            self,
-            tr("common.confirm"),
-            tr("update.confirm_quit"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
-
-        dest = default_download_path(info.latest_version)
-        self._update_progress = QProgressDialog(tr("update.downloading"), tr("common.cancel"), 0, 100, self)
-        self._update_progress.setWindowTitle(tr("main.menu_help_check_updates"))
-        self._update_progress.setWindowModality(Qt.WindowModality.WindowModal)
-        self._update_progress.setMinimumDuration(0)
-        self._update_progress.canceled.connect(self._cancel_update_download)
-        self._update_progress.show()
-
-        self._update_download_worker = UpdateDownloadWorker(info, dest, self)
-        self._update_download_worker.progress.connect(self._on_update_download_progress)
-        self._update_download_worker.finished_ok.connect(self._on_update_download_ok)
-        self._update_download_worker.finished_error.connect(self._on_update_download_error)
-        self._update_download_worker.start()
-
-    def _cancel_update_download(self) -> None:
-        if self._update_download_worker is not None and self._update_download_worker.isRunning():
-            self._update_download_worker.terminate()
-            self._update_download_worker.wait(2000)
-
-    def _on_update_download_progress(self, downloaded: int, total: object) -> None:
-        if self._update_progress is None:
-            return
-        if total is None:
-            self._update_progress.setRange(0, 0)
-            return
-        total_int = int(total)
-        if total_int <= 0:
-            return
-        self._update_progress.setRange(0, total_int)
-        self._update_progress.setValue(min(downloaded, total_int))
-
-    def _on_update_download_error(self, message: str) -> None:
-        if self._update_progress is not None:
-            self._update_progress.close()
-            self._update_progress = None
-        QMessageBox.warning(
-            self,
-            tr("common.error"),
-            tr("update.error").format(message=message),
-        )
-
-    def _on_update_download_ok(self, zip_path: str) -> None:
-        if self._update_progress is not None:
-            self._update_progress.close()
-            self._update_progress = None
-
-        app_instance = ql_app.get_app()
-        if app_instance is None:
-            QMessageBox.warning(self, tr("common.error"), tr("update.error").format(message="app"))
-            return
-
-        try:
-            app_instance.prepare_quit_for_update()
-            launch_update(Path(zip_path), pid=os.getpid())
-        except Exception as exc:
-            QMessageBox.warning(
-                self,
-                tr("common.error"),
-                tr("update.error").format(message=str(exc)),
-            )
-            return
-
-        QApplication.quit()
-
-
-
-    def _open_help_models(self) -> None:
-
-        show_help("models", self)
-
-
-
-    def _open_help_directions_profiles(self) -> None:
-
-        show_help("directions_profiles", self)
-
-
-
-    def _open_help_formatters(self) -> None:
-
-        show_help("formatters", self)
-
-
-
-    def _open_help_features(self) -> None:
-
-        show_help("features", self)
-
-
-
-    def _open_help_history(self) -> None:
-
-        show_help("history", self)
-
-
-
-    def _open_help_learning(self) -> None:
-
-        show_help("learning", self)
-
-
-
-    def _open_help_dashboard(self) -> None:
-
-        show_help("dashboard", self)
-
-
-
-    def _open_help_glossary(self) -> None:
-
-        show_help("glossary", self)
-
-
+        self._updates.check_for_updates()
 
     def _open_history(self) -> None:
 
@@ -1326,11 +1078,7 @@ class MainWindow(QMainWindow):
 
         self._history_window.refresh()
 
-        self._history_window.show()
-
-        self._history_window.raise_()
-
-        self._history_window.activateWindow()
+        raise_window(self._history_window)
 
     def _open_learning(self) -> None:
         if self._learning_window is None:
@@ -1339,9 +1087,7 @@ class MainWindow(QMainWindow):
         self._learning_window._reload_tags()
         self._learning_window._reload_decks()
         self._learning_window._reload_model_combo()
-        self._learning_window.show()
-        self._learning_window.raise_()
-        self._learning_window.activateWindow()
+        raise_window(self._learning_window)
 
     def _on_learning_closed(self) -> None:
         self._learning_window = None
@@ -1351,9 +1097,7 @@ class MainWindow(QMainWindow):
             self._dashboard_window = DashboardWindow(self)
             self._dashboard_window.finished.connect(self._on_dashboard_closed)
         self._dashboard_window.refresh()
-        self._dashboard_window.show()
-        self._dashboard_window.raise_()
-        self._dashboard_window.activateWindow()
+        raise_window(self._dashboard_window)
 
     def _on_dashboard_closed(self) -> None:
         self._dashboard_window = None
@@ -1375,9 +1119,7 @@ class MainWindow(QMainWindow):
             tag=tag,
             direction=direction,
         )
-        self._learning_window.show()
-        self._learning_window.raise_()
-        self._learning_window.activateWindow()
+        raise_window(self._learning_window)
 
 
 
@@ -1402,16 +1144,13 @@ class MainWindow(QMainWindow):
         if current is None:
             stored_model, _ = settings.get_ui_preferences()
             current = stored_model
-        self._model_combo.blockSignals(True)
-        self._model_combo.clear()
-        for entry in get_model_entries():
-            self._model_combo.addItem(entry.display_name, entry.model_id)
-        index = self._model_combo.findData(current)
-        if index >= 0:
-            self._model_combo.setCurrentIndex(index)
-        elif self._model_combo.count():
+        reload_combo(
+            self._model_combo,
+            [(entry.model_id, entry.display_name) for entry in get_model_entries()],
+            current_data=current,
+        )
+        if self._model_combo.count() and self._model_combo.currentIndex() < 0:
             self._model_combo.setCurrentIndex(0)
-        self._model_combo.blockSignals(False)
         if hasattr(self, "_status_label"):
             self._check_api_key()
 
@@ -1468,7 +1207,7 @@ class MainWindow(QMainWindow):
         provider_id = entry.api_provider
 
         if not provider_needs_api_key(provider_id):
-            if not self._worker or not self._worker.isRunning():
+            if not self._translation.is_busy():
                 self._set_status("main.status_ready", error=False)
             return
 
@@ -1481,7 +1220,7 @@ class MainWindow(QMainWindow):
                 provider=tr(f"settings.api_keys.provider_{provider_id}"),
                 hint=tr(hint_key) if hint_key else "",
             )
-        elif not self._worker or not self._worker.isRunning():
+        elif not self._translation.is_busy():
             self._set_status("main.status_ready", error=False)
 
 
@@ -1667,288 +1406,20 @@ class MainWindow(QMainWindow):
 
 
     def _submit_translation(self) -> None:
-
-        text = self._input_field.input_text()
-
-        if not text:
-
-            return
-
-
-
-        if self._worker is not None and self._worker.isRunning():
-
-            if is_enabled("translation.request_queue"):
-
-                self._request_queue.append(
-
-                    _QueuedRequest(
-
-                        text,
-
-                        self._current_direction(),
-
-                        self._current_profile_id(),
-
-                        self._model_combo.currentIndex(),
-
-                    )
-
-                )
-
-                self._input_field.clear_input()
-
-                self._set_status("main.status_queued", error=False, count=len(self._request_queue))
-
-            return
-
-
-
-        self._start_translation(text)
-
-
+        self._translation.submit()
 
     def _start_translation(self, text: str) -> None:
-
-        self._pending_source = text
-
-        self._pending_direction = self._current_direction()
-
-        self._pending_profile_id = self._current_profile_id()
-
-        model_entry = get_model_by_index(self._model_combo.currentIndex())
-
-        self._pending_model_id = model_entry.model_id
-
-        self._pending_from_cache = False
-
-        self._last_error_message = ""
-
-
-
-        cached = None
-
-        if is_enabled("translation.response_cache"):
-
-            ttl = int(get_feature("translation.response_cache").get("ttl_days", 30))
-
-            cached = history.find_cached(
-
-                self._pending_direction,
-
-                text,
-
-                self._pending_profile_id,
-
-                ttl_days=ttl,
-
-            )
-
-
-
-        self._input_field.clear_input()
-
-
-
-        if cached is not None:
-
-            self._pending_from_cache = True
-
-            self._on_translation_finished(cached)
-
-            return
-
-
-
-        self._set_busy(True)
-
-        self._set_status("main.status_translating", error=False)
-
-
-
-        self._worker = TranslateWorker(
-
-            text,
-
-            self._pending_direction,
-
-            model_entry,
-
-            profile_id=self._pending_profile_id,
-
-            parent=self,
-
-        )
-
-        self._worker.finished.connect(self._on_translation_finished)
-
-        self._worker.chunk.connect(self._on_translation_chunk)
-
-        self._worker.error.connect(self._on_translation_error)
-
-        self._worker.cancelled.connect(self._on_translation_cancelled)
-
-        self._worker.finished.connect(self._worker.deleteLater)
-
-        self._worker.error.connect(self._worker.deleteLater)
-
-        self._worker.cancelled.connect(self._worker.deleteLater)
-
-        self._worker.start()
-
-
+        self._translation.start(text)
 
     def _cancel_translation(self) -> None:
-
-        if self._worker is not None and self._worker.isRunning():
-
-            self._worker.cancel()
-
-
+        self._translation.cancel()
 
     def _retry_translation(self) -> None:
-
-        if not self._pending_source:
-
-            return
-
-        self._input_field.set_input_text(self._pending_source)
-
-        self._submit_translation()
-
-
+        self._translation.retry()
 
     def _show_result(self, result: str, direction: str, profile_id: str) -> None:
 
         formatter = get_formatter(direction, profile_id)
 
         self._output_field.set_result_html(formatter(result))
-
-    def _on_translation_chunk(self, partial: str) -> None:
-        self._output_field.set_result_plain(partial)
-
-
-
-    def _on_translation_finished(self, result: str) -> None:
-
-        from_cache = self._pending_from_cache
-
-        self._show_result(result, self._pending_direction, self._pending_profile_id)
-
-        if is_enabled("history.auto_save") and not from_cache:
-
-            history.save_translation(
-
-                self._pending_direction,
-
-                self._pending_source,
-
-                result,
-
-                self._pending_model_id,
-
-                profile_id=self._pending_profile_id,
-
-            )
-
-        if is_enabled("ui.auto_copy_result"):
-
-            QGuiApplication.clipboard().setText(result)
-
-        if self._replace_after_translate:
-
-            paste_text(result)
-
-            self._replace_after_translate = False
-
-        self._worker = None
-
-        self._set_busy(False)
-
-        if from_cache:
-
-            self._set_status("main.status_cached", error=False)
-
-        else:
-
-            self._set_status("main.status_ready", error=False)
-
-        self._process_queue()
-
-        self._input_field.setFocus()
-
-
-
-    def _on_translation_error(self, message: str) -> None:
-
-        self._last_error_message = message
-
-        self._worker = None
-
-        self._set_busy(False)
-
-        self._retry_btn.setVisible(True)
-
-        self._set_status(
-
-            "main.status_error",
-
-            error=True,
-
-            message=message,
-
-        )
-
-        self._process_queue()
-
-        self._input_field.setFocus()
-
-
-
-    def _on_translation_cancelled(self) -> None:
-
-        self._worker = None
-
-        self._set_busy(False)
-
-        self._set_status("main.status_cancelled", error=False)
-
-        self._process_queue()
-
-        self._input_field.setFocus()
-
-
-
-    def _process_queue(self) -> None:
-
-        if not is_enabled("translation.request_queue") or not self._request_queue:
-
-            return
-
-        if self._worker is not None and self._worker.isRunning():
-
-            return
-
-        next_req = self._request_queue.pop(0)
-
-        index = next_req.model_index
-
-        if 0 <= index < self._model_combo.count():
-
-            self._model_combo.setCurrentIndex(index)
-
-        for radio, direction_id in self._direction_radios:
-
-            radio.setChecked(direction_id == next_req.direction)
-
-        self._refresh_profile_combo()
-
-        profile_index = self._profile_combo.findData(next_req.profile_id)
-
-        if profile_index >= 0:
-
-            self._profile_combo.setCurrentIndex(profile_index)
-
-        self._start_translation(next_req.text)
-
 

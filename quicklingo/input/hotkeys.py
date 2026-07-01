@@ -2,36 +2,13 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
-
-def _send_ctrl_c() -> None:
-    if sys.platform != "win32":
-        return
-    import ctypes
-
-    user32 = ctypes.windll.user32
-    KEYEVENTF_KEYUP = 0x0002
-    user32.keybd_event(0x11, 0, 0, 0)
-    user32.keybd_event(0x43, 0, 0, 0)
-    user32.keybd_event(0x43, 0, KEYEVENTF_KEYUP, 0)
-    user32.keybd_event(0x11, 0, KEYEVENTF_KEYUP, 0)
-
-
-def _send_ctrl_v() -> None:
-    if sys.platform != "win32":
-        return
-    import ctypes
-
-    user32 = ctypes.windll.user32
-    KEYEVENTF_KEYUP = 0x0002
-    user32.keybd_event(0x11, 0, 0, 0)
-    user32.keybd_event(0x56, 0, 0, 0)
-    user32.keybd_event(0x56, 0, KEYEVENTF_KEYUP, 0)
-    user32.keybd_event(0x11, 0, KEYEVENTF_KEYUP, 0)
+from quicklingo.input.key_simulation import send_ctrl_c, send_ctrl_v
 
 
 class HotkeyManager(QObject):
@@ -40,6 +17,29 @@ class HotkeyManager(QObject):
     toggle_window = Signal()
     tutor_capture_toggle = Signal()
     double_ctrl_c = Signal()
+
+    _HOTKEY_BINDINGS: tuple[tuple[str, str, Callable[[], None]], ...] = (
+        (
+            "input.global_hotkey.translate_selection",
+            "combo",
+            lambda self: self.translate_selection.emit(),
+        ),
+        (
+            "input.global_hotkey.translate_clipboard",
+            "combo",
+            lambda self: self.translate_clipboard.emit(),
+        ),
+        (
+            "ui.system_tray",
+            "hotkey",
+            lambda self: self.toggle_window.emit(),
+        ),
+        (
+            "input.tutor_capture",
+            "hotkey",
+            lambda self: self.tutor_capture_toggle.emit(),
+        ),
+    )
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -59,30 +59,27 @@ class HotkeyManager(QObject):
         from quicklingo.features import get_feature, is_enabled
 
         bindings: dict[str, callable] = {}
+        defaults = {
+            "input.global_hotkey.translate_selection": "<ctrl>+<shift>+t",
+            "input.global_hotkey.translate_clipboard": "<ctrl>+<shift>+v",
+            "ui.system_tray": "<ctrl>+<shift>+q",
+            "input.tutor_capture": "",
+        }
 
-        if is_enabled("input.global_hotkey.translate_selection"):
-            combo = str(
-                get_feature("input.global_hotkey.translate_selection").get(
-                    "combo", "<ctrl>+<shift>+t"
-                )
-            )
-            bindings[combo] = lambda: self.translate_selection.emit()
-
-        if is_enabled("input.global_hotkey.translate_clipboard"):
-            combo = str(
-                get_feature("input.global_hotkey.translate_clipboard").get(
-                    "combo", "<ctrl>+<shift>+v"
-                )
-            )
-            bindings[combo] = lambda: self.translate_clipboard.emit()
-
-        if is_enabled("ui.system_tray"):
-            combo = str(get_feature("ui.system_tray").get("hotkey", "<ctrl>+<shift>+q"))
-            bindings[combo] = lambda: self.toggle_window.emit()
-
-        tutor_combo = str(get_feature("input.tutor_capture").get("hotkey", "")).strip()
-        if tutor_combo:
-            bindings[tutor_combo] = lambda: self.tutor_capture_toggle.emit()
+        for feature_key, field, handler in self._HOTKEY_BINDINGS:
+            if feature_key == "input.tutor_capture":
+                combo = str(get_feature(feature_key).get(field, defaults[feature_key])).strip()
+                if not combo:
+                    continue
+            elif feature_key == "ui.system_tray":
+                if not is_enabled(feature_key):
+                    continue
+                combo = str(get_feature(feature_key).get(field, defaults[feature_key]))
+            elif not is_enabled(feature_key):
+                continue
+            else:
+                combo = str(get_feature(feature_key).get(field, defaults[feature_key]))
+            bindings[combo] = lambda handler=handler: handler(self)
 
         if bindings:
             self._hotkeys = keyboard.GlobalHotKeys(bindings)
@@ -146,7 +143,7 @@ class HotkeyManager(QObject):
 def copy_selection_to_clipboard() -> str:
     clipboard = QGuiApplication.clipboard()
     previous = clipboard.text()
-    _send_ctrl_c()
+    send_ctrl_c()
     QApplication.processEvents()
     time.sleep(0.08)
     text = clipboard.text()
@@ -163,6 +160,6 @@ def paste_text(text: str) -> None:
     clipboard.setText(text)
     QApplication.processEvents()
     time.sleep(0.03)
-    _send_ctrl_v()
+    send_ctrl_v()
     time.sleep(0.05)
     clipboard.setText(previous)

@@ -62,12 +62,11 @@ class DashboardWindow(QDialog):
             self._model_chart_view.setChart(QChart())
 
     def _update_summary(self) -> None:
-        stats = history.get_stats()
-        direction = history.get_direction_counts()
+        stats = history.get_translation_stats()
         parts = [tr("dashboard.total", count=stats.get("total", 0))]
         for key, label_key in (("ua-en", "dashboard.direction_ua_en"), ("en-ua", "dashboard.direction_en_ua")):
-            if direction.get(key, 0):
-                parts.append(tr(label_key, count=direction[key]))
+            if stats.get(key, 0):
+                parts.append(tr(label_key, count=stats[key]))
         if is_enabled("learning.streak"):
             streak, _last = settings.get_learning_streak()
             parts.append(tr("dashboard.streak", streak=streak))

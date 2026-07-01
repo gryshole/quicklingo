@@ -6,6 +6,7 @@ from pathlib import Path
 from quicklingo.paths import user_data_dir
 
 _GLOSSARY_FILE = "glossary.json"
+_cache: dict | None = None
 
 
 def _path() -> Path:
@@ -13,14 +14,24 @@ def _path() -> Path:
 
 
 def _load_raw() -> dict:
+    global _cache
+    if _cache is not None:
+        return _cache
     path = _path()
     if not path.is_file():
-        return {}
+        _cache = {}
+        return _cache
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        data = {}
+    _cache = data if isinstance(data, dict) else {}
+    return _cache
+
+
+def _invalidate_cache() -> None:
+    global _cache
+    _cache = None
 
 
 def get_terms(direction: str) -> list[tuple[str, str]]:
@@ -62,6 +73,7 @@ def save_all(data: dict[str, list[dict[str, str]]]) -> None:
         json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    _invalidate_cache()
 
 
 def format_for_prompt(direction: str) -> str:

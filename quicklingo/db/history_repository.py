@@ -1,0 +1,272 @@
+from __future__ import annotations
+
+import csv
+import io
+
+from quicklingo.db.connection import connection, get_connection
+from quicklingo.db.history_models import (
+    TranslationRecord,
+    format_tags,
+    make_content_hash,
+    parse_tags,
+    row_to_record,
+)
+
+
+def _validate_direction(direction: str) -> None:
+    from quicklingo.config.loader import get_direction
+
+    if get_direction(direction) is None:
+        raise ValueError(f"Unknown translation direction: {direction}")
+
+
+def save_translation(
+    direction: str,
+    source_text: str,
+    result_text: str,
+    model: str,
+    *,
+    profile_id: str = "",
+    content_hash: str = "",
+) -> int:
+    _validate_direction(direction)
+    if not content_hash:
+        content_hash = make_content_hash(source_text, direction, profile_id)
+    with connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO translations
+                (direction, source_text, result_text, model, profile_id, content_hash)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (direction, source_text, result_text, model, profile_id, content_hash),
+        )
+    return cursor.lastrowid or 0
+
+
+def find_cached(
+    direction: str,
+    source_text: str,
+    profile_id: str,
+    *,
+    ttl_days: int,
+) -> str | None:
+    content_hash = make_content_hash(source_text, direction, profile_id)
+    row = get_connection().execute(
+        """
+        SELECT result_text
+        FROM translations
+        WHERE content_hash = ?
+          AND direction = ?
+          AND created_at >= datetime('now', ?)
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (content_hash, direction, f"-{max(1, ttl_days)} days"),
+    ).fetchone()
+    return row["result_text"] if row else None
+
+
+def _fts_query(text: str) -> str:
+    tokens = []
+    for token in text.split():
+        cleaned = "".join(ch for ch in token if ch.isalnum() or ch in ("_", "-"))
+        if cleaned:
+            tokens.append(f'"{cleaned}"*')
+    return " AND ".join(tokens) if tokens else '""'
+
+
+def search_records(
+    *,
+    query: str = "",
+    direction: str | None = None,
+    model: str | None = None,
+    tag: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    starred_only: bool = False,
+    limit: int = 1000,
+) -> list[TranslationRecord]:
+    clauses = ["1=1"]
+    params: list[object] = []
+
+    if direction:
+        clauses.append("t.direction = ?")
+        params.append(direction)
+
+    if model:
+        clauses.append("t.model = ?")
+        params.append(model)
+
+    if tag:
+        clauses.append(
+            "(t.tags = ? OR t.tags LIKE ? || ',%' OR t.tags LIKE '%,' || ? OR t.tags LIKE '%,' || ? || ',%')"
+        )
+        params.extend([tag, tag, tag, tag])
+
+    if date_from:
+        clauses.append("date(t.created_at) >= date(?)")
+        params.append(date_from)
+
+    if date_to:
+        clauses.append("date(t.created_at) <= date(?)")
+        params.append(date_to)
+
+    if starred_only:
+        clauses.append("t.is_starred = 1")
+
+    if query.strip():
+        clauses.append(
+            "t.id IN (SELECT rowid FROM translations_fts WHERE translations_fts MATCH ?)"
+        )
+        params.append(_fts_query(query.strip()))
+
+    sql = f"""
+        SELECT t.id, t.created_at, t.direction, t.source_text, t.result_text,
+               t.model, t.profile_id, t.content_hash, t.is_starred, t.tags
+        FROM translations t
+        WHERE {' AND '.join(clauses)}
+        ORDER BY t.id DESC
+        LIMIT ?
+    """
+    params.append(limit)
+    rows = get_connection().execute(sql, params).fetchall()
+    return [row_to_record(row) for row in rows]
+
+
+def get_all(limit: int = 1000) -> list[TranslationRecord]:
+    return search_records(limit=limit)
+
+
+def get_recent_for_context(
+    direction: str,
+    *,
+    limit: int = 3,
+    exclude_source: str | None = None,
+) -> list[tuple[str, str]]:
+    fetch_limit = max(1, limit) + 5
+    rows = get_connection().execute(
+        """
+        SELECT source_text, result_text
+        FROM translations
+        WHERE direction = ?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (direction, fetch_limit),
+    ).fetchall()
+    pairs: list[tuple[str, str]] = []
+    normalized_exclude = " ".join(exclude_source.split()) if exclude_source else None
+    for row in rows:
+        source = row["source_text"].strip()
+        if not source:
+            continue
+        if normalized_exclude and " ".join(source.split()) == normalized_exclude:
+            continue
+        pairs.append((source, row["result_text"].strip()))
+        if len(pairs) >= limit:
+            break
+    return pairs
+
+
+def clear_all() -> None:
+    with connection() as conn:
+        conn.execute("DELETE FROM translations")
+
+
+def delete_by_id(record_id: int) -> bool:
+    with connection() as conn:
+        cursor = conn.execute("DELETE FROM translations WHERE id = ?", (record_id,))
+    return cursor.rowcount > 0
+
+
+def set_starred(record_id: int, starred: bool) -> bool:
+    with connection() as conn:
+        cursor = conn.execute(
+            "UPDATE translations SET is_starred = ? WHERE id = ?",
+            (1 if starred else 0, record_id),
+        )
+    return cursor.rowcount > 0
+
+
+def set_tags(record_id: int, tags: list[str]) -> bool:
+    value = format_tags(tags)
+    with connection() as conn:
+        cursor = conn.execute(
+            "UPDATE translations SET tags = ? WHERE id = ?",
+            (value, record_id),
+        )
+    return cursor.rowcount > 0
+
+
+def bulk_apply_tags(
+    record_ids: list[int],
+    *,
+    add: list[str] | None = None,
+    remove: list[str] | None = None,
+    replace: list[str] | None = None,
+) -> int:
+    if not record_ids:
+        return 0
+    add_tags = add or []
+    remove_tags = {tag.strip().lower() for tag in remove or [] if tag.strip()}
+    conn = get_connection()
+    placeholders = ",".join("?" * len(record_ids))
+    rows = conn.execute(
+        f"SELECT id, tags FROM translations WHERE id IN ({placeholders})",
+        record_ids,
+    ).fetchall()
+    updates: list[tuple[str, int]] = []
+    for row in rows:
+        record_id = row["id"]
+        if replace is not None:
+            new_tags = format_tags(replace)
+        else:
+            current = parse_tags(row["tags"])
+            if add_tags:
+                current = parse_tags(format_tags(current + add_tags))
+            if remove_tags:
+                current = [tag for tag in current if tag.lower() not in remove_tags]
+            new_tags = format_tags(current)
+        if new_tags == (row["tags"] or ""):
+            continue
+        updates.append((new_tags, record_id))
+    if not updates:
+        return 0
+    with connection() as conn:
+        conn.executemany("UPDATE translations SET tags = ? WHERE id = ?", updates)
+    return len(updates)
+
+
+def export_csv(records: list[TranslationRecord] | None = None) -> str:
+    rows = records if records is not None else get_all()
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(
+        [
+            "id",
+            "created_at",
+            "direction",
+            "source_text",
+            "result_text",
+            "model",
+            "profile_id",
+            "is_starred",
+            "tags",
+        ]
+    )
+    for record in rows:
+        writer.writerow(
+            [
+                record.id,
+                record.created_at,
+                record.direction,
+                record.source_text,
+                record.result_text,
+                record.model,
+                record.profile_id,
+                "1" if record.is_starred else "0",
+                record.tags,
+            ]
+        )
+    return buffer.getvalue()

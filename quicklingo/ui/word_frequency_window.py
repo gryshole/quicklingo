@@ -43,7 +43,8 @@ class WordFrequencyWindow(QDialog):
         layout.addWidget(self._direction_combo_label)
         layout.addLayout(btn_row)
         layout.addWidget(self._table, stretch=1)
-        self._current_direction = get_directions()[0].id if get_directions() else "ua-en"
+        directions = get_directions()
+        self._current_direction = directions[0].id if directions else "ua-en"
         if self._direction_buttons:
             self._direction_buttons[0][0].setChecked(True)
         self.retranslate_ui()

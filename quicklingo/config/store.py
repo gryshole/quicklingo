@@ -7,14 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from quicklingo import settings
+from quicklingo.config.json_io import read_json
 from quicklingo.config.loader import reload_config
 from quicklingo.config.validation import (
     ValidationError,
     check_direction_deletable,
     check_formatter_deletable,
     check_profile_deletable,
-    profiles_using_direction,
-    profiles_using_formatter,
     prompt_path,
     validate_id,
 )
@@ -46,28 +45,34 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def _read_json_file(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_json(path)
 
 
-def _list_json_ids(subdir: str) -> list[str]:
-    base = _root() / subdir
-    if not base.is_dir():
-        return []
-    ids: list[str] = []
-    for path in sorted(base.glob("*.json")):
-        data = _read_json_file(path)
-        ids.append(data.get("id") or path.stem)
-    return ids
+def _entity_path(subdir: str, entity_id: str) -> Path:
+    return _root() / subdir / f"{entity_id}.json"
 
 
-def _all_direction_records() -> list[dict[str, Any]]:
-    base = _root() / "directions"
-    if not base.is_dir():
-        return []
-    records: list[dict[str, Any]] = []
-    for path in sorted(base.glob("*.json")):
-        records.append(_read_json_file(path))
-    return records
+def _save_entity_json(
+    subdir: str,
+    entity_id: str,
+    data: dict[str, Any],
+    *,
+    old_id: str | None = None,
+) -> None:
+    path = _entity_path(subdir, entity_id)
+    if old_id and old_id != entity_id:
+        old_path = _entity_path(subdir, old_id)
+        if old_path.exists() and old_path != path:
+            old_path.unlink(missing_ok=True)
+    _atomic_write_json(path, data)
+    reload_config()
+
+
+def _delete_entity_json(subdir: str, entity_id: str) -> None:
+    path = _entity_path(subdir, entity_id)
+    if path.is_file():
+        path.unlink()
+    reload_config()
 
 
 # --- Directions ---
@@ -100,29 +105,16 @@ def save_direction(
         "default_profile": default_profile,
         "enabled": enabled,
     }
-    path = _root() / "directions" / f"{id}.json"
-    if old_id and old_id != id:
-        old_path = _root() / "directions" / f"{old_id}.json"
-        if old_path.exists() and old_path != path:
-            old_path.unlink(missing_ok=True)
-    _atomic_write_json(path, data)
-    reload_config()
+    _save_entity_json("directions", id, data, old_id=old_id)
 
 
 def delete_direction(direction_id: str) -> None:
     validate_id(direction_id)
-    from quicklingo.config.loader import get_all_directions, get_all_profiles
+    from quicklingo.config.loader import get_all_directions
 
     check_direction_deletable(direction_id)
-    for profile in get_all_profiles():
-        if direction_id in profile.prompts:
-            raise ValidationError(
-                "validation.direction_in_profile",
-                direction_id=direction_id,
-                profile_id=profile.id,
-            )
 
-    path = _root() / "directions" / f"{direction_id}.json"
+    path = _entity_path("directions", direction_id)
     if path.is_file():
         path.unlink()
 
@@ -366,23 +358,13 @@ def save_formatter(
     if rules is not None:
         data["rules"] = rules
 
-    path = _root() / "formatters" / f"{id}.json"
-    if old_id and old_id != id:
-        old_path = _root() / "formatters" / f"{old_id}.json"
-        if old_path.exists() and old_path != path:
-            old_path.unlink(missing_ok=True)
-    _atomic_write_json(path, data)
-    reload_config()
+    _save_entity_json("formatters", id, data, old_id=old_id)
 
 
 def delete_formatter(formatter_id: str) -> None:
     validate_id(formatter_id)
-    used = profiles_using_formatter(formatter_id)
     check_formatter_deletable(formatter_id)
-    path = _root() / "formatters" / f"{formatter_id}.json"
-    if path.is_file():
-        path.unlink()
-    reload_config()
+    _delete_entity_json("formatters", formatter_id)
 
 
 def _rename_formatter(old_id: str, new_id: str) -> None:

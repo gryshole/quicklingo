@@ -18,8 +18,7 @@ class DifficultItem:
     kind: str
 
 
-def _normalize_source(text: str) -> str:
-    return " ".join(text.split()).lower()
+from quicklingo.learning.text_normalize import normalize_source as _normalize_source
 
 
 def compute_difficult_words(records: list[history.TranslationRecord]) -> list[DifficultItem]:

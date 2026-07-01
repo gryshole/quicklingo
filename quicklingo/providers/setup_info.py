@@ -1,4 +1,3 @@
-from quicklingo import settings
 from quicklingo.settings import API_PROVIDERS
 
 __all__ = (
@@ -6,7 +5,6 @@ __all__ = (
     "KEY_PROVIDERS",
     "PROVIDER_HINT_KEYS",
     "provider_needs_api_key",
-    "is_provider_configured",
 )
 
 KEY_PROVIDERS: tuple[str, ...] = (
@@ -33,11 +31,3 @@ PROVIDER_HINT_KEYS: dict[str, str] = {
 
 def provider_needs_api_key(provider_id: str) -> bool:
     return provider_id in KEY_PROVIDERS
-
-
-def is_provider_configured(provider_id: str) -> bool:
-    if provider_id == "ollama":
-        return bool(settings.get_ollama_base_url().strip())
-    if provider_id in KEY_PROVIDERS:
-        return bool(settings.get_api_key(provider_id))
-    return False

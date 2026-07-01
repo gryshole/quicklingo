@@ -32,6 +32,7 @@ def select_candidates(
     *,
     max_candidates: int = 120,
     starred_only: bool = False,
+    difficult_items: list[DifficultItem] | None = None,
 ) -> list[CorpusCandidate]:
     if starred_only:
         records = [r for r in records if r.is_starred]
@@ -59,7 +60,7 @@ def select_candidates(
                 priority=5,
             )
 
-    for item in compute_difficult_words(deduped):
+    for item in difficult_items if difficult_items is not None else compute_difficult_words(deduped):
         for record in deduped:
             if item.kind == "phrase" and _normalize_source(record.source_text) == _normalize_source(
                 item.example_source
@@ -174,8 +175,7 @@ def format_summary_text(summary: AnalysisSummary, *, difficult: list[DifficultIt
     return "\n".join(lines)
 
 
-def _normalize_source(text: str) -> str:
-    return " ".join(text.split()).lower()
+from quicklingo.learning.text_normalize import normalize_source as _normalize_source
 
 
 def _top_tokens_from_records(

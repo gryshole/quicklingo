@@ -174,8 +174,9 @@ class ModelsTab(SettingsTab):
         filter_provider = self._filter_provider()
         self._add_combo.blockSignals(True)
         self._add_combo.clear()
-        catalog_ids = {entry.model_id for entry in get_model_catalog()}
-        for entry in get_model_catalog():
+        catalog = get_model_catalog()
+        catalog_ids = {entry.model_id for entry in catalog}
+        for entry in catalog:
             if entry.api_provider != filter_provider:
                 continue
             if entry.model_id in selected:
