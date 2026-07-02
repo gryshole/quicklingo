@@ -7,6 +7,7 @@ from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QSizePolicy, QWidget
 from shiboken6 import isValid
 
+from quicklingo.ui.app_theme import apply_combo_font
 from quicklingo.ui.help_dialog import show_help
 
 
@@ -49,6 +50,7 @@ def configure_single_line_combo(combo: QComboBox) -> None:
         QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
     )
     combo.view().setTextElideMode(Qt.TextElideMode.ElideRight)
+    apply_combo_font(combo)
 
     def _sync_tooltip(_text: str = "") -> None:
         combo.setToolTip(combo.currentText())

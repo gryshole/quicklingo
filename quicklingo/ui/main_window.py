@@ -6,9 +6,11 @@ from PySide6.QtWidgets import (
 
     QApplication,
 
-    QButtonGroup,
-
     QComboBox,
+
+    QFrame,
+
+    QGridLayout,
 
     QHBoxLayout,
 
@@ -19,8 +21,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
 
     QPushButton,
-
-    QRadioButton,
 
     QSizePolicy,
 
@@ -66,13 +66,28 @@ from quicklingo.providers.setup_info import PROVIDER_HINT_KEYS, provider_needs_a
 from quicklingo.ui.controllers.translation_controller import TranslationController
 from quicklingo.ui.controllers.tutor_input import append_character, backspace as tutor_backspace
 from quicklingo.ui.controllers.update_controller import UpdateController
+from quicklingo.ui.app_theme import (
+    GLOBAL_BTN_OFF,
+    GLOBAL_BTN_ON,
+    GLOBAL_BTN_UNSUPPORTED,
+    main_window_stylesheet,
+    OUTPUT_PLACEHOLDER_STYLE,
+    STATUS_ERROR_STYLE,
+    STATUS_MUTED_STYLE,
+    apply_compact_form_label_style,
+    apply_combo_font,
+    apply_section_title_style,
+    compact_form_row,
+    make_compact_section_card,
+    make_section_card,
+)
 from quicklingo.ui.qt_utils import (
     configure_single_line_combo,
-    labeled_combo_row,
     open_help,
     raise_window,
     reload_combo,
 )
+from quicklingo.ui.widgets.segmented_control import SegmentedControl
 from quicklingo.ui.history_window import HistoryWindow
 from quicklingo.ui.dashboard_window import DashboardWindow
 from quicklingo.ui.learning_window import LearningWindow
@@ -101,13 +116,13 @@ class MainWindow(QMainWindow):
         self._learning_window: LearningWindow | None = None
         self._dashboard_window: DashboardWindow | None = None
 
-        self._direction_radios: list[tuple[QRadioButton, str]] = []
-
-        self._direction_group: QButtonGroup | None = None
+        self._direction_control: SegmentedControl | None = None
 
         self._main_layout: QVBoxLayout | None = None
 
-        self._direction_row: QHBoxLayout | None = None
+        self._input_layout: QVBoxLayout | None = None
+
+        self._tag_row: QHBoxLayout | None = None
 
         self._status_key = "main.status_ready"
 
@@ -158,75 +173,55 @@ class MainWindow(QMainWindow):
 
 
         central = QWidget()
-
+        central.setObjectName("appRoot")
         self.setCentralWidget(central)
+        self.setStyleSheet(main_window_stylesheet())
 
         layout = QVBoxLayout(central)
-
         self._main_layout = layout
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(14)
 
-        layout.setContentsMargins(12, 8, 12, 12)
-
-        layout.setSpacing(10)
-
-
+        self._settings_section_label = QLabel()
+        apply_section_title_style(self._settings_section_label)
 
         self._model_label = QLabel()
-
+        apply_compact_form_label_style(self._model_label)
         self._model_combo = QComboBox()
-
         self._model_combo.currentIndexChanged.connect(lambda _: self._check_api_key())
-
         configure_single_line_combo(self._model_combo)
-
         self._reload_model_combo()
 
-
-
         self._direction_label = QLabel()
+        apply_compact_form_label_style(self._direction_label)
 
-        self._swap_direction_btn = QPushButton()
-
-        self._swap_direction_btn.clicked.connect(self._swap_direction)
-
-
+        self._direction_control = SegmentedControl()
+        self._build_direction_segments()
 
         self._profile_label = QLabel()
-
+        apply_compact_form_label_style(self._profile_label)
         self._profile_combo = QComboBox()
-
         self._profile_combo.currentIndexChanged.connect(self._on_profile_changed)
-
         configure_single_line_combo(self._profile_combo)
 
-
-
         self._tag_label = QLabel()
-
+        apply_compact_form_label_style(self._tag_label)
         self._tag_combo = QComboBox()
-
         self._tag_combo.setEditable(True)
-
+        apply_combo_font(self._tag_combo)
         self._reload_tag_combo()
 
-
-
-        self._direction_group = QButtonGroup(self)
-
-        self._build_direction_radios()
-
-
+        self._input_section_label = QLabel()
+        apply_section_title_style(self._input_section_label)
 
         self._input_label = QLabel()
 
         self._tutor_capture_btn = QPushButton()
-
+        self._tutor_capture_btn.setObjectName("globalInputBtn")
         self._tutor_capture_btn.setCheckable(True)
-
         self._tutor_capture_btn.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
-
         self._tutor_capture_btn.toggled.connect(self._on_tutor_capture_btn_toggled)
 
         self._input_header = QHBoxLayout()
@@ -247,10 +242,35 @@ class MainWindow(QMainWindow):
 
 
         self._output_label = QLabel()
+        apply_section_title_style(self._output_label)
 
         self._output_field = ZoomableTextEdit()
-
+        self._output_field.setFrameShape(QFrame.Shape.NoFrame)
         self._output_field.set_text_selectable(True)
+        self._output_field.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
+        self._output_host = QWidget()
+        self._output_host.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        output_host_layout = QGridLayout(self._output_host)
+        output_host_layout.setContentsMargins(0, 0, 0, 0)
+        output_host_layout.addWidget(self._output_field, 0, 0)
+
+        self._output_placeholder = QLabel()
+        self._output_placeholder.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._output_placeholder.setStyleSheet(OUTPUT_PLACEHOLDER_STYLE)
+        self._output_placeholder.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
+        output_host_layout.addWidget(
+            self._output_placeholder, 0, 0, Qt.AlignmentFlag.AlignCenter
+        )
+        self._output_field.result_changed.connect(self._sync_output_placeholder)
 
 
 
@@ -294,40 +314,41 @@ class MainWindow(QMainWindow):
 
 
 
-        layout.addLayout(labeled_combo_row(self._model_label, self._model_combo))
+        settings_card, settings_layout = make_compact_section_card("settingsCard")
+        settings_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        settings_layout.addWidget(self._settings_section_label)
+        settings_layout.addLayout(compact_form_row(self._model_label, self._model_combo))
+        settings_layout.addLayout(
+            compact_form_row(self._direction_label, self._direction_control)
+        )
+        settings_layout.addLayout(
+            compact_form_row(self._profile_label, self._profile_combo)
+        )
+        self._tag_row = compact_form_row(self._tag_label, self._tag_combo)
+        settings_layout.addLayout(self._tag_row)
 
-        layout.addWidget(self._direction_label)
+        input_card, input_layout = make_section_card("inputCard", margins=(12, 10, 12, 10))
+        self._input_layout = input_layout
+        input_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        input_layout.addWidget(self._input_section_label)
+        input_layout.addLayout(self._input_header)
+        input_layout.addWidget(self._input_field)
 
+        result_card, result_layout = make_section_card("resultCard", margins=(12, 10, 12, 10))
+        result_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
+        result_layout.addWidget(self._output_label)
+        result_layout.addWidget(self._output_host, stretch=1)
+        result_layout.addLayout(action_row)
 
-
-        self._direction_row = QHBoxLayout()
-
-        for radio, _direction_id in self._direction_radios:
-
-            self._direction_row.addWidget(radio)
-
-        self._direction_row.addWidget(self._swap_direction_btn)
-
-        self._direction_row.addStretch()
-
-        layout.addLayout(self._direction_row)
-
-
-
-        layout.addLayout(labeled_combo_row(self._profile_label, self._profile_combo))
-
-        layout.addLayout(labeled_combo_row(self._tag_label, self._tag_combo))
-
-        layout.addLayout(self._input_header)
-
-        layout.addWidget(self._input_field)
-
-        layout.addWidget(self._output_label)
-
-        layout.addWidget(self._output_field, stretch=1)
-
-        layout.addLayout(action_row)
-
+        layout.addWidget(settings_card)
+        layout.addWidget(input_card)
+        layout.addWidget(result_card, stretch=1)
         layout.addWidget(self._status_label)
 
 
@@ -338,7 +359,9 @@ class MainWindow(QMainWindow):
 
         self.sync_tutor_capture_ui()
 
-        self._direction_group.buttonClicked.connect(lambda _: self._refresh_profile_combo())
+        self._direction_control.selection_changed.connect(
+            lambda _: self._refresh_profile_combo()
+        )
 
         self.retranslate_ui()
 
@@ -360,6 +383,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(f"QuickLingo {__version__}")
 
+        self._settings_section_label.setText(tr("main.section_settings").upper())
+        self._input_section_label.setText(tr("main.section_input").upper())
+
         self._model_label.setText(tr("main.model_label"))
 
         self._direction_label.setText(tr("main.direction_label"))
@@ -371,11 +397,11 @@ class MainWindow(QMainWindow):
         self._refresh_input_label()
         self._input_field.setPlaceholderText(tr("main.input_placeholder"))
 
-        self._output_label.setText(tr("main.output_label"))
+        self._output_label.setText(tr("main.section_result").upper())
 
-        self._output_field.setPlaceholderText(tr("main.output_placeholder"))
+        self._output_placeholder.setText(tr("main.output_placeholder"))
 
-        self._swap_direction_btn.setText(tr("main.swap_direction"))
+        self._sync_output_placeholder()
 
         self._cancel_btn.setText(tr("main.cancel"))
 
@@ -447,7 +473,7 @@ class MainWindow(QMainWindow):
 
             self._help_glossary_action.setText(tr("main.menu_help_glossary"))
 
-        self._tutor_capture_btn.setText(tr("main.tutor_capture_btn"))
+        self._tutor_capture_btn.setText(f"⚡ {tr('main.tutor_capture_btn')}")
 
         self.sync_tutor_capture_ui()
 
@@ -480,6 +506,11 @@ class MainWindow(QMainWindow):
         if self._learning_window is not None:
 
             self._learning_window.retranslate_ui()
+
+
+
+    def _sync_output_placeholder(self) -> None:
+        self._output_placeholder.setVisible(not self._output_field.has_result())
 
 
 
@@ -523,36 +554,14 @@ class MainWindow(QMainWindow):
 
         import sys
 
-        # Same box model in both states so the input label row does not shift.
-        box = "border: 1px solid; padding: 4px 10px; min-width: 72px; min-height: 24px; max-height: 24px;"
         if sys.platform != "win32":
-
             self._tutor_capture_btn.setToolTip(tr("main.tutor_capture_btn_tooltip_unsupported"))
-
-            self._tutor_capture_btn.setStyleSheet(
-                f"QPushButton {{ {box} border-color: #c8c8c8; background: #f3f4f6; }}"
-            )
-
+            self._tutor_capture_btn.setStyleSheet(GLOBAL_BTN_UNSUPPORTED)
         elif enabled:
-
-            self._tutor_capture_btn.setStyleSheet(
-                "QPushButton { "
-                f"{box} "
-                "background-color: #dbeafe; border-color: #93c5fd; font-weight: bold; "
-                "}"
-            )
-
+            self._tutor_capture_btn.setStyleSheet(GLOBAL_BTN_ON)
             self._tutor_capture_btn.setToolTip(tr("main.tutor_capture_btn_tooltip_on"))
-
         else:
-
-            self._tutor_capture_btn.setStyleSheet(
-                "QPushButton { "
-                f"{box} "
-                "background-color: #f9fafb; border-color: #d1d5db; "
-                "}"
-            )
-
+            self._tutor_capture_btn.setStyleSheet(GLOBAL_BTN_OFF)
             self._tutor_capture_btn.setToolTip(tr("main.tutor_capture_btn_tooltip_off"))
 
 
@@ -569,13 +578,13 @@ class MainWindow(QMainWindow):
 
             if checked:
 
-                self._status_label.setStyleSheet("color: #555555;")
+                self._status_label.setStyleSheet(STATUS_MUTED_STYLE)
 
                 self._status_label.setText(tr("main.status_tutor_capture_active"))
 
             else:
 
-                self._status_label.setStyleSheet("color: #555555;")
+                self._status_label.setStyleSheet(STATUS_MUTED_STYLE)
 
                 self._status_label.setText(tr("main.status_ready"))
 
@@ -665,7 +674,7 @@ class MainWindow(QMainWindow):
 
     def _rebuild_input_field(self) -> None:
 
-        if self._main_layout is None:
+        if self._input_layout is None:
 
             return
 
@@ -685,9 +694,7 @@ class MainWindow(QMainWindow):
 
         placeholder = self._input_field.placeholderText()
 
-        field_index = self._main_layout.indexOf(self._input_field)
-
-        self._main_layout.removeWidget(self._input_field)
+        self._input_layout.removeWidget(self._input_field)
 
         self._input_field.deleteLater()
 
@@ -707,7 +714,7 @@ class MainWindow(QMainWindow):
 
             self._input_field.set_input_text(text)
 
-        self._main_layout.insertWidget(field_index, self._input_field)
+        self._input_layout.addWidget(self._input_field)
 
 
 
@@ -807,83 +814,31 @@ class MainWindow(QMainWindow):
 
 
 
-    def _build_direction_radios(self) -> None:
+    def _build_direction_segments(self) -> None:
 
-        self._direction_radios.clear()
+        if self._direction_control is None:
+            return
 
-        if self._direction_group is not None:
-
-            for btn in self._direction_group.buttons():
-
-                self._direction_group.removeButton(btn)
-
-        self._direction_group = QButtonGroup(self)
-
+        self._direction_control.clear_segments()
         for index, direction in enumerate(get_directions()):
+            self._direction_control.add_segment(
+                direction.id, direction.label, checked=(index == 0)
+            )
 
-            radio = QRadioButton(direction.label)
+    def _rebuild_direction_segments(self) -> None:
 
-            if index == 0:
-
-                radio.setChecked(True)
-
-            self._direction_group.addButton(radio)
-
-            self._direction_radios.append((radio, direction.id))
-
-
-
-    def _rebuild_direction_radios(self) -> None:
-
-        if self._main_layout is None or self._direction_row is None:
-
+        if self._direction_control is None:
             return
 
         selected = self._current_direction()
-
-        while self._direction_row.count():
-            item = self._direction_row.takeAt(0)
-            widget = item.widget()
-            if widget is not None and widget is not self._swap_direction_btn:
-                widget.deleteLater()
-
-        self._build_direction_radios()
-
-        for radio, _direction_id in self._direction_radios:
-
-            self._direction_row.addWidget(radio)
-
-        self._direction_row.addWidget(self._swap_direction_btn)
-
-        self._direction_row.addStretch()
-
-        self._direction_group.buttonClicked.connect(lambda _: self._refresh_profile_combo())
-
-        for radio, direction_id in self._direction_radios:
-
-            if direction_id == selected:
-
-                radio.setChecked(True)
-
-                break
-
-        else:
-
-            if self._direction_radios:
-
-                self._direction_radios[0][0].setChecked(True)
+        self._direction_control.blockSignals(True)
+        self._build_direction_segments()
+        self._direction_control.set_current_id(selected)
 
         model_id, direction = settings.get_ui_preferences()
-
         if direction:
-
-            for radio, direction_id in self._direction_radios:
-
-                if direction_id == direction:
-
-                    radio.setChecked(True)
-
-                    break
+            self._direction_control.set_current_id(direction)
+        self._direction_control.blockSignals(False)
 
         self._refresh_profile_combo()
 
@@ -979,15 +934,9 @@ class MainWindow(QMainWindow):
 
                 self._model_combo.setCurrentIndex(index)
 
-        if direction:
+        if direction and self._direction_control is not None:
 
-            for radio, direction_id in self._direction_radios:
-
-                if direction_id == direction:
-
-                    radio.setChecked(True)
-
-                    break
+            self._direction_control.set_current_id(direction)
 
 
 
@@ -1003,7 +952,7 @@ class MainWindow(QMainWindow):
 
             "QMenuBar::item { padding: 1px 8px; margin: 0px; }"
 
-            "QMenuBar::item:selected { background: #e5e7eb; }"
+            "QMenuBar::item:selected { background: #e2e8f0; }"
 
         )
 
@@ -1186,7 +1135,7 @@ class MainWindow(QMainWindow):
 
         reload_config()
 
-        self._rebuild_direction_radios()
+        self._rebuild_direction_segments()
 
         self._reload_model_combo()
 
@@ -1261,9 +1210,8 @@ class MainWindow(QMainWindow):
 
     ) -> None:
 
-        for radio, direction_id in self._direction_radios:
-
-            radio.setChecked(direction_id == direction)
+        if self._direction_control is not None:
+            self._direction_control.set_current_id(direction)
 
         self._refresh_profile_combo()
 
@@ -1309,11 +1257,10 @@ class MainWindow(QMainWindow):
 
     def _current_direction(self) -> str:
 
-        for radio, direction_id in self._direction_radios:
-
-            if radio.isChecked():
-
-                return direction_id
+        if self._direction_control is not None:
+            current = self._direction_control.current_id()
+            if current:
+                return current
 
         directions = get_directions()
 
@@ -1373,40 +1320,6 @@ class MainWindow(QMainWindow):
 
 
 
-    def _swap_direction(self) -> None:
-
-        directions = get_directions()
-
-        if len(directions) < 2:
-
-            return
-
-        current = self._current_direction()
-
-        ids = [d.id for d in directions]
-
-        if current not in ids:
-
-            target_id = directions[0].id
-
-        else:
-
-            idx = ids.index(current)
-
-            target_id = ids[(idx + 1) % len(ids)]
-
-        for radio, direction_id in self._direction_radios:
-
-            if direction_id == target_id:
-
-                radio.setChecked(True)
-
-                break
-
-        self._refresh_profile_combo()
-
-
-
     def _current_profile_id(self) -> str:
 
         profile_id = self._profile_combo.currentData()
@@ -1459,9 +1372,9 @@ class MainWindow(QMainWindow):
 
             message = tr(key, **params)
 
-        color = "#c0392b" if error else "#555555"
+        color = STATUS_ERROR_STYLE if error else STATUS_MUTED_STYLE
 
-        self._status_label.setStyleSheet(f"color: {color};")
+        self._status_label.setStyleSheet(color)
 
         self._status_label.setText(message)
 
@@ -1477,11 +1390,8 @@ class MainWindow(QMainWindow):
 
         self._tag_combo.setEnabled(not busy)
 
-        self._swap_direction_btn.setEnabled(not busy)
-
-        for radio, _direction_id in self._direction_radios:
-
-            radio.setEnabled(not busy)
+        if self._direction_control is not None:
+            self._direction_control.set_enabled_all(not busy)
 
         self._cancel_btn.setVisible(busy)
 

@@ -6,6 +6,7 @@ _UA_EN_SPLIT = re.compile(r"\n(?=───────────────�
 _SEPARATOR_LINE = re.compile(r"^_+\s*$")
 _CONTEXT_LINE = re.compile(r"^(.+?) — (.+)$")
 _NUMBERED_LINE = re.compile(r"^(\[\d+\]\s*.+)$")
+_NUMBERED_HEADER = re.compile(r"^\[(\d+)\]\s*(.+)$")
 
 
 def format_plain_output(text: str) -> str:
@@ -43,26 +44,35 @@ def _normalize_ua_en_separators(text: str) -> str:
     return _normalize_separators(text)
 
 
-def _card(body: str, *, extra_style: str = "") -> str:
+def _meaning_block(body: str, *, extra_style: str = "") -> str:
+    return f'<div style="margin-bottom:20px;{extra_style}">{body}</div>'
+
+
+_EMERALD_50 = "#ecfdf5"
+_EMERALD_100 = "#d1fae5"
+_SLATE_700 = "#334155"
+
+
+def _definition_pill(inner_html: str) -> str:
+    """Qt QTextDocument ignores div padding/radius — use a table for the emerald chip."""
     return (
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;'
-        f'border-radius:6px;padding:10px 12px;margin-bottom:10px;{extra_style}">'
-        f"{body}</div>"
+        '<table width="100%" cellpadding="10" cellspacing="0" '
+        f'style="background-color:{_EMERALD_50}; border:1px solid {_EMERALD_100}; '
+        'margin-top:10px; margin-bottom:10px;">'
+        f'<tr><td><span style="color:{_SLATE_700}; line-height:1.625;">'
+        f"{inner_html}</span></td></tr></table>"
     )
 
 
 def _example_block(sentence: str) -> str:
-    return (
-        '<div style="margin-top:8px;padding:8px 10px;background:#ecfdf5;'
-        'border-left:3px solid #10b981;border-radius:4px">'
+    return _definition_pill(
         f'<span style="color:#047857;font-weight:600">Example:</span> '
-        f'<span style="color:#065f46;font-style:italic">{html.escape(sentence)}</span>'
-        "</div>"
+        f"{html.escape(sentence)}"
     )
 
 
 def _meta_line(text: str, *, typo: bool) -> str:
-    color = "#b45309" if typo else "#6b7280"
+    color = "#b45309" if typo else "#64748b"
     return (
         f'<div style="font-style:italic;color:{color};margin-bottom:8px">'
         f"{html.escape(text)}</div>"
@@ -70,27 +80,33 @@ def _meta_line(text: str, *, typo: bool) -> str:
 
 
 def _header_line(text: str) -> str:
+    stripped = text.strip()
+    numbered = _NUMBERED_HEADER.match(stripped)
+    if numbered:
+        index = html.escape(numbered.group(1))
+        word = html.escape(numbered.group(2))
+        return (
+            '<div style="margin:0 0 8px 0;line-height:1.35">'
+            f'<span style="color:#9ca3af;font-weight:400;margin-right:8px">[{index}]</span>'
+            f'<span style="font-size:1.125em;font-weight:700;color:#1e293b">{word}</span>'
+            "</div>"
+        )
     return (
-        f'<div style="font-weight:600;font-size:1.1em;color:#1d4ed8;margin:2px 0">'
-        f"{html.escape(text)}</div>"
+        f'<div style="font-size:1.125em;font-weight:700;color:#1e293b;'
+        f'margin:0 0 8px 0">'
+        f"{html.escape(stripped)}</div>"
     )
 
 
 def _english_definition(text: str) -> str:
-    return (
-        '<div style="margin-top:4px;padding:8px 10px;background:#ecfdf5;'
-        'border-left:3px solid #10b981;border-radius:4px">'
-        f'<span style="color:#065f46;font-style:italic;line-height:1.5">'
-        f"{html.escape(text)}</span>"
-        "</div>"
-    )
+    return _definition_pill(html.escape(text))
 
 
 def _ukrainian_translation(text: str) -> str:
     return (
-        '<div style="margin-top:10px;padding:6px 10px;background:#eff6ff;'
-        'border-left:3px solid #3b82f6;border-radius:4px">'
-        f'<span style="color:#1e3a8a;font-weight:600">{html.escape(text)}</span>'
+        '<div style="margin-top:12px">'
+        f'<span style="color:#1e40af;font-weight:600;font-size:1.05em">'
+        f"{html.escape(text)}</span>"
         "</div>"
     )
 
@@ -117,7 +133,7 @@ def _format_ua_en_block(block: str) -> str:
 
         if stripped.startswith("—") and _CYRILLIC.search(stripped):
             parts.append(
-                f'<div style="color:#64748b;margin:2px 0 6px 12px">'
+                f'<div style="color:#64748b;margin:4px 0 8px 12px">'
                 f"{html.escape(stripped)}</div>"
             )
             continue
@@ -140,7 +156,7 @@ def _format_ua_en_block(block: str) -> str:
 
         parts.append(f'<div style="color:#374151">{html.escape(stripped)}</div>')
 
-    return _card("".join(parts))
+    return _meaning_block("".join(parts))
 
 
 def format_en_ua_output(text: str) -> str:
@@ -280,11 +296,11 @@ def _format_en_ua_entry(entry: _EnUaEntry, *, first: bool = True) -> str:
     if entry.ukrainian:
         parts.append(_ukrainian_translation(entry.ukrainian))
 
-    gap = "" if first else "margin-top:12px;"
-    return _card("".join(parts), extra_style=gap)
+    gap = "" if first else "margin-top:20px;"
+    return _meaning_block("".join(parts), extra_style=gap)
 
 
-RESULT_WRAP_STYLE = "font-family:Segoe UI,sans-serif;line-height:1.45"
+RESULT_WRAP_STYLE = "font-family:Segoe UI,sans-serif;line-height:1.45;color:#334155"
 
 
 def _wrap(body: str) -> str:

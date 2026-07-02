@@ -1,15 +1,35 @@
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut, QWheelEvent
+from PySide6.QtGui import QFont, QKeyEvent, QKeySequence, QShortcut, QWheelEvent
 from PySide6.QtWidgets import QLineEdit, QTextEdit
 
 from quicklingo.ui.format_output import RESULT_WRAP_STYLE
 
 
-def _base_font_point_size(widget) -> int:
-    size = widget.font().pointSize()
-    if size <= 0:
-        size = round(widget.font().pointSizeF())
-    return size if size > 0 else 10
+def _base_font_point_size(widget) -> float:
+    font = widget.font()
+    point = font.pointSizeF()
+    if point > 0:
+        return point
+    point_int = font.pointSize()
+    if point_int > 0:
+        return float(point_int)
+    pixel = font.pixelSize()
+    if pixel > 0:
+        return max(6.0, pixel * 72.0 / 96.0)
+    return 10.0
+
+
+def _zoomed_point_size(base_size: float, zoom_steps: int) -> int:
+    return max(6, int(round(base_size + zoom_steps)))
+
+
+def _font_at_point_size(template: QFont, point_size: int) -> QFont:
+    font = QFont(template.family())
+    font.setStyleHint(template.styleHint())
+    font.setWeight(template.weight())
+    font.setItalic(template.italic())
+    font.setPointSize(point_size)
+    return font
 
 
 def _handle_zoom_key(event: QKeyEvent, zoom_in, zoom_out, reset) -> bool:
@@ -66,8 +86,10 @@ class ZoomableLineEdit(QLineEdit):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("mainInput")
         self._zoom_steps = 0
         self._base_point_size = _base_font_point_size(self)
+        self.setMinimumHeight(36)
         _install_zoom_shortcuts(self, self._zoom_in, self._zoom_out, self.reset_zoom)
 
     def input_text(self) -> str:
@@ -99,9 +121,8 @@ class ZoomableLineEdit(QLineEdit):
         self._apply_zoom()
 
     def _apply_zoom(self) -> None:
-        font = self.font()
-        font.setPointSizeF(max(6.0, self._base_point_size + self._zoom_steps))
-        self.setFont(font)
+        point_size = _zoomed_point_size(self._base_point_size, self._zoom_steps)
+        self.setFont(_font_at_point_size(self.font(), point_size))
         self.updateGeometry()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
@@ -124,11 +145,13 @@ class ZoomableInputEdit(QTextEdit):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("mainInput")
         self._zoom_steps = 0
         self._base_point_size = _base_font_point_size(self)
         self.setAcceptRichText(False)
         self.setTabChangesFocus(True)
-        self.setMaximumHeight(120)
+        self.setMinimumHeight(60)
+        self.setMaximumHeight(140)
         _install_zoom_shortcuts(self, self._zoom_in, self._zoom_out, self.reset_zoom)
 
     def reset_zoom(self) -> None:
@@ -160,9 +183,8 @@ class ZoomableInputEdit(QTextEdit):
         self._apply_zoom()
 
     def _apply_zoom(self) -> None:
-        font = self.font()
-        font.setPointSizeF(max(6.0, self._base_point_size + self._zoom_steps))
-        self.setFont(font)
+        point_size = _zoomed_point_size(self._base_point_size, self._zoom_steps)
+        self.setFont(_font_at_point_size(self.font(), point_size))
         self.updateGeometry()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
@@ -186,6 +208,8 @@ class ZoomableInputEdit(QTextEdit):
 
 
 class ZoomableTextEdit(QTextEdit):
+    result_changed = Signal()
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._zoom_steps = 0
@@ -211,15 +235,30 @@ class ZoomableTextEdit(QTextEdit):
         else:
             self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
+    def has_result(self) -> bool:
+        if self._result_html is not None:
+            return bool(self._result_html.strip())
+        if self._result_plain is not None:
+            return bool(self._result_plain.strip())
+        return False
+
+    def clear_result(self) -> None:
+        self._result_html = None
+        self._result_plain = None
+        self.clear()
+        self.result_changed.emit()
+
     def set_result_html(self, html: str) -> None:
         self._result_html = html
         self._result_plain = None
         self._apply_zoom()
+        self.result_changed.emit()
 
     def set_result_plain(self, text: str) -> None:
         self._result_html = None
         self._result_plain = text
         self._apply_zoom()
+        self.result_changed.emit()
 
     def reset_zoom(self) -> None:
         self._zoom_steps = 0
@@ -241,15 +280,15 @@ class ZoomableTextEdit(QTextEdit):
         self._apply_zoom()
 
     def _apply_zoom(self) -> None:
-        size = max(6.0, self._base_point_size + self._zoom_steps)
-        font = self.font()
-        font.setPointSizeF(size)
+        point_size = _zoomed_point_size(self._base_point_size, self._zoom_steps)
+        font = _font_at_point_size(self.font(), point_size)
         self.setFont(font)
         if self._result_html is not None:
-            self.setHtml(_scaled_result_html(self._result_html, size))
+            self.setHtml(_scaled_result_html(self._result_html, float(point_size)))
         elif self._result_plain is not None:
             self.setPlainText(self._result_plain)
-        self.document().setDefaultFont(font)
+        if self._result_html is not None or self._result_plain is not None:
+            self.document().setDefaultFont(font)
         self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
