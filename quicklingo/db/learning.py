@@ -15,6 +15,7 @@ class LearningDeck:
     direction: str
     created_at: str
     analysis_summary: str = ""
+    source: str = "corpus"
 
 
 @dataclass
@@ -56,6 +57,19 @@ _CARD_SELECT = f"""
 def _learning_card_columns(conn: sqlite3.Connection) -> set[str]:
     rows = conn.execute("PRAGMA table_info(learning_cards)").fetchall()
     return {row["name"] for row in rows}
+
+
+def _learning_deck_columns(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("PRAGMA table_info(learning_decks)").fetchall()
+    return {row["name"] for row in rows}
+
+
+def _migrate_deck_columns(conn: sqlite3.Connection) -> None:
+    cols = _learning_deck_columns(conn)
+    if "source" not in cols:
+        conn.execute(
+            "ALTER TABLE learning_decks ADD COLUMN source TEXT NOT NULL DEFAULT 'corpus'"
+        )
 
 
 def _migrate_learning_columns(conn: sqlite3.Connection) -> None:
@@ -167,15 +181,21 @@ def init_learning_tables() -> None:
             ON quiz_logs(card_id)
             """
         )
+        _migrate_deck_columns(conn)
         _migrate_learning_columns(conn)
+
+
+_DECK_SELECT = """
+    SELECT id, name, tag, direction, created_at, analysis_summary, source
+    FROM learning_decks
+"""
 
 
 def get_or_create_deck(name: str, tag: str, direction: str) -> LearningDeck:
     with connection() as conn:
         row = conn.execute(
-            """
-            SELECT id, name, tag, direction, created_at, analysis_summary
-            FROM learning_decks
+            f"""
+            {_DECK_SELECT}
             WHERE tag = ? AND direction = ?
             ORDER BY id DESC
             LIMIT 1
@@ -186,17 +206,51 @@ def get_or_create_deck(name: str, tag: str, direction: str) -> LearningDeck:
             return _row_to_deck(row)
         cursor = conn.execute(
             """
-            INSERT INTO learning_decks (name, tag, direction)
-            VALUES (?, ?, ?)
+            INSERT INTO learning_decks (name, tag, direction, source)
+            VALUES (?, ?, ?, 'corpus')
             """,
             (name, tag, direction),
         )
         deck_id = cursor.lastrowid or 0
         row = conn.execute(
-            """
-            SELECT id, name, tag, direction, created_at, analysis_summary
-            FROM learning_decks WHERE id = ?
+            f"{_DECK_SELECT} WHERE id = ?",
+            (deck_id,),
+        ).fetchone()
+    return _row_to_deck(row)
+
+
+def find_deck_by_tag(tag: str, direction: str) -> LearningDeck | None:
+    with connection() as conn:
+        row = conn.execute(
+            f"""
+            {_DECK_SELECT}
+            WHERE tag = ? AND direction = ?
+            ORDER BY id DESC
+            LIMIT 1
             """,
+            (tag, direction),
+        ).fetchone()
+    return _row_to_deck(row) if row else None
+
+
+def create_deck(
+    name: str,
+    tag: str,
+    direction: str,
+    *,
+    source: str = "ai",
+) -> LearningDeck:
+    with connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO learning_decks (name, tag, direction, source)
+            VALUES (?, ?, ?, ?)
+            """,
+            (name, tag, direction, source),
+        )
+        deck_id = cursor.lastrowid or 0
+        row = conn.execute(
+            f"{_DECK_SELECT} WHERE id = ?",
             (deck_id,),
         ).fetchone()
     return _row_to_deck(row)
@@ -213,9 +267,8 @@ def update_deck_summary(deck_id: int, summary: str) -> None:
 def list_decks() -> list[LearningDeck]:
     with connection() as conn:
         rows = conn.execute(
-            """
-            SELECT id, name, tag, direction, created_at, analysis_summary
-            FROM learning_decks
+            f"""
+            {_DECK_SELECT}
             ORDER BY id DESC
             """
         ).fetchall()
@@ -225,10 +278,7 @@ def list_decks() -> list[LearningDeck]:
 def get_deck(deck_id: int) -> LearningDeck | None:
     with connection() as conn:
         row = conn.execute(
-            """
-            SELECT id, name, tag, direction, created_at, analysis_summary
-            FROM learning_decks WHERE id = ?
-            """,
+            f"{_DECK_SELECT} WHERE id = ?",
             (deck_id,),
         ).fetchone()
     return _row_to_deck(row) if row else None
@@ -719,6 +769,7 @@ def _record_review_lite(card_id: int, *, again: bool) -> None:
 
 
 def _row_to_deck(row: sqlite3.Row) -> LearningDeck:
+    keys = row.keys()
     return LearningDeck(
         id=row["id"],
         name=row["name"],
@@ -726,6 +777,7 @@ def _row_to_deck(row: sqlite3.Row) -> LearningDeck:
         direction=row["direction"],
         created_at=row["created_at"],
         analysis_summary=row["analysis_summary"] or "",
+        source=row["source"] if "source" in keys else "corpus",
     )
 
 

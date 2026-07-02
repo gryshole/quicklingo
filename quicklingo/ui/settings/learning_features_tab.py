@@ -83,6 +83,14 @@ def _learning_extras(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
         500,
         5000,
     )
+    editor._add_spin(
+        form,
+        "learning.ai_deck_generator",
+        "batch_size",
+        "settings.features.ai_deck_batch_size",
+        5,
+        20,
+    )
 
 
 _LEARNING_GROUP_SPECS: GroupSpecs = {
@@ -106,6 +114,7 @@ _LEARNING_GROUP_SPECS: GroupSpecs = {
             "learning.progress_dashboard",
             "learning.tts_enabled",
             "learning.tts_auto_play",
+            "learning.ai_deck_generator",
         ],
     ),
 }

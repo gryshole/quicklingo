@@ -47,6 +47,7 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
     "learning.progress_dashboard": {"enabled": True},
     "learning.tts_enabled": {"enabled": True},
     "learning.tts_auto_play": {"enabled": False},
+    "learning.ai_deck_generator": {"enabled": True, "batch_size": 10, "max_words": 30},
     "translation.response_cache": {"enabled": True, "ttl_days": 30},
     "translation.context_window": {"enabled": False, "last_n": 3},
     "translation.glossary": {"enabled": False},

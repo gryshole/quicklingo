@@ -35,6 +35,7 @@ from quicklingo.learning.corpus_analysis import select_candidates
 from quicklingo.learning.difficult_words import compute_difficult_words
 from quicklingo.learning.review_queue import card_bucket, count_due_cards
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
+from quicklingo.ui.dialogs.ai_deck_generator_dialog import AiDeckGeneratorDialog
 from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
 from quicklingo.ui.widgets.learning_progress import LearningProgressWidget
 from quicklingo.ui.widgets.quiz_session import QuizSessionWidget
@@ -218,6 +219,15 @@ class LearningWindow(QDialog):
         self._deck_label = QLabel()
         top.addWidget(self._deck_label)
         top.addWidget(self._deck_combo, stretch=1)
+        self._generate_ai_deck_btn = QPushButton()
+        self._generate_ai_deck_btn.setStyleSheet(
+            "QPushButton { background: #2563eb; color: #fff; border: none; border-radius: 8px; "
+            "padding: 8px 14px; font-weight: 600; }"
+            "QPushButton:hover { background: #1d4ed8; }"
+            "QPushButton:disabled { background: #94a3b8; }"
+        )
+        self._generate_ai_deck_btn.clicked.connect(self._open_ai_deck_dialog)
+        top.addWidget(self._generate_ai_deck_btn)
         top.addWidget(self._export_btn)
         top.addWidget(self._edit_card_btn)
         top.addWidget(self._media_btn)
@@ -301,6 +311,8 @@ class LearningWindow(QDialog):
         self._media_btn.setText(tr("learning.generate_media"))
         self._delete_card_btn.setText(tr("learning.delete_card"))
         self._delete_deck_btn.setText(tr("learning.delete_deck"))
+        self._generate_ai_deck_btn.setText(tr("learning.ai_deck.generate_button"))
+        self._generate_ai_deck_btn.setVisible(is_enabled("learning.ai_deck_generator"))
         self._cards_table.setHorizontalHeaderLabels(
             [
                 tr("learning.card_front"),
@@ -660,6 +672,30 @@ class LearningWindow(QDialog):
             return
         learning.delete_card(cards[row].id)
         self._load_cards()
+
+    def _open_ai_deck_dialog(self) -> None:
+        if not is_enabled("learning.ai_deck_generator"):
+            return
+        dialog = AiDeckGeneratorDialog(
+            self,
+            initial_model_id=self._model_combo.currentData(),
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        deck_id, summary, media_meta = dialog.result_data()
+        self._on_ai_deck_finished(deck_id, summary, media_meta)
+
+    def _on_ai_deck_finished(self, deck_id: int, summary: str, media_meta: dict) -> None:
+        self._current_deck_id = deck_id
+        self._summary_field.setPlainText(summary)
+        self._status_label.setText(tr("learning.ai_deck.done"))
+        self._reload_decks()
+        index = self._deck_combo.findData(deck_id)
+        if index >= 0:
+            self._deck_combo.setCurrentIndex(index)
+        self._tabs.setCurrentIndex(1)
+        self._load_cards()
+        self._start_media_worker(deck_id, media_meta)
 
     def _delete_selected_deck(self) -> None:
         deck_id = self._deck_combo.currentData()
