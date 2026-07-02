@@ -76,7 +76,7 @@ Corpus tag: {tag}
 Translation direction: {direction}
 
 Return ONLY valid JSON with this schema:
-{{"cards":[{{"front":"...","back":"...","context":["...","...","..."],"hint":"...","notes":"...","priority":1-5,"source_record_id":123,"imageable":true,"image_prompt":"..."}}],"summary":{{"themes":["..."],"recommended_daily_count":20,"total_unique":0,"comment":"..."}}}}
+{{"cards":[{{"front":"...","back":"...","context":["...","...","..."],"hint":"...","notes":"...","quizDistractors":["...","...","...","..."],"priority":1-5,"source_record_id":123,"imageable":true,"image_prompt":"..."}}],"summary":{{"themes":["..."],"recommended_daily_count":20,"total_unique":0,"comment":"..."}}}}
 
 Review UX — what the learner sees:
 - BEFORE answering: front + hint only.
@@ -103,6 +103,8 @@ Hint rules (CRITICAL — active recall must stay hard):
 Context rules:
 - context MUST be a JSON array of exactly 3 short English sentences. Each sentence MUST contain back (the English target word).
 - Use different contexts or collocations across the three sentences. Keep each sentence under ~80 characters.
+- Each sentence MUST include other words before AND after back — real usage in a full sentence.
+- FORBIDDEN: context lines that are only back with optional punctuation (e.g. "biased." or "to bite the bullet.") — no term-only lines.
 - DO NOT write Ukrainian sentences, dictionary definitions, or meta-phrases describing the word.
 - Never use "General term for…" or similar definitional templates.
 
@@ -114,11 +116,24 @@ Notes rules:
 - Good: "Definition: not enough of something that is needed"
 - Bad: "≠ lack (general)"; long explanations; repeating context sentences.
 
+Quiz distractor rules (quizDistractors):
+- JSON array of 3–5 ENGLISH words only — same part of speech as back (the English target word).
+- Same topic/category as back, but a CLEARLY DIFFERENT specific meaning — not interchangeable in your context sentences.
+- CRITICAL: NEVER use exact synonyms or near-synonyms of back.
+- CRITICAL: NEVER use words that grammatically and contextually fit the blank in your example sentences.
+- Substitution Test (MANDATORY): mentally replace back with each distractor in EVERY context sentence. The new sentence must become factually false, logically absurd, or clearly wrong — not "also plausible".
+  - FAIL for back=biased, sentence "The judge was ___ toward the defendant", distractor partial (partial fits perfectly).
+  - PASS for back=biased, same sentence, distractor inexperienced (different meaning, not a synonym).
+  - FAIL for back=apple, sentence "He picked an ___ from the tree", distractor orange (orange fits).
+  - PASS for back=apple, sentence "Newton discovered gravity when an ___ fell on his head", distractor orange (factually wrong).
+- FORBIDDEN: back itself, Ukrainian text, full sentences, duplicates.
+
 Example good cards (ua-en):
-{{"front":"Упереджений","back":"biased","hint":"прикметник · людина/думка · formal · b… i…","context":["The judge was biased toward the defendant.","Avoid biased opinions in your report.","He gave a biased account of events."],"notes":"Definition: unfairly favouring one side or opinion","priority":4,"source_record_id":123,"imageable":false,"image_prompt":""}}
-{{"front":"Погіршувати","back":"worsen","hint":"дієслово · процес · formal · w… n…","context":["The pain may worsen after exercise.","Bad weather could worsen the situation.","Delays will worsen the backlog."],"notes":"Definition: to become worse or more serious","priority":3,"source_record_id":124,"imageable":false,"image_prompt":""}}
-{{"front":"витривалість","back":"endurance","hint":"іменник · властивість · formal · e… n…","context":["She showed great endurance on the final lap.","Marathon training builds endurance.","His endurance surprised everyone."],"notes":"Definition: ability to keep going despite difficulty","priority":3,"source_record_id":126,"imageable":false,"image_prompt":""}}
-{{"front":"дефіцит","back":"shortage","hint":"іменник · нестача · formal · s… h…","context":["The shortage of food caused a crisis.","The company faced a shortage of skilled workers.","The shortage of water affected the crops."],"notes":"Definition: not enough of something that is needed","priority":3,"source_record_id":127,"imageable":false,"image_prompt":""}}
+{{"front":"Упереджений","back":"biased","hint":"прикметник · людина/думка · formal · b… i…","context":["The judge was biased toward the defendant.","Avoid biased opinions in your report.","He gave a biased account of events."],"notes":"Definition: unfairly favouring one side or opinion","quizDistractors":["honest","strict","inexperienced","neutral"],"priority":4,"source_record_id":123,"imageable":false,"image_prompt":""}}
+{{"front":"Погіршувати","back":"worsen","hint":"дієслово · процес · formal · w… n…","context":["The pain may worsen after exercise.","Bad weather could worsen the situation.","Delays will worsen the backlog."],"notes":"Definition: to become worse or more serious","quizDistractors":["improve","stabilize","reduce","prevent"],"priority":3,"source_record_id":124,"imageable":false,"image_prompt":""}}
+{{"front":"витривалість","back":"endurance","hint":"іменник · властивість · formal · e… n…","context":["She showed great endurance on the final lap.","Marathon training builds endurance.","His endurance surprised everyone."],"notes":"Definition: ability to keep going despite difficulty","quizDistractors":["speed","strength","height","courage"],"priority":3,"source_record_id":126,"imageable":false,"image_prompt":""}}
+{{"front":"банк","back":"bank","hint":"іменник · фінанси · formal · b… k…","context":["She opened a bank account yesterday.","The bank approved the loan.","He works at a local bank."],"notes":"Definition: a business that holds money for customers","quizDistractors":["treasury","credit union","fund","vault"],"priority":3,"source_record_id":128,"imageable":false,"image_prompt":""}}
+{{"front":"дефіцит","back":"shortage","hint":"іменник · нестача · formal · s… h…","context":["The shortage of food caused a crisis.","The company faced a shortage of skilled workers.","The shortage of water affected the crops."],"notes":"Definition: not enough of something that is needed","quizDistractors":["deficit","scarcity","gap","limit"],"priority":3,"source_record_id":127,"imageable":false,"image_prompt":""}}
 
 imageable / image_prompt:
 - imageable: true only when a simple visual helps memory; else false.
@@ -127,7 +142,7 @@ imageable / image_prompt:
 Quality:
 - Keep front and back under 80 characters. Escape double quotes inside strings as \\".
 - Merge duplicate terms. priority 5 = most important for a learner.
-- Every card MUST have a non-empty hint, context array (3 English sentences), and notes (English definition of back).
+- Every card MUST have a non-empty hint, context array (3 English sentences), notes (English definition of back), and quizDistractors (3–5 English words).
 
 Items (source = front language, result = back language):
 {items}"""
@@ -138,7 +153,7 @@ Corpus tag: {tag}
 Translation direction: en-ua (English front → Ukrainian back)
 
 Return ONLY valid JSON with this schema:
-{{"cards":[{{"front":"...","back":"...","context":["...","...","..."],"hint":"...","notes":"...","priority":1-5,"source_record_id":123,"imageable":true,"image_prompt":"..."}}],"summary":{{"themes":["..."],"recommended_daily_count":20,"total_unique":0,"comment":"..."}}}}
+{{"cards":[{{"front":"...","back":"...","context":["...","...","..."],"hint":"...","notes":"...","quizDistractors":["...","...","...","..."],"priority":1-5,"source_record_id":123,"imageable":true,"image_prompt":"..."}}],"summary":{{"themes":["..."],"recommended_daily_count":20,"total_unique":0,"comment":"..."}}}}
 
 Review UX — what the learner sees:
 - BEFORE answering: English front + hint only.
@@ -163,6 +178,8 @@ Hint rules (CRITICAL — active recall must stay hard):
 Context rules:
 - context MUST be a JSON array of exactly 3 short English sentences. Each sentence MUST contain front (the English source word).
 - Use different contexts or collocations across the three sentences. Keep each sentence under ~80 characters.
+- Each sentence MUST include other words before AND after front — real usage in a full sentence.
+- FORBIDDEN: context lines that are only front with optional punctuation (e.g. "inevitable." or "to bite the bullet.") — no term-only lines.
 - Primary: copy or adapt real sentences from source= when available; invent natural examples if source= is only a word.
 - DO NOT write dictionary definitions, explanations, or meta-phrases describing the word.
 - Never use "General term for…" or similar definitional templates.
@@ -174,10 +191,23 @@ Notes rules:
 - Good: "Definition: certain to happen; cannot be avoided"
 - Bad: Ukrainian text in notes; long explanations; repeating context sentences.
 
+Quiz distractor rules (quizDistractors):
+- JSON array of 3–5 ENGLISH words only — same part of speech as front (the English source word).
+- Same topic/category as front, but a CLEARLY DIFFERENT specific meaning — not interchangeable in your context sentences.
+- CRITICAL: NEVER use exact synonyms or near-synonyms of front.
+- CRITICAL: NEVER use words that grammatically and contextually fit the blank in your example sentences.
+- Substitution Test (MANDATORY): mentally replace front with each distractor in EVERY context sentence. The new sentence must become factually false, logically absurd, or clearly wrong — not "also plausible".
+  - FAIL for front=biased, sentence "The judge was ___ toward the defendant", distractor partial.
+  - PASS for front=biased, same sentence, distractor inexperienced.
+  - FAIL for front=apple, sentence "He picked an ___ from the tree", distractor orange.
+  - PASS for front=apple, sentence "Newton discovered gravity when an ___ fell on his head", distractor orange.
+- FORBIDDEN: front itself, Ukrainian text, full sentences, duplicates.
+
 Example good cards (en-ua):
-{{"front":"inevitable","back":"невідворотний","hint":"прикметник · результат · formal · н…","context":["The decline seemed inevitable.","Change felt inevitable after the vote.","It was inevitable that costs would rise."],"notes":"Definition: certain to happen; cannot be avoided","priority":4,"source_record_id":123,"imageable":false,"image_prompt":""}}
-{{"front":"flaw","back":"хиба","hint":"іменник · недолік · formal · х…","context":["The report revealed a serious flaw.","This flaw could affect the whole system.","They fixed the flaw before launch."],"notes":"Definition: a fault or weakness in something","priority":3,"source_record_id":124,"imageable":false,"image_prompt":""}}
-{{"front":"exacerbate","back":"загострювати","hint":"дієслово · процес · formal · з…","context":["The new policy will exacerbate the problem.","Stress can exacerbate existing symptoms.","Delays may exacerbate the backlog."],"notes":"Definition: to make a problem or bad situation worse","priority":3,"source_record_id":125,"imageable":false,"image_prompt":""}}
+{{"front":"inevitable","back":"невідворотний","hint":"прикметник · результат · formal · н…","context":["The decline seemed inevitable.","Change felt inevitable after the vote.","It was inevitable that costs would rise."],"notes":"Definition: certain to happen; cannot be avoided","quizDistractors":["predictable","expected","likely","certain"],"priority":4,"source_record_id":123,"imageable":false,"image_prompt":""}}
+{{"front":"flaw","back":"хиба","hint":"іменник · недолік · formal · х…","context":["The report revealed a serious flaw.","This flaw could affect the whole system.","They fixed the flaw before launch."],"notes":"Definition: a fault or weakness in something","quizDistractors":["advantage","feature","benefit","strength"],"priority":3,"source_record_id":124,"imageable":false,"image_prompt":""}}
+{{"front":"exacerbate","back":"загострювати","hint":"дієслово · процес · formal · з…","context":["The new policy will exacerbate the problem.","Stress can exacerbate existing symptoms.","Delays may exacerbate the backlog."],"notes":"Definition: to make a problem or bad situation worse","quizDistractors":["improve","stabilize","reduce","prevent"],"priority":3,"source_record_id":125,"imageable":false,"image_prompt":""}}
+{{"front":"bank","back":"банк","hint":"іменник · фінанси · formal · б…","context":["She opened a bank account yesterday.","The bank approved the loan.","He works at a local bank."],"notes":"Definition: a business that holds money for customers","quizDistractors":["treasury","credit union","fund","vault"],"priority":3,"source_record_id":126,"imageable":false,"image_prompt":""}}
 
 imageable / image_prompt:
 - imageable: true only when a simple visual helps memory; else false.
@@ -186,7 +216,7 @@ imageable / image_prompt:
 Quality:
 - Keep front and back under 80 characters. Escape double quotes inside strings as \\".
 - Merge duplicate terms. priority 5 = most important for a learner.
-- Every card MUST have a non-empty hint, context array (3 English sentences), and notes (English definition).
+- Every card MUST have a non-empty hint, context array (3 English sentences), notes (English definition), and quizDistractors (3–5 English words).
 
 Items (source = English, result = Ukrainian):
 {items}"""
@@ -206,7 +236,7 @@ def direction_hint_rules(direction: str) -> str:
             "  2. English circumlocution with DIFFERENT words (never words from back).\n"
             "  3. Last resort only: word count + first-letter pattern (e.g. \"англ. слово · b… i…\").\n"
             "- FORBIDDEN in hint: wrong POS, Ukrainian definitions of front, shared roots with front, \"щось …\", \"Загальна назва для…\".\n"
-            "- context: JSON array of 3 short ENGLISH sentences with back — varied contexts/collocations. NEVER Ukrainian sentences.\n"
+            "- context: JSON array of 3 short ENGLISH sentences with back — varied contexts/collocations; each sentence needs words before AND after back (never back alone with punctuation).\n"
             "- notes: English Definition of back (A2–B2); format \"Definition: …\"; no ≠, antonyms, or example sentences.\n"
         )
     if kind == "en-ua":
@@ -217,7 +247,7 @@ def direction_hint_rules(direction: str) -> str:
             "- hint: meta-clue toward Ukrainian back — NEVER define or paraphrase the English front.\n"
             "- Prefer: English grammar label, register, semantic category, or first-letter pattern for Ukrainian back.\n"
             "- Never use Ukrainian words from back in hint.\n"
-            "- context: JSON array of 3 short ENGLISH sentences with front — varied contexts/collocations.\n"
+            "- context: JSON array of 3 short ENGLISH sentences with front — varied contexts/collocations; each sentence needs words before AND after front (never front alone with punctuation).\n"
             "- notes: English Definition line; must not duplicate any context sentence.\n"
         )
     return (
@@ -833,6 +863,7 @@ def enrich_card_fields(
     *,
     direction: str = "ua-en",
     source_text: str = "",
+    quiz_pool: list[str] | None = None,
 ) -> dict:
     """Fill and sanitize hint/notes for active-recall-friendly cards."""
     hint = str(card.get("hint", "")).strip()
@@ -867,4 +898,112 @@ def enrich_card_fields(
     card["front"] = front
     card["context"] = context
     card["notes"] = notes
+
+    from quicklingo.db import learning as learning_db
+    from quicklingo.learning.quiz.distractors import serialize_quiz_distractors
+
+    pos = extract_pos_from_hint(sanitized_hint)
+    if quiz_pool is not None:
+        pool = [word for word in quiz_pool if word.lower() != term.lower()]
+    else:
+        pool = learning_db.list_quiz_english_words(pos_prefix=pos, exclude={term})
+    raw_distractors = card.get("quizDistractors") or card.get("quiz_distractors")
+    distractors = ensure_quiz_distractors(
+        raw_distractors,
+        term=term,
+        hint=sanitized_hint,
+        definition=notes,
+        examples=examples,
+        pool=pool,
+    )
+    card["quiz_distractors"] = serialize_quiz_distractors(distractors)
     return card
+
+
+_POS_ALIASES: dict[str, tuple[str, ...]] = {
+    "іменник": ("іменник", "noun"),
+    "дієслово": ("дієслово", "verb"),
+    "прикметник": ("прикметник", "adjective"),
+    "прислівник": ("прислівник", "adverb"),
+    "фразовий дієслівник": ("фразовий дієслівник", "phrasal verb"),
+    "ідіома": ("ідіома", "idiom"),
+}
+
+
+def extract_pos_from_hint(hint: str) -> str:
+    cleaned = (hint or "").strip().lower()
+    if not cleaned:
+        return ""
+    first = cleaned.split("·", 1)[0].strip()
+    for canonical, aliases in _POS_ALIASES.items():
+        if first in aliases or any(alias in first for alias in aliases):
+            return canonical
+    return first
+
+
+def hint_pos_matches(hint: str, pos_prefix: str) -> bool:
+    if not pos_prefix:
+        return True
+    hint_pos = extract_pos_from_hint(hint).lower()
+    target = pos_prefix.lower()
+    if not hint_pos:
+        return False
+    if hint_pos == target or hint_pos.startswith(target) or target.startswith(hint_pos):
+        return True
+    aliases = _POS_ALIASES.get(target, (target,))
+    return any(alias in hint_pos for alias in aliases)
+
+
+def ensure_quiz_distractors(
+    raw: object,
+    *,
+    term: str,
+    hint: str,
+    definition: str,
+    examples: list[str],
+    pool: list[str],
+) -> list[str]:
+    from quicklingo.learning.quiz.distractors import (
+        distractor_passes_basic_validation,
+        fallback_quiz_distractors,
+        parse_quiz_distractors,
+    )
+
+    term_key = term.strip().lower()
+    candidates = parse_quiz_distractors(raw)
+    cleaned: list[str] = []
+    seen: set[str] = {term_key}
+    for word in candidates:
+        key = word.lower()
+        if key in seen:
+            continue
+        if _CYRILLIC_WORD_RE.search(word):
+            continue
+        if texts_too_similar(word, hint):
+            continue
+        if not distractor_passes_basic_validation(term, word, definition):
+            continue
+        seen.add(key)
+        cleaned.append(word)
+    pos = extract_pos_from_hint(hint)
+    if len(cleaned) < 3:
+        needed = 5 - len(cleaned)
+        for word in fallback_quiz_distractors(
+            term,
+            pos,
+            pool,
+            count=max(needed, 3),
+            examples=examples,
+            definition=definition,
+            check_examples=False,
+        ):
+            key = word.lower()
+            if key in seen:
+                continue
+            if texts_too_similar(word, hint):
+                continue
+            seen.add(key)
+            cleaned.append(word)
+            if len(cleaned) >= 5:
+                break
+    return cleaned[:5]

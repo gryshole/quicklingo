@@ -67,6 +67,22 @@ def _learning_extras(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
         1,
         100,
     )
+    editor._add_spin(
+        form,
+        "learning.quiz",
+        "question_count",
+        "settings.features.quiz_question_count",
+        5,
+        30,
+    )
+    editor._add_spin(
+        form,
+        "learning.quiz",
+        "feedback_delay_ms",
+        "settings.features.quiz_feedback_delay_ms",
+        500,
+        5000,
+    )
 
 
 _LEARNING_GROUP_SPECS: GroupSpecs = {
@@ -86,6 +102,10 @@ _LEARNING_GROUP_SPECS: GroupSpecs = {
             "learning.card_pronunciation",
             "learning.streak",
             "learning.extract_vocab",
+            "learning.quiz",
+            "learning.progress_dashboard",
+            "learning.tts_enabled",
+            "learning.tts_auto_play",
         ],
     ),
 }

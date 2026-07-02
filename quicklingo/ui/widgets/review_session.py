@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QPixmap
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -18,18 +17,20 @@ from PySide6.QtWidgets import (
 
 from quicklingo.config.loader import resolve_learning_direction
 from quicklingo.db import learning
-from quicklingo.features import is_enabled
+from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.answer_check import AnswerResult
 from quicklingo.learning.card_display import (
     display_term,
-    format_example_pills_html,
+    highlight_term_in_context,
     highlight_term_styled,
     parse_context,
     phonetic_display_text,
 )
 from quicklingo.learning.image_resolver import resolve_image_path
-from quicklingo.learning.pronunciation import resolve_audio_path
+from quicklingo.learning.tts.audio_service import AudioService
+from quicklingo.learning.tts.prefetch import collect_review_card_tts_texts, collect_review_tts_texts
+from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
 from quicklingo.learning.cram_queue import cram_hard_cards, cram_train_cards
 from quicklingo.learning.review_queue import count_due_cards
 from quicklingo.ui.controllers.review_session_controller import ReviewSessionController, SessionStats
@@ -57,9 +58,7 @@ class ReviewSessionWidget(QWidget):
         self._deck_id: int | None = None
         self._direction = "ua-en"
 
-        self._player = QMediaPlayer(self)
-        self._audio_output = QAudioOutput(self)
-        self._player.setAudioOutput(self._audio_output)
+        self._audio = AudioService(self)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -228,12 +227,12 @@ class ReviewSessionWidget(QWidget):
         answer_layout.addWidget(self._answer_phonetic_widget)
         self._answer_block.setVisible(False)
 
-        self._context_label = QLabel()
-        self._context_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._context_label.setWordWrap(True)
-        self._context_label.setTextFormat(Qt.TextFormat.RichText)
-        self._context_label.setStyleSheet(_CONTEXT_STYLE)
-        self._context_label.setVisible(False)
+        self._context_container = QWidget()
+        self._context_layout = QVBoxLayout(self._context_container)
+        self._context_layout.setContentsMargins(0, 0, 0, 0)
+        self._context_layout.setSpacing(6)
+        self._context_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._context_container.setVisible(False)
 
         self._notes_label = QLabel()
         self._notes_label.setWordWrap(False)
@@ -262,7 +261,7 @@ class ReviewSessionWidget(QWidget):
             self._reveal_divider,
             self._answer_block,
             self._notes_row,
-            self._context_label,
+            self._context_container,
         ]
         for widget in self._card_content:
             card_layout.addWidget(widget)
@@ -430,7 +429,24 @@ class ReviewSessionWidget(QWidget):
             return
         self._stack.setCurrentIndex(0)
         self._show_session_ui()
+        self._prefetch_session_tts()
         self._render_current_card()
+
+    def _prefetch_session_tts(self) -> None:
+        cards = self._controller.session_cards()
+        texts = collect_review_tts_texts(cards, direction=self._direction)
+        tts_prefetch_service().prefetch_texts(texts)
+        for card in cards:
+            tts_prefetch_service().prefetch_card_term(card.id, direction=self._direction)
+
+    def _prefetch_card_tts(self, card: learning.LearningCard) -> None:
+        tts_prefetch_service().prefetch_texts(
+            collect_review_card_tts_texts(card, direction=self._direction),
+            priority=True,
+        )
+        tts_prefetch_service().prefetch_card_term(
+            card.id, direction=self._direction, priority=True
+        )
 
     def _start_cram(self, cards: list[learning.LearningCard]) -> None:
         if self._deck_id is None or not cards:
@@ -445,6 +461,7 @@ class ReviewSessionWidget(QWidget):
             return
         self._stack.setCurrentIndex(0)
         self._show_session_ui()
+        self._prefetch_session_tts()
         self._render_current_card()
 
     def _start_cram_hard(self) -> None:
@@ -498,6 +515,8 @@ class ReviewSessionWidget(QWidget):
         self._show_answer_btn.setVisible(True)
         if self._controller.mode == "typing":
             self._typing_input.setFocus()
+        self._prefetch_card_tts(card)
+        self._maybe_auto_play_term(card)
 
     def _render_image(self, card: learning.LearningCard) -> None:
         if not is_enabled("learning.card_images") or not card.image_path:
@@ -525,8 +544,8 @@ class ReviewSessionWidget(QWidget):
         self._reveal_divider.setVisible(False)
         self._answer_block.setVisible(False)
         self._answer_label.clear()
-        self._context_label.clear()
-        self._context_label.setVisible(False)
+        self._clear_context_examples()
+        self._context_container.setVisible(False)
         self._notes_label.clear()
         self._notes_row.setVisible(False)
 
@@ -544,11 +563,50 @@ class ReviewSessionWidget(QWidget):
     def _learning_kind(self) -> str:
         return resolve_learning_direction(self._direction)
 
-    def _format_context_html(self, card: learning.LearningCard) -> str:
+    def _clear_context_examples(self) -> None:
+        while self._context_layout.count():
+            item = self._context_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _populate_context_examples(self, card: learning.LearningCard) -> None:
+        self._clear_context_examples()
         kind = self._learning_kind()
         examples = parse_context(card.context, direction=self._direction)
         term = card.back if kind == "ua-en" else display_term(card.front)
-        return format_example_pills_html(examples, term)
+        tts_on = is_enabled("learning.tts_enabled")
+        for sentence in examples:
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(6)
+            label = QLabel()
+            label.setWordWrap(True)
+            label.setTextFormat(Qt.TextFormat.RichText)
+            label.setStyleSheet(_CONTEXT_STYLE)
+            label.setText(
+                f'<div style="background:#f0f0f0;border-radius:8px;padding:8px 12px;">'
+                f"{highlight_term_in_context(sentence, term)}"
+                "</div>"
+            )
+            row_layout.addWidget(label, stretch=1)
+            if tts_on:
+                play_btn = QPushButton("▶")
+                play_btn.setFixedSize(28, 28)
+                play_btn.setToolTip(tr("learning.tts_play_example"))
+                play_btn.clicked.connect(
+                    lambda _checked=False, text=sentence: self._audio.speak_sentence(text)
+                )
+                row_layout.addWidget(play_btn, alignment=Qt.AlignmentFlag.AlignTop)
+            self._context_layout.addWidget(row)
+
+    def _maybe_auto_play_term(self, card: learning.LearningCard) -> None:
+        if not is_enabled("learning.tts_enabled"):
+            return
+        if not get_feature("learning.tts_auto_play").get("enabled", False):
+            return
+        self._play_audio()
 
     def _format_notes_html(self, notes: str, highlight: str) -> str:
         plain = self._format_notes(notes)
@@ -572,11 +630,13 @@ class ReviewSessionWidget(QWidget):
             )
             self._notes_row.setVisible(True)
         if card.context:
-            self._context_label.setText(self._format_context_html(card))
-            self._context_label.setVisible(True)
+            self._populate_context_examples(card)
+            self._context_container.setVisible(True)
         self._update_phonetic_visibility(card, revealed=True)
 
     def _has_pronunciation_media(self, card: learning.LearningCard) -> bool:
+        from quicklingo.learning.pronunciation import resolve_audio_path
+
         return bool(self._card_phonetic_text(card)) or resolve_audio_path(card) is not None
 
     def _update_phonetic_visibility(self, card, *, revealed: bool) -> None:
@@ -684,16 +744,18 @@ class ReviewSessionWidget(QWidget):
         self._grade_widget.setVisible(False)
 
     def _play_audio(self) -> None:
-        path = self._controller.audio_path_for_current()
-        if not path:
-            path = self._controller.ensure_pronunciation()
-        if not path:
-            return
         card = self._controller.current_card()
-        if card and self._card_phonetic_text(card):
-            self._set_phonetic_text(card.phonetic or "")
-        self._player.setSource(QUrl.fromLocalFile(path))
-        self._player.play()
+        if card is None:
+            return
+        if self._audio.speak_card_term(card, direction=self._direction):
+            if self._card_phonetic_text(card):
+                self._set_phonetic_text(card.phonetic or "")
+            self._set_play_button_active(True)
+
+    def _set_play_button_active(self, active: bool) -> None:
+        icon = "🔊" if active and self._audio.is_speaking() else "▶"
+        self._front_play_btn.setText(icon)
+        self._answer_play_btn.setText(icon)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if not self._controller.session_active:

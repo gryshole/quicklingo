@@ -226,6 +226,9 @@ class ReviewSessionController:
                     settings.record_learning_review_today()
         return True
 
+    def session_cards(self) -> list[learning.LearningCard]:
+        return list(self._queue.cards)
+
     def bucket_counts(self) -> dict[str, int]:
         counts = {"new": 0, "learning": 0, "review": 0}
         for card in self._queue.cards:

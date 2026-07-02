@@ -56,6 +56,10 @@ FEATURE_I18N: dict[str, tuple[str, str | None]] = {
     "learning.card_pronunciation": ("settings.features.learning_card_pronunciation", None),
     "learning.streak": ("settings.features.learning_streak", None),
     "learning.extract_vocab": ("settings.features.learning_extract_vocab", None),
+    "learning.quiz": ("settings.features.learning_quiz", None),
+    "learning.progress_dashboard": ("settings.features.learning_progress_dashboard", None),
+    "learning.tts_enabled": ("settings.features.learning_tts_enabled", None),
+    "learning.tts_auto_play": ("settings.features.learning_tts_auto_play", None),
     "translation.response_cache": (
         "settings.features.translation_response_cache",
         "settings.features.translation_response_cache_note",

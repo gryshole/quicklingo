@@ -128,3 +128,11 @@ def english_side_text(card: LearningCard, direction: str) -> str:
     if direction.endswith("en"):
         return card.back.strip()
     return card.front.strip()
+
+
+def ukrainian_side_text(card: LearningCard, direction: str) -> str:
+    if direction.startswith("en"):
+        return card.back.strip()
+    if direction.endswith("en"):
+        return card.front.strip()
+    return card.back.strip()

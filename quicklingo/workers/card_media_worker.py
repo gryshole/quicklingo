@@ -4,8 +4,12 @@ from PySide6.QtCore import QThread, Signal
 
 from quicklingo.db import learning
 from quicklingo.features import get_feature, is_enabled
+from quicklingo.learning.card_display import parse_context
 from quicklingo.learning.image_resolver import fetch_card_image
 from quicklingo.learning.pronunciation import ensure_card_pronunciation
+from quicklingo.learning.review_queue import english_side_text
+from quicklingo.learning.tts.prefetch import unique_texts
+from quicklingo.learning.tts.synth import synthesize_sentence
 
 
 class CardMediaWorker(QThread):
@@ -62,6 +66,9 @@ class CardMediaWorker(QThread):
             if pronunciation_enabled and not card.audio_path:
                 ensure_card_pronunciation(card_id, direction=self._direction)
 
+            if is_enabled("learning.tts_enabled"):
+                self._prefetch_card_sentences(card)
+
             if images_enabled and images_done < max_images and self._imageable.get(card_id, False):
                 if not card.image_path:
                     prompt = self._image_prompts.get(card_id, card.image_prompt)
@@ -74,3 +81,15 @@ class CardMediaWorker(QThread):
                     if rel:
                         learning.update_card(card_id, image_path=rel, image_prompt=prompt)
                         images_done += 1
+
+    def _prefetch_card_sentences(self, card: learning.LearningCard) -> None:
+        if self._cancelled:
+            return
+        texts = list(parse_context(card.context, direction=self._direction))
+        english = english_side_text(card, self._direction).strip()
+        if english:
+            texts.append(english)
+        for text in unique_texts(texts):
+            if self._cancelled:
+                return
+            synthesize_sentence(text)

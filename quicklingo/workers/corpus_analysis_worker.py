@@ -106,6 +106,20 @@ class CorpusAnalysisWorker(QThread):
 
         prepared: list[dict] = []
         sources = {candidate.record_id: candidate.source_text for candidate in candidates}
+        from quicklingo.config.loader import resolve_learning_direction
+
+        kind = resolve_learning_direction(self._direction)
+        batch_english: list[str] = []
+        for card in all_cards:
+            front = str(card.get("front", "")).strip()
+            back = str(card.get("back", "")).strip()
+            if not front or not back:
+                continue
+            term = back if kind == "ua-en" else front
+            if term:
+                batch_english.append(term)
+        db_pool = learning.list_quiz_english_words()
+        quiz_pool = list(dict.fromkeys(batch_english + db_pool))
         for card in all_cards:
             if self._cancelled:
                 raise asyncio.CancelledError()
@@ -128,6 +142,7 @@ class CorpusAnalysisWorker(QThread):
                     item,
                     direction=self._direction,
                     source_text=source_text,
+                    quiz_pool=quiz_pool,
                 )
             )
 

@@ -8,26 +8,27 @@ import httpx
 
 from quicklingo.db import learning
 from quicklingo.db.learning import LearningCard
+from quicklingo.learning.audio_storage import (
+    allocate_pronunciation_path,
+    relative_path,
+    resolve_stored_pronunciation_path,
+)
 from quicklingo.learning.card_display import phonetic_display_text
 from quicklingo.learning.review_queue import english_side_text
-from quicklingo.paths import user_data_dir
 
 _DICTIONARY_API = "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
 _TTS_VOICE = "en-US-AriaNeural"
 _WORD_RE = re.compile(r"^[\w'-]+$", re.UNICODE)
 
 
-def card_audio_dir(deck_id: int) -> Path:
-    path = user_data_dir() / "card_audio" / str(deck_id)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
 def resolve_audio_path(card: LearningCard) -> Path | None:
-    if not card.audio_path:
+    path = resolve_stored_pronunciation_path(card.audio_path, card_id=card.id)
+    if path is None:
         return None
-    path = user_data_dir() / card.audio_path
-    return path if path.is_file() else None
+    expected_rel = relative_path(path)
+    if card.audio_path != expected_rel:
+        learning.update_card(card.id, audio_path=expected_rel)
+    return path
 
 
 def is_single_english_word(text: str) -> bool:
@@ -50,10 +51,10 @@ def fetch_pronunciation(
         result = _fetch_dictionary_audio(english.lower())
         if result:
             phonetic, data = result
-            rel_path = _save_audio_bytes(card.deck_id, card.id, data)
+            rel_path = _save_audio_bytes(card.id, data)
             return phonetic, rel_path
     phonetic = _resolve_phonetic_text(english) or card.phonetic
-    rel_path = _synthesize_tts(card.deck_id, card.id, english)
+    rel_path = _synthesize_tts(card.id, english)
     if rel_path:
         return phonetic, rel_path
     return None
@@ -157,7 +158,7 @@ def _fetch_dictionary_audio(word: str) -> tuple[str, bytes] | None:
         return None
 
 
-def _synthesize_tts(deck_id: int, card_id: int, text: str) -> str | None:
+def _synthesize_tts(card_id: int, text: str) -> str | None:
     try:
         import asyncio
 
@@ -165,15 +166,14 @@ def _synthesize_tts(deck_id: int, card_id: int, text: str) -> str | None:
     except ImportError:
         return None
 
-    output = card_audio_dir(deck_id) / f"{card_id}.mp3"
+    output = allocate_pronunciation_path(card_id)
     try:
         asyncio.run(_edge_tts_save(text, output))
     except Exception:
         return None
     if not output.is_file():
         return None
-    rel = output.relative_to(user_data_dir()).as_posix()
-    return rel
+    return relative_path(output)
 
 
 async def _edge_tts_save(text: str, output: Path) -> None:
@@ -183,7 +183,7 @@ async def _edge_tts_save(text: str, output: Path) -> None:
     await communicate.save(str(output))
 
 
-def _save_audio_bytes(deck_id: int, card_id: int, data: bytes) -> str:
-    output = card_audio_dir(deck_id) / f"{card_id}.mp3"
+def _save_audio_bytes(card_id: int, data: bytes) -> str:
+    output = allocate_pronunciation_path(card_id)
     output.write_bytes(data)
-    return output.relative_to(user_data_dir()).as_posix()
+    return relative_path(output)

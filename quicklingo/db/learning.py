@@ -38,12 +38,13 @@ class LearningCard:
     next_review_date: str = ""
     last_reviewed: str = ""
     fsrs_state: str = ""
+    quiz_distractors: str = ""
 
 
 _CARD_COLUMNS = (
     "id, deck_id, front, back, context, hint, notes, image_path, image_prompt, "
     "phonetic, audio_path, card_type, priority, source_record_id, ease, "
-    "interval_days, next_review_date, last_reviewed, fsrs_state"
+    "interval_days, next_review_date, last_reviewed, fsrs_state, quiz_distractors"
 )
 
 _CARD_SELECT = f"""
@@ -68,6 +69,7 @@ def _migrate_learning_columns(conn: sqlite3.Connection) -> None:
         "phonetic": "TEXT NOT NULL DEFAULT ''",
         "audio_path": "TEXT NOT NULL DEFAULT ''",
         "card_type": "TEXT NOT NULL DEFAULT 'basic'",
+        "quiz_distractors": "TEXT NOT NULL DEFAULT ''",
     }
     for name, ddl in additions.items():
         if name not in cols:
@@ -137,6 +139,32 @@ def init_learning_tables() -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_review_logs_card
             ON review_logs(card_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quiz_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id INTEGER,
+                answered_at TEXT NOT NULL DEFAULT (datetime('now')),
+                question_type TEXT NOT NULL,
+                selected TEXT NOT NULL,
+                correct INTEGER NOT NULL,
+                response_ms INTEGER,
+                FOREIGN KEY (card_id) REFERENCES learning_cards(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quiz_logs_date
+            ON quiz_logs(date(answered_at))
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quiz_logs_card
+            ON quiz_logs(card_id)
             """
         )
         _migrate_learning_columns(conn)
@@ -358,6 +386,7 @@ def batch_upsert_cards(
             hint = _optional_str(card, "hint")
             notes = _optional_str(card, "notes")
             image_prompt = _optional_str(card, "image_prompt")
+            quiz_distractors = _optional_str(card, "quiz_distractors")
             priority = int(card.get("priority", 3))
             source_record_id = card.get("source_record_id")
             try:
@@ -375,7 +404,7 @@ def batch_upsert_cards(
             if existing:
                 card_id = int(existing["id"])
                 existing_row = conn.execute(
-                    "SELECT hint, notes FROM learning_cards WHERE id = ?",
+                    "SELECT hint, notes, quiz_distractors FROM learning_cards WHERE id = ?",
                     (card_id,),
                 ).fetchone()
                 if existing_row:
@@ -383,22 +412,34 @@ def batch_upsert_cards(
                         hint = existing_row["hint"] or ""
                     if not notes:
                         notes = existing_row["notes"] or ""
+                    if not quiz_distractors:
+                        quiz_distractors = existing_row["quiz_distractors"] or ""
                 conn.execute(
                     """
                     UPDATE learning_cards
                     SET back = ?, context = ?, hint = ?, notes = ?, image_prompt = ?,
-                        priority = ?, source_record_id = ?
+                        quiz_distractors = ?, priority = ?, source_record_id = ?
                     WHERE id = ?
                     """,
-                    (back, context, hint, notes, image_prompt, priority, source_record_id, card_id),
+                    (
+                        back,
+                        context,
+                        hint,
+                        notes,
+                        image_prompt,
+                        quiz_distractors,
+                        priority,
+                        source_record_id,
+                        card_id,
+                    ),
                 )
             else:
                 cursor = conn.execute(
                     """
                     INSERT INTO learning_cards
                         (deck_id, front, back, context, hint, notes, image_prompt,
-                         priority, source_record_id, next_review_date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         quiz_distractors, priority, source_record_id, next_review_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         deck_id,
@@ -408,6 +449,7 @@ def batch_upsert_cards(
                         hint,
                         notes,
                         image_prompt,
+                        quiz_distractors,
                         priority,
                         source_record_id,
                         today,
@@ -437,6 +479,7 @@ def backfill_card_fields(deck_id: int) -> int:
                 "context": card.context,
                 "hint": card.hint,
                 "notes": card.notes,
+                "quiz_distractors": card.quiz_distractors,
             },
             direction=direction,
             source_text=source_text,
@@ -444,10 +487,12 @@ def backfill_card_fields(deck_id: int) -> int:
         new_hint = str(enriched.get("hint", "")).strip()
         new_context = str(enriched.get("context", "")).strip()
         new_notes = str(enriched.get("notes", "")).strip()
+        new_quiz_distractors = str(enriched.get("quiz_distractors", "")).strip()
         if (
             new_hint == card.hint
             and new_context == card.context
             and new_notes == card.notes
+            and new_quiz_distractors == card.quiz_distractors
         ):
             continue
         update_card(
@@ -455,6 +500,7 @@ def backfill_card_fields(deck_id: int) -> int:
             hint=new_hint,
             context=new_context,
             notes=new_notes,
+            quiz_distractors=new_quiz_distractors,
         )
         updated += 1
     return updated
@@ -473,6 +519,7 @@ def update_card(
     image_prompt: str | None = None,
     phonetic: str | None = None,
     audio_path: str | None = None,
+    quiz_distractors: str | None = None,
 ) -> bool:
     fields: list[str] = []
     params: list[object] = []
@@ -487,6 +534,7 @@ def update_card(
         "image_prompt": image_prompt,
         "phonetic": phonetic,
         "audio_path": audio_path,
+        "quiz_distractors": quiz_distractors,
     }
     for column, value in updates.items():
         if value is None:
@@ -563,6 +611,52 @@ def insert_review_log(
                 None if was_correct is None else int(was_correct),
                 response_ms,
             ),
+        )
+
+
+def insert_quiz_log(
+    *,
+    card_id: int | None,
+    question_type: str,
+    selected: str,
+    correct: bool,
+    response_ms: int | None = None,
+) -> None:
+    with connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO quiz_logs (card_id, question_type, selected, correct, response_ms)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                card_id,
+                question_type,
+                selected,
+                int(correct),
+                response_ms,
+            ),
+        )
+
+
+def batch_insert_quiz_logs(entries: list[dict[str, object]]) -> None:
+    if not entries:
+        return
+    with connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO quiz_logs (card_id, question_type, selected, correct, response_ms)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    entry.get("card_id"),
+                    str(entry.get("question_type", "")),
+                    str(entry.get("selected", "")),
+                    int(bool(entry.get("correct"))),
+                    entry.get("response_ms"),
+                )
+                for entry in entries
+            ],
         )
 
 
@@ -657,4 +751,32 @@ def _row_to_card(row: sqlite3.Row) -> LearningCard:
         next_review_date=row["next_review_date"] or "",
         last_reviewed=row["last_reviewed"] or "",
         fsrs_state=row["fsrs_state"] or "",
+        quiz_distractors=row["quiz_distractors"] if "quiz_distractors" in keys else "",
     )
+
+
+def list_quiz_english_words(
+    *,
+    pos_prefix: str | None = None,
+    exclude: set[str] | None = None,
+) -> list[str]:
+    from quicklingo.config.loader import resolve_learning_direction
+    from quicklingo.learning.card_prompt import hint_pos_matches
+    from quicklingo.learning.review_queue import english_side_text
+
+    exclude_lower = {word.lower() for word in (exclude or set())}
+    seen: set[str] = set()
+    results: list[str] = []
+    for deck in list_decks():
+        if resolve_learning_direction(deck.direction) not in ("ua-en", "en-ua"):
+            continue
+        for card in list_cards(deck.id):
+            english = english_side_text(card, deck.direction).strip()
+            key = english.lower()
+            if not english or key in exclude_lower or key in seen:
+                continue
+            if pos_prefix and not hint_pos_matches(card.hint, pos_prefix):
+                continue
+            seen.add(key)
+            results.append(english)
+    return results

@@ -36,6 +36,8 @@ from quicklingo.learning.difficult_words import compute_difficult_words
 from quicklingo.learning.review_queue import card_bucket, count_due_cards
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
+from quicklingo.ui.widgets.learning_progress import LearningProgressWidget
+from quicklingo.ui.widgets.quiz_session import QuizSessionWidget
 from quicklingo.ui.widgets.review_session import ReviewSessionWidget
 from quicklingo.ui.window_state import (
     bind_table_columns_persistence,
@@ -116,10 +118,19 @@ class LearningWindow(QDialog):
         self._analyze_tab = self._build_analyze_tab()
         self._cards_tab = self._build_cards_tab()
         self._review_tab = self._build_review_tab()
+        self._quiz_tab = self._build_quiz_tab()
+        self._progress_tab = self._build_progress_tab()
+        self._review_session.session_finished.connect(self._quiz_session.refresh_preview)
+        self._review_session.session_finished.connect(self._progress_widget.refresh)
+        self._quiz_session.session_finished.connect(self._progress_widget.refresh)
+        self._quiz_session.results_shown.connect(self._progress_widget.refresh)
 
         self._tabs.addTab(self._analyze_tab, "")
         self._tabs.addTab(self._cards_tab, "")
         self._tabs.addTab(self._review_tab, "")
+        self._tabs.addTab(self._quiz_tab, "")
+        if is_enabled("learning.progress_dashboard"):
+            self._tabs.addTab(self._progress_tab, "")
         self._tabs.currentChanged.connect(self._on_tab_changed)
 
         layout.addWidget(self._tabs)
@@ -238,11 +249,43 @@ class LearningWindow(QDialog):
         layout.addWidget(self._review_session, stretch=1)
         return widget
 
+    def _build_quiz_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        self._quiz_filter_row = QWidget()
+        top = QHBoxLayout(self._quiz_filter_row)
+        top.setContentsMargins(0, 0, 0, 0)
+        self._quiz_tag_combo = QComboBox()
+        self._quiz_tag_combo.setEditable(True)
+        self._quiz_tag_combo.currentTextChanged.connect(self._on_quiz_tag_changed)
+        self._quiz_tag_label = QLabel()
+        top.addWidget(self._quiz_tag_label)
+        top.addWidget(self._quiz_tag_combo, stretch=1)
+        layout.addWidget(self._quiz_filter_row)
+        self._quiz_session = QuizSessionWidget()
+        self._quiz_session.session_started.connect(lambda: self._quiz_filter_row.setVisible(False))
+        self._quiz_session.results_shown.connect(lambda: self._quiz_filter_row.setVisible(False))
+        self._quiz_session.session_finished.connect(lambda: self._quiz_filter_row.setVisible(True))
+        self._quiz_session.finish_requested.connect(lambda: self._tabs.setCurrentIndex(0))
+        layout.addWidget(self._quiz_session, stretch=1)
+        return widget
+
+    def _build_progress_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._progress_widget = LearningProgressWidget()
+        layout.addWidget(self._progress_widget, stretch=1)
+        return widget
+
     def retranslate_ui(self) -> None:
         self.setWindowTitle(tr("learning.window_title"))
         self._tabs.setTabText(0, tr("learning.tab_analyze"))
         self._tabs.setTabText(1, tr("learning.tab_cards"))
         self._tabs.setTabText(2, tr("learning.tab_review"))
+        self._tabs.setTabText(3, tr("learning.tab_quiz"))
+        if is_enabled("learning.progress_dashboard") and self._tabs.count() > 4:
+            self._tabs.setTabText(4, tr("learning.tab_progress"))
         self._tag_label.setText(tr("learning.corpus_tag"))
         self._direction_label.setText(tr("learning.direction"))
         self._model_label.setText(tr("learning.model"))
@@ -269,7 +312,13 @@ class LearningWindow(QDialog):
             ]
         )
         self._review_deck_label.setText(tr("learning.deck"))
+        self._quiz_tag_label.setText(tr("learning.quiz_deck_filter"))
+        if self._quiz_tag_combo.count() > 0:
+            self._quiz_tag_combo.setItemText(0, tr("learning.quiz_all_decks"))
         self._review_session.retranslate_ui()
+        self._quiz_session.retranslate_ui()
+        if hasattr(self, "_progress_widget"):
+            self._progress_widget.retranslate_ui()
 
     def _configure_cards_table_columns(self) -> None:
         header = self._cards_table.horizontalHeader()
@@ -293,19 +342,36 @@ class LearningWindow(QDialog):
 
     def _reload_tags(self) -> None:
         if not is_enabled("history.tags"):
+            self._on_quiz_tag_changed()
             return
         current = self._tag_combo.currentText()
+        quiz_current = self._quiz_tag_combo.currentText()
+        all_decks = tr("learning.quiz_all_decks")
         self._tag_combo.blockSignals(True)
+        self._quiz_tag_combo.blockSignals(True)
         self._tag_combo.clear()
+        self._quiz_tag_combo.clear()
         self._tag_combo.addItem("")
+        self._quiz_tag_combo.addItem(all_decks)
         for tag in history.get_distinct_tags():
             self._tag_combo.addItem(tag)
+            self._quiz_tag_combo.addItem(tag)
         index = self._tag_combo.findText(current)
         if index >= 0:
             self._tag_combo.setCurrentIndex(index)
         else:
             self._tag_combo.setEditText(current)
+        if not quiz_current or quiz_current == all_decks:
+            self._quiz_tag_combo.setCurrentIndex(0)
+        else:
+            quiz_index = self._quiz_tag_combo.findText(quiz_current)
+            if quiz_index >= 0:
+                self._quiz_tag_combo.setCurrentIndex(quiz_index)
+            else:
+                self._quiz_tag_combo.setEditText(quiz_current)
         self._tag_combo.blockSignals(False)
+        self._quiz_tag_combo.blockSignals(False)
+        self._on_quiz_tag_changed()
 
     def _reload_decks(self) -> None:
         decks = learning.list_decks()
@@ -345,6 +411,20 @@ class LearningWindow(QDialog):
             self._load_cards()
         if index == 2:
             self._on_review_deck_changed()
+        if index == 3:
+            self._on_quiz_tag_changed()
+            self._quiz_session.refresh_preview()
+        progress_index = 4 if is_enabled("learning.progress_dashboard") else -1
+        if progress_index >= 0 and index == progress_index and hasattr(self, "_progress_widget"):
+            self._progress_widget.refresh()
+
+    def _on_quiz_tag_changed(self, _text: str = "") -> None:
+        tag = self._quiz_tag_combo.currentText().strip()
+        all_decks = tr("learning.quiz_all_decks")
+        if not tag or tag == all_decks:
+            self._quiz_session.set_tag(None)
+        else:
+            self._quiz_session.set_tag(tag)
 
     def _on_review_deck_changed(self) -> None:
         deck_id = self._review_deck_combo.currentData()
