@@ -18,6 +18,7 @@ from quicklingo.learning.quiz.normalize import card_to_quiz_word
 from quicklingo.learning.quiz.quiz_prompts import (
     CardQuizContext,
     build_choices_user_prompt,
+    build_regen_extra_context,
     is_custom_quiz_prompt,
     parse_choices_response,
     get_quiz_system_prompt,
@@ -75,6 +76,120 @@ class AiQuizService:
             )
 
         return learning.get_quiz_coverage(deck_id)
+
+    async def regenerate_question(
+        self,
+        card_id: int,
+        question_type: QuizQuestionType,
+        model_entry: ModelEntry,
+        *,
+        user_context: str = "",
+        progress_cb: Callable[[str], None] | None = None,
+        cancel_flag: Callable[[], bool] | None = None,
+    ) -> QuizQuestionRecord:
+        card = learning.get_card(card_id)
+        if card is None:
+            raise ValueError(f"Card {card_id} not found")
+        deck = learning.get_deck(card.deck_id)
+        if deck is None:
+            raise ValueError(f"Deck for card {card_id} not found")
+
+        word = card_to_quiz_word(card, deck.direction)
+        if not is_quiz_eligible(card, word):
+            raise ValueError("Card is not eligible for quiz generation")
+
+        existing = learning.get_quiz_question(card_id, question_type.value)
+        context = self._build_card_context(word, deck.direction)
+        prompt_version = "custom" if is_custom_quiz_prompt() else "v1"
+        max_retries = int(get_feature("learning.quiz").get("generation_max_retries", 3))
+        min_valid = 4
+        target_size = int(get_feature("learning.quiz").get("choices_pool_size", 6))
+
+        if progress_cb:
+            progress_cb(f"{word.english}: {question_type.value}")
+
+        if (
+            question_type == QuizQuestionType.FILL_BLANK
+            and needs_new_fill_blank_example(word.examples, word.english)
+        ):
+            if progress_cb:
+                progress_cb(f"{word.english}: adding example sentence")
+            fixed = await append_discriminating_fill_blank_example(
+                card,
+                word,
+                deck.direction,
+                model_entry,
+                cancel_flag=cancel_flag,
+            )
+            if fixed is not None:
+                card, word = fixed
+                context = self._build_card_context(word, deck.direction)
+
+        saved_pools: dict[QuizQuestionType, list[str]] = {}
+        for qtype in _QUESTION_TYPES:
+            if qtype == question_type:
+                continue
+            other = learning.get_quiz_question(card.id, qtype.value)
+            if other is not None and other.status == "active" and other.choices_pool:
+                saved_pools[qtype] = list(other.choices_pool)
+
+        regen_extra = ""
+        if (user_context or "").strip() or existing is not None:
+            regen_extra = build_regen_extra_context(
+                user_context=user_context,
+                prompt_text=existing.prompt_text if existing else "",
+                example_sentence=existing.example_sentence if existing else "",
+                choices_pool=existing.choices_pool if existing else None,
+            )
+
+        pool = await self._generate_choice_pool(
+            question_type,
+            context,
+            word,
+            model_entry,
+            saved_pools=saved_pools,
+            max_retries=max_retries,
+            min_valid=min_valid,
+            target_size=target_size,
+            cancel_flag=cancel_flag,
+            extra_context=regen_extra,
+            purpose_prefix="learning.quiz.choices",
+        )
+
+        prompt_text = _prompt_text_for_type(question_type, context, word)
+        example_sentence = (
+            context.fill_sentence if question_type == QuizQuestionType.FILL_BLANK else ""
+        )
+
+        if len(pool) < min_valid:
+            learning.upsert_quiz_question(
+                card_id=card.id,
+                question_type=question_type.value,
+                prompt_text=prompt_text,
+                example_sentence=example_sentence,
+                choices_pool=pool,
+                correct_english=word.english,
+                status="failed",
+                model_id=model_entry.model_id,
+                prompt_version=prompt_version,
+            )
+        else:
+            learning.upsert_quiz_question(
+                card_id=card.id,
+                question_type=question_type.value,
+                prompt_text=prompt_text,
+                example_sentence=example_sentence,
+                choices_pool=pool[:target_size],
+                correct_english=word.english,
+                status="active",
+                model_id=model_entry.model_id,
+                prompt_version=prompt_version,
+            )
+
+        record = learning.get_quiz_question(card.id, question_type.value)
+        if record is None:
+            raise RuntimeError("Failed to save regenerated question")
+        return record
 
     async def _generate_for_card(
         self,
@@ -179,14 +294,23 @@ class AiQuizService:
         min_valid: int,
         target_size: int,
         cancel_flag: Callable[[], bool] | None,
+        extra_context: str = "",
+        purpose_prefix: str = "learning.quiz.choices",
     ) -> list[str]:
         fill_sentence = context.fill_sentence if qtype == QuizQuestionType.FILL_BLANK else ""
         pool: list[str] = []
         for attempt in range(max_retries):
             if cancel_flag and cancel_flag():
                 return pool
-            user_prompt = build_choices_user_prompt(qtype, context, choices_count=target_size)
-            purpose = f"learning.quiz.choices.{qtype.value}"
+            user_prompt = build_choices_user_prompt(
+                qtype,
+                context,
+                choices_count=target_size,
+                extra_context=extra_context,
+            )
+            purpose = f"{purpose_prefix}.{qtype.value}"
+            if extra_context.strip():
+                purpose = f"{purpose}.regen"
             if attempt > 0:
                 purpose = f"{purpose}.retry{attempt}"
             with ai_request_scope(purpose):

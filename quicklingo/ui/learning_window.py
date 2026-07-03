@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -8,6 +9,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -53,6 +55,121 @@ from quicklingo.workers.corpus_analysis_worker import CorpusAnalysisWorker
 
 _LEARNING_CARDS_TABLE_WIDTHS = [140, 140, 100, 160, 80, 52]
 _LEARNING_CARDS_PRIORITY_WIDTH = 52
+
+_CARDS_TAB_STYLE = """
+CardsTabWidget {
+    background-color: transparent;
+}
+CardsTabWidget QLabel#cardsDeckLabel {
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 500;
+}
+CardsTabWidget QComboBox#cardsDeckCombo {
+    min-height: 32px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 4px 10px;
+    background-color: #ffffff;
+    color: #1e293b;
+    font-size: 13px;
+}
+CardsTabWidget QComboBox#cardsDeckCombo:hover {
+    border-color: #94a3b8;
+}
+CardsTabWidget QComboBox#cardsDeckCombo:focus {
+    border-color: #3b82f6;
+}
+CardsTabWidget QComboBox#cardsDeckCombo::drop-down {
+    border: none;
+    width: 24px;
+}
+QPushButton#btnPrimary {
+    background-color: #3b82f6;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 32px;
+}
+QPushButton#btnPrimary:hover:enabled {
+    background-color: #2563eb;
+}
+QPushButton#btnPrimary:disabled {
+    background-color: #94a3b8;
+    color: #e2e8f0;
+}
+QPushButton#btnSecondary {
+    background-color: #ffffff;
+    color: #1e293b;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    min-height: 32px;
+}
+QPushButton#btnSecondary:hover:enabled {
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+}
+QPushButton#btnDanger {
+    background-color: #ffffff;
+    color: #64748b;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    min-height: 32px;
+}
+QPushButton#btnDanger:hover:enabled {
+    background-color: #fef2f2;
+    border-color: #ef4444;
+    color: #ef4444;
+}
+QFrame#cardsTableCard {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+QFrame#cardsTableCard QTableWidget {
+    background-color: #ffffff;
+    border: none;
+    outline: none;
+    gridline-color: transparent;
+    selection-background-color: #eff6ff;
+    selection-color: #1e293b;
+}
+QFrame#cardsTableCard QTableWidget::item {
+    padding: 6px 8px;
+    border: none;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+}
+QFrame#cardsTableCard QTableWidget::item:selected {
+    background-color: #eff6ff;
+    color: #1e293b;
+}
+QFrame#cardsTableCard QTableWidget::item:focus {
+    outline: none;
+    border: none;
+    background-color: #eff6ff;
+}
+QFrame#cardsTableCard QHeaderView::section {
+    background-color: #f8fafc;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 10px 8px;
+    border: none;
+    border-bottom: 1px solid #e5e7eb;
+    border-right: 1px solid #f1f5f9;
+}
+QFrame#cardsTableCard QHeaderView::section:last {
+    border-right: none;
+}
+"""
 
 
 class _CardEditDialog(QDialog):
@@ -202,44 +319,65 @@ class LearningWindow(QDialog):
 
     def _build_cards_tab(self) -> QWidget:
         widget = QWidget()
+        widget.setObjectName("CardsTabWidget")
+        widget.setStyleSheet(_CARDS_TAB_STYLE)
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(12)
+
         top = QHBoxLayout()
+        top.setSpacing(8)
+        self._deck_label = QLabel()
+        self._deck_label.setObjectName("cardsDeckLabel")
         self._deck_combo = QComboBox()
+        self._deck_combo.setObjectName("cardsDeckCombo")
+        configure_single_line_combo(self._deck_combo)
         self._deck_combo.currentIndexChanged.connect(self._load_cards)
+        self._generate_ai_deck_btn = QPushButton()
+        self._generate_ai_deck_btn.setObjectName("btnPrimary")
+        self._generate_ai_deck_btn.clicked.connect(self._open_ai_deck_dialog)
         self._export_btn = QPushButton()
+        self._export_btn.setObjectName("btnSecondary")
         self._export_btn.clicked.connect(self._export_anki)
         self._edit_card_btn = QPushButton()
+        self._edit_card_btn.setObjectName("btnSecondary")
         self._edit_card_btn.clicked.connect(self._edit_selected_card)
         self._media_btn = QPushButton()
+        self._media_btn.setObjectName("btnSecondary")
         self._media_btn.clicked.connect(self._generate_media_for_deck)
         self._delete_card_btn = QPushButton()
+        self._delete_card_btn.setObjectName("btnDanger")
         self._delete_card_btn.clicked.connect(self._delete_selected_card)
         self._delete_deck_btn = QPushButton()
+        self._delete_deck_btn.setObjectName("btnDanger")
         self._delete_deck_btn.clicked.connect(self._delete_selected_deck)
-        self._deck_label = QLabel()
+
         top.addWidget(self._deck_label)
         top.addWidget(self._deck_combo, stretch=1)
-        self._generate_ai_deck_btn = QPushButton()
-        self._generate_ai_deck_btn.setStyleSheet(
-            "QPushButton { background: #2563eb; color: #fff; border: none; border-radius: 8px; "
-            "padding: 8px 14px; font-weight: 600; }"
-            "QPushButton:hover { background: #1d4ed8; }"
-            "QPushButton:disabled { background: #94a3b8; }"
-        )
-        self._generate_ai_deck_btn.clicked.connect(self._open_ai_deck_dialog)
         top.addWidget(self._generate_ai_deck_btn)
         top.addWidget(self._export_btn)
         top.addWidget(self._edit_card_btn)
         top.addWidget(self._media_btn)
+        top.addStretch()
         top.addWidget(self._delete_card_btn)
         top.addWidget(self._delete_deck_btn)
         layout.addLayout(top)
 
+        self._cards_table_card = QFrame()
+        self._cards_table_card.setObjectName("cardsTableCard")
+        table_layout = QVBoxLayout(self._cards_table_card)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+
         self._cards_table = QTableWidget(0, 6)
         self._cards_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._cards_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._cards_table.verticalHeader().setVisible(False)
+        self._cards_table.setShowGrid(False)
+        self._cards_table.setAlternatingRowColors(False)
         self._cards_table.doubleClicked.connect(self._edit_selected_card)
         self._cards_table.horizontalHeader().setStretchLastSection(False)
-        layout.addWidget(self._cards_table, stretch=1)
+        table_layout.addWidget(self._cards_table)
+        layout.addWidget(self._cards_table_card, stretch=1)
         return widget
 
     def _build_review_tab(self) -> QWidget:
@@ -314,12 +452,12 @@ class LearningWindow(QDialog):
         self._generate_ai_deck_btn.setVisible(is_enabled("learning.ai_deck_generator"))
         self._cards_table.setHorizontalHeaderLabels(
             [
-                tr("learning.card_front"),
-                tr("learning.card_back"),
-                tr("learning.card_hint"),
-                tr("learning.card_notes"),
-                tr("learning.card_status"),
-                tr("learning.card_priority"),
+                tr("learning.card_front").upper(),
+                tr("learning.card_back").upper(),
+                tr("learning.card_hint").upper(),
+                tr("learning.card_notes").upper(),
+                tr("learning.card_status").upper(),
+                tr("learning.card_priority").upper(),
             ]
         )
         self._review_deck_label.setText(tr("learning.deck"))
@@ -332,6 +470,9 @@ class LearningWindow(QDialog):
         header = self._cards_table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(40)
+        header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.resizeSection(5, min(header.sectionSize(5), _LEARNING_CARDS_PRIORITY_WIDTH))
 
@@ -402,11 +543,12 @@ class LearningWindow(QDialog):
             self._quiz_session.reload_decks()
 
     def _on_tab_changed(self, index: int) -> None:
+        widget = self._tabs.widget(index)
         if index == 1:
             self._load_cards()
         if index == 2:
             self._on_review_deck_changed()
-        if index == 3:
+        if widget is self._quiz_tab:
             self._quiz_session.refresh_preview()
             self._quiz_session.generation_panel.refresh()
         progress_index = 4 if is_enabled("learning.progress_dashboard") else -1

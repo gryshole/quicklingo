@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QPixmap
 from PySide6.QtWidgets import (
@@ -35,17 +37,262 @@ from quicklingo.learning.cram_queue import cram_hard_cards, cram_train_cards
 from quicklingo.learning.review_queue import count_due_cards
 from quicklingo.ui.controllers.review_session_controller import ReviewSessionController, SessionStats
 
-_ANSWER_STYLE = "color: #1565c0; font-size: 22pt; font-weight: bold;"
-_HINT_STYLE = "color: #666; font-size: 11pt;"
-_PHONETIC_STYLE = "color: #555; font-size: 12pt; font-style: italic;"
+_HINT_STYLE = "color: #64748b; font-size: 11pt; margin-top: 4px;"
+_PHONETIC_STYLE = "color: #64748b; font-size: 12pt; font-style: italic;"
 _ANSWER_PHONETIC_STYLE = _PHONETIC_STYLE + " margin-bottom: 10px;"
-_CONTEXT_STYLE = "color: #333; font-size: 12pt;"
-_NOTES_STYLE = (
-    "color: #555; font-size: 10pt; font-style: italic; "
-    "background: #f0f0f0; border-radius: 6px; padding: 8px 12px;"
-)
-_NOTES_MAX_WIDTH = 720
-_DIVIDER_STYLE = "color: #ddd; margin-top: 12px; margin-bottom: 12px;"
+
+_REVIEW_STYLE = """
+ReviewSessionWidget QLabel#reviewMetaLabel {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+QPushButton#btnStartReview {
+    background-color: #3b82f6;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 22px;
+    font-size: 14px;
+    font-weight: 600;
+    min-height: 36px;
+}
+QPushButton#btnStartReview:hover:enabled {
+    background-color: #2563eb;
+}
+QPushButton#btnStartReview:disabled {
+    background-color: #e2e8f0;
+    color: #94a3b8;
+}
+QPushButton#btnModeToggle {
+    background-color: #ffffff;
+    color: #475569;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    min-height: 32px;
+}
+QPushButton#btnModeToggle:checked {
+    background-color: #eff6ff;
+    border-color: #3b82f6;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+QPushButton#btnShowAnswer {
+    background-color: #ffffff;
+    color: #1e293b;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 36px;
+}
+QPushButton#btnShowAnswer:hover:enabled {
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+}
+QPushButton#btnAgain {
+    background-color: #fef2f2;
+    color: #dc2626;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-weight: bold;
+    font-size: 13px;
+    min-height: 36px;
+}
+QPushButton#btnAgain:hover:enabled {
+    background-color: #fee2e2;
+}
+QPushButton#btnHard {
+    background-color: #fff7ed;
+    color: #ea580c;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-weight: bold;
+    font-size: 13px;
+    min-height: 36px;
+}
+QPushButton#btnHard:hover:enabled {
+    background-color: #ffedd5;
+}
+QPushButton#btnGood {
+    background-color: #f0fdf4;
+    color: #16a34a;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-weight: bold;
+    font-size: 13px;
+    min-height: 36px;
+}
+QPushButton#btnGood:hover:enabled {
+    background-color: #dcfce7;
+}
+QPushButton#btnEasy {
+    background-color: #eff6ff;
+    color: #2563eb;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-weight: bold;
+    font-size: 13px;
+    min-height: 36px;
+}
+QPushButton#btnEasy:hover:enabled {
+    background-color: #dbeafe;
+}
+QFrame#reviewCardFrame {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+}
+ReviewSessionWidget QProgressBar#reviewProgressBar {
+    border: none;
+    background-color: #e2e8f0;
+    border-radius: 3px;
+    max-height: 4px;
+    min-height: 4px;
+}
+ReviewSessionWidget QProgressBar#reviewProgressBar::chunk {
+    background-color: #3b82f6;
+    border-radius: 3px;
+}
+QProgressBar {
+    border: none;
+    background-color: #e2e8f0;
+    border-radius: 4px;
+    max-height: 6px;
+    min-height: 6px;
+}
+QProgressBar::chunk {
+    background-color: #3b82f6;
+    border-radius: 4px;
+}
+"""
+
+
+def _html_speaker_link(target: str) -> str:
+    return (
+        f'<a href="qlspeak:{target}" '
+        'style="text-decoration:none;color:#64748b;font-size:16pt;'
+        'line-height:1;">&#128266;</a>'
+    )
+
+
+def _html_full_width(inner: str, *, align: str = "left", top_padding: str = "0") -> str:
+    return (
+        '<table width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="margin:0;border:none;">'
+        f'<tr><td align="{align}" style="text-align:{align};padding-top:{top_padding};">'
+        f"{inner}</td></tr></table>"
+    )
+
+
+def _html_center_block(inner: str) -> str:
+    return _html_full_width(inner, align="center")
+
+
+def _html_front_term(text: str, *, tts_enabled: bool) -> str:
+    escaped = html.escape(text)
+    speaker = f" {_html_speaker_link('term')}" if tts_enabled else ""
+    inner = (
+        f'<span style="font-size:24pt;font-weight:bold;color:#1e293b;">{escaped}</span>'
+        f"{speaker}"
+    )
+    return _html_center_block(
+        f'<div style="padding:8px 12px 4px 12px;">{inner}</div>'
+    )
+
+
+def _html_back_term(text: str) -> str:
+    escaped = html.escape(text)
+    inner = (
+        f'<span style="font-size:20pt;font-weight:bold;color:#2563eb;">{escaped}</span>'
+    )
+    return _html_center_block(
+        f'<div style="padding:12px 12px 4px 12px;">{inner}</div>'
+    )
+
+
+def _html_definition_block(body_html: str) -> str:
+    inner = (
+        '<div style="background-color:#f8fafc;border:1px solid #e2e8f0;'
+        'border-radius:8px;padding:12px 14px;text-align:left;margin-bottom:25px;">'
+        '<span style="color:#64748b;font-size:13pt;font-weight:600;">'
+        "Definition: </span>"
+        f'<span style="color:#64748b;font-size:13pt;font-style:italic;line-height:1.6;">'
+        f"{body_html}</span>"
+        "</div>"
+    )
+    return _html_full_width(inner, align="left")
+
+
+def _html_example_item(
+    highlighted_html: str,
+    *,
+    index: int,
+    tts_enabled: bool,
+    is_first: bool,
+    is_last: bool,
+) -> str:
+    margin_top = "25px" if is_first else "0"
+    margin_bottom = "0" if is_last else "15px"
+    audio_cell = (
+        f'<td valign="middle" align="right" width="30">'
+        f"{_html_speaker_link(f'example/{index}')}</td>"
+        if tts_enabled
+        else '<td valign="middle" align="right" width="30"></td>'
+    )
+    return (
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="margin-top:{margin_top};margin-bottom:{margin_bottom};border:none;">'
+        "<tr>"
+        '<td width="4" style="background-color:#cbd5e1;">&nbsp;</td>'
+        '<td width="12">&nbsp;</td>'
+        f'<td valign="middle" style="text-align:left;font-size:14pt;color:#334155;'
+        f'line-height:1.6;">{highlighted_html}</td>'
+        f"{audio_cell}"
+        "</tr></table>"
+    )
+
+
+def _build_revealed_details_html(
+    *,
+    notes: str,
+    examples: list[str],
+    term: str,
+    highlight: str,
+    tts_enabled: bool,
+) -> str:
+    parts: list[str] = []
+    plain = notes.strip()
+    if plain.lower().startswith("definition:"):
+        plain = plain.split(":", 1)[1].strip()
+    has_definition = False
+    if plain:
+        body = highlight_term_styled(plain, highlight)
+        parts.append(_html_definition_block(body))
+        has_definition = True
+    if examples:
+        for index, sentence in enumerate(examples):
+            highlighted = highlight_term_in_context(sentence, term)
+            parts.append(
+                _html_example_item(
+                    highlighted,
+                    index=index,
+                    tts_enabled=tts_enabled,
+                    is_first=index == 0 and has_definition,
+                    is_last=index == len(examples) - 1,
+                )
+            )
+    if not parts:
+        return ""
+    return _html_full_width("".join(parts), align="left", top_padding="24px")
 
 
 class ReviewSessionWidget(QWidget):
@@ -54,9 +301,12 @@ class ReviewSessionWidget(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("ReviewSessionWidget")
+        self.setStyleSheet(_REVIEW_STYLE)
         self._controller = ReviewSessionController()
         self._deck_id: int | None = None
         self._direction = "ua-en"
+        self._example_sentences: list[str] = []
 
         self._audio = AudioService(self)
 
@@ -65,7 +315,9 @@ class ReviewSessionWidget(QWidget):
 
         info_row = QHBoxLayout()
         self._due_label = QLabel()
+        self._due_label.setObjectName("reviewMetaLabel")
         self._streak_label = QLabel()
+        self._streak_label.setObjectName("reviewMetaLabel")
         info_row.addWidget(self._due_label)
         info_row.addStretch()
         info_row.addWidget(self._streak_label)
@@ -73,17 +325,20 @@ class ReviewSessionWidget(QWidget):
 
         controls_row = QHBoxLayout()
         self._mode_flip_btn = QPushButton()
+        self._mode_flip_btn.setObjectName("btnModeToggle")
         self._mode_flip_btn.setCheckable(True)
         self._mode_flip_btn.setChecked(True)
         self._mode_flip_btn.clicked.connect(lambda: self._set_mode("flip"))
         self._mode_typing_btn = QPushButton()
+        self._mode_typing_btn.setObjectName("btnModeToggle")
         self._mode_typing_btn.setCheckable(True)
         self._mode_typing_btn.clicked.connect(lambda: self._set_mode("typing"))
         self._start_btn = QPushButton()
+        self._start_btn.setObjectName("btnStartReview")
         self._start_btn.clicked.connect(self._start_session)
         for btn in (self._mode_flip_btn, self._mode_typing_btn, self._start_btn):
             btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        self._start_btn.setMinimumWidth(140)
+        self._start_btn.setMinimumWidth(160)
         controls_row.addWidget(self._mode_flip_btn)
         controls_row.addWidget(self._mode_typing_btn)
         controls_row.addStretch()
@@ -92,9 +347,10 @@ class ReviewSessionWidget(QWidget):
 
         self._stack = QStackedWidget()
         self._card_frame = QFrame()
-        self._card_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self._card_frame.setObjectName("reviewCardFrame")
+        self._card_frame.setFrameShape(QFrame.Shape.NoFrame)
         card_outer = QVBoxLayout(self._card_frame)
-        card_outer.setContentsMargins(0, 0, 0, 0)
+        card_outer.setContentsMargins(20, 20, 20, 20)
 
         self._card_stack = QStackedWidget()
 
@@ -153,17 +409,23 @@ class ReviewSessionWidget(QWidget):
         active_page = QWidget()
         card_layout = QVBoxLayout(active_page)
         card_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        card_layout.setSpacing(14)
 
         self._image_label = QLabel()
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setMaximumHeight(180)
         self._image_label.setVisible(False)
         self._term_label = QLabel()
-        self._term_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = self._term_label.font()
-        font.setPointSize(18)
-        font.setBold(True)
-        self._term_label.setFont(font)
+        self._term_label.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        )
+        self._term_label.setTextFormat(Qt.TextFormat.RichText)
+        self._term_label.setWordWrap(True)
+        self._term_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        self._configure_rich_label_links(self._term_label)
 
         self._front_phonetic_widget = QWidget()
         front_phonetic_layout = QHBoxLayout(self._front_phonetic_widget)
@@ -193,20 +455,20 @@ class ReviewSessionWidget(QWidget):
         self._typing_feedback = QLabel()
         self._typing_feedback.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._reveal_divider = QFrame()
-        self._reveal_divider.setFrameShape(QFrame.Shape.HLine)
-        self._reveal_divider.setFrameShadow(QFrame.Shadow.Plain)
-        self._reveal_divider.setStyleSheet(_DIVIDER_STYLE)
-        self._reveal_divider.setVisible(False)
-
         self._answer_block = QWidget()
         answer_layout = QVBoxLayout(self._answer_block)
-        answer_layout.setContentsMargins(0, 0, 0, 0)
-        answer_layout.setSpacing(4)
+        answer_layout.setContentsMargins(0, 8, 0, 0)
+        answer_layout.setSpacing(8)
         self._answer_label = QLabel()
-        self._answer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._answer_label.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        )
         self._answer_label.setWordWrap(True)
-        self._answer_label.setStyleSheet(_ANSWER_STYLE)
+        self._answer_label.setTextFormat(Qt.TextFormat.RichText)
+        self._answer_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         self._answer_phonetic_widget = QWidget()
         answer_phonetic_layout = QHBoxLayout(self._answer_phonetic_widget)
         answer_phonetic_layout.setContentsMargins(0, 0, 0, 0)
@@ -227,29 +489,18 @@ class ReviewSessionWidget(QWidget):
         answer_layout.addWidget(self._answer_phonetic_widget)
         self._answer_block.setVisible(False)
 
-        self._context_container = QWidget()
-        self._context_layout = QVBoxLayout(self._context_container)
-        self._context_layout.setContentsMargins(0, 0, 0, 0)
-        self._context_layout.setSpacing(6)
-        self._context_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._context_container.setVisible(False)
-
-        self._notes_label = QLabel()
-        self._notes_label.setWordWrap(False)
-        self._notes_label.setTextFormat(Qt.TextFormat.RichText)
-        self._notes_label.setStyleSheet(_NOTES_STYLE)
-        self._notes_label.setMaximumWidth(_NOTES_MAX_WIDTH)
-        self._notes_label.setSizePolicy(
-            QSizePolicy.Policy.Maximum,
-            QSizePolicy.Policy.Minimum,
+        self._details_label = QLabel()
+        self._details_label.setWordWrap(True)
+        self._details_label.setTextFormat(Qt.TextFormat.RichText)
+        self._details_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
         )
-        self._notes_row = QWidget()
-        notes_row_layout = QHBoxLayout(self._notes_row)
-        notes_row_layout.setContentsMargins(0, 0, 0, 0)
-        notes_row_layout.addStretch()
-        notes_row_layout.addWidget(self._notes_label)
-        notes_row_layout.addStretch()
-        self._notes_row.setVisible(False)
+        self._details_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        self._details_label.setVisible(False)
+        self._configure_rich_label_links(self._details_label)
 
         self._card_content: list[QWidget] = [
             self._image_label,
@@ -258,13 +509,11 @@ class ReviewSessionWidget(QWidget):
             self._hint_label,
             self._typing_input,
             self._typing_feedback,
-            self._reveal_divider,
             self._answer_block,
-            self._notes_row,
-            self._context_container,
+            self._details_label,
         ]
         for widget in self._card_content:
-            card_layout.addWidget(widget)
+            card_layout.addWidget(widget, alignment=Qt.AlignmentFlag.AlignTop)
 
         self._card_stack.addWidget(idle_page)
         self._card_stack.addWidget(active_page)
@@ -288,7 +537,10 @@ class ReviewSessionWidget(QWidget):
         progress_layout.setContentsMargins(0, 0, 0, 0)
         self._progress_label = QLabel()
         self._progress_bar = QProgressBar()
+        self._progress_bar.setObjectName("reviewProgressBar")
+        self._progress_bar.setTextVisible(False)
         self._bucket_label = QLabel()
+        self._bucket_label.setStyleSheet("color: #64748b; font-size: 11px;")
         progress_layout.addWidget(self._progress_label)
         progress_layout.addWidget(self._progress_bar)
         progress_layout.addWidget(self._bucket_label)
@@ -298,15 +550,21 @@ class ReviewSessionWidget(QWidget):
         grade_row = QHBoxLayout(self._grade_widget)
         grade_row.setContentsMargins(0, 0, 0, 0)
         self._show_answer_btn = QPushButton()
+        self._show_answer_btn.setObjectName("btnShowAnswer")
         self._show_answer_btn.clicked.connect(self._reveal_or_flip)
         self._again_btn = QPushButton()
+        self._again_btn.setObjectName("btnAgain")
         self._again_btn.clicked.connect(lambda: self._submit_grade(1))
         self._hard_btn = QPushButton()
+        self._hard_btn.setObjectName("btnHard")
         self._hard_btn.clicked.connect(lambda: self._submit_grade(2))
         self._good_btn = QPushButton()
+        self._good_btn.setObjectName("btnGood")
         self._good_btn.clicked.connect(lambda: self._submit_grade(3))
         self._easy_btn = QPushButton()
+        self._easy_btn.setObjectName("btnEasy")
         self._easy_btn.clicked.connect(lambda: self._submit_grade(4))
+        grade_row.addStretch()
         grade_row.addWidget(self._show_answer_btn)
         grade_row.addWidget(self._again_btn)
         grade_row.addWidget(self._hard_btn)
@@ -317,6 +575,32 @@ class ReviewSessionWidget(QWidget):
 
         self.retranslate_ui()
         self._show_idle_ui()
+
+    def _configure_rich_label_links(self, label: QLabel) -> None:
+        label.setOpenExternalLinks(False)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        label.linkActivated.connect(self._on_review_link)
+
+    def _tts_enabled(self) -> bool:
+        return is_enabled("learning.tts_enabled")
+
+    def _on_review_link(self, url: str) -> None:
+        if url == "qlspeak:term":
+            self._play_audio()
+            return
+        prefix = "qlspeak:example/"
+        if url.startswith(prefix):
+            try:
+                index = int(url[len(prefix) :])
+                self._play_example_sentence(self._example_sentences[index])
+            except (ValueError, IndexError):
+                return
+
+    def _play_example_sentence(self, sentence: str) -> None:
+        if not self._tts_enabled():
+            return
+        self._audio.speak_sentence(sentence)
+        self._set_play_button_active(True)
 
     def retranslate_ui(self) -> None:
         self._mode_flip_btn.setText(tr("learning.mode_flip"))
@@ -363,7 +647,7 @@ class ReviewSessionWidget(QWidget):
         if self._deck_id is None:
             self._due_label.setText("")
             return
-        self._due_label.setText(tr("learning.due_today", count=self._due_count()))
+        self._due_label.setText(tr("learning.due_today", count=self._due_count()).upper())
         self._update_done_buttons()
 
     def _update_done_buttons(self) -> None:
@@ -392,7 +676,7 @@ class ReviewSessionWidget(QWidget):
         from quicklingo import settings
 
         streak, _last = settings.get_learning_streak()
-        self._streak_label.setText(tr("learning.streak_label", streak=streak))
+        self._streak_label.setText(tr("learning.streak_label", streak=streak).upper())
 
     def _show_idle_ui(self) -> None:
         self._card_stack.setCurrentIndex(0)
@@ -486,7 +770,12 @@ class ReviewSessionWidget(QWidget):
             return
         self._show_session_ui()
         self._term_label.setVisible(True)
-        self._term_label.setText(display_term(card.front))
+        self._term_label.setText(
+            _html_front_term(
+                display_term(card.front),
+                tts_enabled=self._tts_enabled(),
+            )
+        )
         self._hint_label.setText(card.hint or "")
         self._hint_label.setVisible(bool(card.hint))
         self._hide_revealed_content()
@@ -541,16 +830,11 @@ class ReviewSessionWidget(QWidget):
         self._image_label.setVisible(True)
 
     def _hide_revealed_content(self) -> None:
-        self._reveal_divider.setVisible(False)
         self._answer_block.setVisible(False)
         self._answer_label.clear()
-        self._clear_context_examples()
-        self._context_container.setVisible(False)
-        self._notes_label.clear()
-        self._notes_row.setVisible(False)
-
-    def _format_notes(self, notes: str) -> str:
-        return notes.strip()
+        self._details_label.clear()
+        self._details_label.setVisible(False)
+        self._example_sentences = []
 
     def _set_phonetic_text(self, phonetic: str) -> None:
         text = phonetic_display_text(phonetic)
@@ -563,44 +847,6 @@ class ReviewSessionWidget(QWidget):
     def _learning_kind(self) -> str:
         return resolve_learning_direction(self._direction)
 
-    def _clear_context_examples(self) -> None:
-        while self._context_layout.count():
-            item = self._context_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-    def _populate_context_examples(self, card: learning.LearningCard) -> None:
-        self._clear_context_examples()
-        kind = self._learning_kind()
-        examples = parse_context(card.context, direction=self._direction)
-        term = card.back if kind == "ua-en" else display_term(card.front)
-        tts_on = is_enabled("learning.tts_enabled")
-        for sentence in examples:
-            row = QWidget()
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(6)
-            label = QLabel()
-            label.setWordWrap(True)
-            label.setTextFormat(Qt.TextFormat.RichText)
-            label.setStyleSheet(_CONTEXT_STYLE)
-            label.setText(
-                f'<div style="background:#f0f0f0;border-radius:8px;padding:8px 12px;">'
-                f"{highlight_term_in_context(sentence, term)}"
-                "</div>"
-            )
-            row_layout.addWidget(label, stretch=1)
-            if tts_on:
-                play_btn = QPushButton("▶")
-                play_btn.setFixedSize(28, 28)
-                play_btn.setToolTip(tr("learning.tts_play_example"))
-                play_btn.clicked.connect(
-                    lambda _checked=False, text=sentence: self._audio.speak_sentence(text)
-                )
-                row_layout.addWidget(play_btn, alignment=Qt.AlignmentFlag.AlignTop)
-            self._context_layout.addWidget(row)
-
     def _maybe_auto_play_term(self, card: learning.LearningCard) -> None:
         if not is_enabled("learning.tts_enabled"):
             return
@@ -608,30 +854,31 @@ class ReviewSessionWidget(QWidget):
             return
         self._play_audio()
 
-    def _format_notes_html(self, notes: str, highlight: str) -> str:
-        plain = self._format_notes(notes)
-        if not plain:
-            return ""
-        body = highlight_term_styled(plain, highlight)
-        return f'<div align="center" style="white-space:nowrap;">{body}</div>'
-
     def _notes_highlight_term(self, card: learning.LearningCard) -> str:
         if self._learning_kind() == "en-ua":
             return display_term(card.front)
         return card.back
 
+    def _revealed_details_html(self, card: learning.LearningCard) -> str:
+        kind = self._learning_kind()
+        examples = parse_context(card.context, direction=self._direction)
+        self._example_sentences = list(examples)
+        term = card.back if kind == "ua-en" else display_term(card.front)
+        return _build_revealed_details_html(
+            notes=card.notes or "",
+            examples=examples,
+            term=term,
+            highlight=self._notes_highlight_term(card),
+            tts_enabled=self._tts_enabled(),
+        )
+
     def _show_revealed_content(self, card: learning.LearningCard) -> None:
-        self._reveal_divider.setVisible(True)
-        self._answer_label.setText(card.back)
+        self._answer_label.setText(_html_back_term(card.back))
         self._answer_block.setVisible(True)
-        if card.notes:
-            self._notes_label.setText(
-                self._format_notes_html(card.notes, self._notes_highlight_term(card))
-            )
-            self._notes_row.setVisible(True)
-        if card.context:
-            self._populate_context_examples(card)
-            self._context_container.setVisible(True)
+        details_html = self._revealed_details_html(card)
+        if details_html:
+            self._details_label.setText(details_html)
+            self._details_label.setVisible(True)
         self._update_phonetic_visibility(card, revealed=True)
 
     def _has_pronunciation_media(self, card: learning.LearningCard) -> bool:
@@ -650,11 +897,11 @@ class ReviewSessionWidget(QWidget):
             self._answer_phonetic_label.setVisible(bool(phonetic_text))
             self._answer_play_btn.setVisible(show_answer)
         else:
-            show_front = enabled and has_media
-            self._front_phonetic_widget.setVisible(show_front)
+            show_front = enabled and (has_media or self._tts_enabled())
+            self._front_phonetic_widget.setVisible(show_front and bool(phonetic_text))
             self._answer_phonetic_widget.setVisible(False)
             self._front_phonetic_label.setVisible(bool(phonetic_text))
-            self._front_play_btn.setVisible(show_front)
+            self._front_play_btn.setVisible(show_front and has_media)
 
     def _reveal_or_flip(self) -> None:
         if self._controller.mode == "typing":

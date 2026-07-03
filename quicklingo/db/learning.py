@@ -37,6 +37,14 @@ class QuizQuestionRecord:
     updated_at: str
 
 
+@dataclass
+class QuizQuestionRow(QuizQuestionRecord):
+    card_front: str = ""
+    card_back: str = ""
+    deck_id: int = 0
+    deck_name: str = ""
+
+
 @dataclass(frozen=True)
 class QuizCoverageStats:
     eligible: int
@@ -932,6 +940,74 @@ def list_quiz_questions_for_cards(
     with connection() as conn:
         rows = conn.execute(query, params).fetchall()
     return [_row_to_quiz_question(row) for row in rows]
+
+
+_QUIZ_QUESTION_JOIN_SELECT = """
+    SELECT q.id, q.card_id, q.question_type, q.prompt_text, q.example_sentence,
+           q.choices_pool, q.correct_english, q.status, q.model_id, q.prompt_version,
+           q.created_at, q.updated_at,
+           c.front AS card_front, c.back AS card_back, c.deck_id AS deck_id,
+           d.name AS deck_name
+    FROM quiz_questions q
+    JOIN learning_cards c ON c.id = q.card_id
+    JOIN learning_decks d ON d.id = c.deck_id
+"""
+
+
+def _row_to_quiz_question_row(row: sqlite3.Row) -> QuizQuestionRow:
+    base = _row_to_quiz_question(row)
+    return QuizQuestionRow(
+        id=base.id,
+        card_id=base.card_id,
+        question_type=base.question_type,
+        prompt_text=base.prompt_text,
+        example_sentence=base.example_sentence,
+        choices_pool=base.choices_pool,
+        correct_english=base.correct_english,
+        status=base.status,
+        model_id=base.model_id,
+        prompt_version=base.prompt_version,
+        created_at=base.created_at,
+        updated_at=base.updated_at,
+        card_front=str(row["card_front"] or ""),
+        card_back=str(row["card_back"] or ""),
+        deck_id=int(row["deck_id"]),
+        deck_name=str(row["deck_name"] or ""),
+    )
+
+
+def list_quiz_questions(
+    deck_id: int,
+    *,
+    question_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+) -> list[QuizQuestionRow]:
+    query = _QUIZ_QUESTION_JOIN_SELECT + " WHERE c.deck_id = ?"
+    params: list[object] = [deck_id]
+    if question_type:
+        query += " AND q.question_type = ?"
+        params.append(question_type)
+    if status and status != "all":
+        query += " AND q.status = ?"
+        params.append(status)
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        query += (
+            " AND (q.prompt_text LIKE ? OR q.correct_english LIKE ? OR c.front LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern])
+    query += " ORDER BY q.updated_at DESC, q.id DESC"
+    with connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [_row_to_quiz_question_row(row) for row in rows]
+
+
+def get_quiz_question_by_id(question_id: int) -> QuizQuestionRow | None:
+    query = _QUIZ_QUESTION_JOIN_SELECT + " WHERE q.id = ?"
+    with connection() as conn:
+        row = conn.execute(query, (question_id,)).fetchone()
+    return _row_to_quiz_question_row(row) if row else None
 
 
 def count_active_quiz_questions(card_id: int) -> int:

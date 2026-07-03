@@ -91,6 +91,7 @@ from quicklingo.ui.widgets.segmented_control import SegmentedControl
 from quicklingo.ui.history_window import HistoryWindow
 from quicklingo.ui.dashboard_window import DashboardWindow
 from quicklingo.ui.learning_window import LearningWindow
+from quicklingo.ui.quiz_questions_window import QuizQuestionsWindow
 
 from quicklingo.ui.settings_dialog import SettingsDialog
 
@@ -114,6 +115,7 @@ class MainWindow(QMainWindow):
         self._tray_manager = None
         self._history_window: HistoryWindow | None = None
         self._learning_window: LearningWindow | None = None
+        self._quiz_questions_window: QuizQuestionsWindow | None = None
         self._dashboard_window: DashboardWindow | None = None
 
         self._direction_control: SegmentedControl | None = None
@@ -141,6 +143,8 @@ class MainWindow(QMainWindow):
         self._history_action = None
 
         self._learning_action = None
+
+        self._quiz_questions_action = None
 
         self._dashboard_action = None
 
@@ -418,6 +422,11 @@ class MainWindow(QMainWindow):
         if self._learning_action:
 
             self._learning_action.setText(tr("main.menu_learning"))
+
+        if self._quiz_questions_action:
+
+            self._quiz_questions_action.setText(tr("main.menu_quiz_questions"))
+            self._quiz_questions_action.setVisible(is_enabled("learning.quiz"))
 
         if self._dashboard_action:
 
@@ -970,6 +979,10 @@ class MainWindow(QMainWindow):
 
         self._learning_action.triggered.connect(self._open_learning)
 
+        self._quiz_questions_action = self._tools_menu.addAction("")
+        self._quiz_questions_action.triggered.connect(self._open_quiz_questions)
+        self._quiz_questions_action.setVisible(is_enabled("learning.quiz"))
+
         self._dashboard_action = self._tools_menu.addAction("")
 
         self._dashboard_action.triggered.connect(self._open_dashboard)
@@ -1068,6 +1081,16 @@ class MainWindow(QMainWindow):
 
     def _on_learning_closed(self) -> None:
         self._learning_window = None
+
+    def _open_quiz_questions(self) -> None:
+        if self._quiz_questions_window is None:
+            self._quiz_questions_window = QuizQuestionsWindow(self)
+            self._quiz_questions_window.finished.connect(self._on_quiz_questions_closed)
+        self._quiz_questions_window.refresh()
+        raise_window(self._quiz_questions_window)
+
+    def _on_quiz_questions_closed(self) -> None:
+        self._quiz_questions_window = None
 
     def _open_dashboard(self) -> None:
         if self._dashboard_window is None:

@@ -127,6 +127,7 @@ def build_choices_user_prompt(
     context: CardQuizContext,
     *,
     choices_count: int = 6,
+    extra_context: str = "",
 ) -> str:
     from quicklingo.features import get_feature
 
@@ -143,7 +144,33 @@ def build_choices_user_prompt(
         "blanked_sentence": context.blanked_sentence,
         "choices_count": count,
     }
-    return template.format(**payload)
+    prompt = template.format(**payload)
+    extra = (extra_context or "").strip()
+    if extra:
+        prompt = f"{prompt}\n\n{extra}"
+    return prompt
+
+
+def build_regen_extra_context(
+    *,
+    user_context: str,
+    prompt_text: str = "",
+    example_sentence: str = "",
+    choices_pool: list[str] | None = None,
+) -> str:
+    lines = [
+        "Additional instructions from the learner (follow if compatible with rules above):",
+        user_context.strip(),
+        "",
+        "Current question (for reference — improve, do not copy blindly):",
+    ]
+    if prompt_text.strip():
+        lines.append(f"Prompt: {prompt_text.strip()}")
+    if example_sentence.strip():
+        lines.append(f"Example sentence: {example_sentence.strip()}")
+    if choices_pool:
+        lines.append("Choices: " + ", ".join(choices_pool))
+    return "\n".join(lines)
 
 
 def parse_choices_response(raw: str) -> list[str]:
