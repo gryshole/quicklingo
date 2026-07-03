@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 
 from quicklingo.features import get_feature, is_enabled
@@ -18,19 +19,26 @@ class QuizSessionController:
     def session_active(self) -> bool:
         return self._active
 
-    def start_session(self, tag: str | None = None) -> bool:
+    def start_session(self, deck_ids: frozenset[int] | None = None) -> bool:
         if not is_enabled("learning.quiz"):
             return False
+        if deck_ids is not None and len(deck_ids) == 0:
+            return False
         limit = int(get_feature("learning.quiz").get("question_count", 15))
-        words = build_quiz_pool(limit=limit, tag=tag or None)
+        words = build_quiz_pool(limit=limit, deck_ids=deck_ids, require_quiz_questions=True)
         if not words:
             self._active = False
             self._state = QuizSessionState()
             return False
         generator = get_quiz_generator()
+        questions = generator.build_questions(words)
+        if not questions:
+            self._active = False
+            self._state = QuizSessionState()
+            return False
         self._state = QuizSessionState(
             words=words,
-            questions=generator.build_questions(words),
+            questions=questions,
             answers=[],
             started_at=time.monotonic(),
             position=0,
@@ -131,6 +139,8 @@ class QuizSessionController:
                     "selected": answer.selected,
                     "correct": answer.correct,
                     "response_ms": answer.elapsed_ms,
+                    "question_id": question.question_id,
+                    "choices_shown": json.dumps(question.choices_shown or question.choices, ensure_ascii=False),
                 }
             )
         learning.batch_insert_quiz_logs(entries)

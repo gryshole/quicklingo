@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, timedelta
 
 from quicklingo.db.connection import connection, get_connection
+
+QUIZ_QUESTION_TYPES = ("fill_blank", "definition_match", "translation_recall")
 
 
 @dataclass
@@ -16,6 +19,37 @@ class LearningDeck:
     created_at: str
     analysis_summary: str = ""
     source: str = "corpus"
+
+
+@dataclass
+class QuizQuestionRecord:
+    id: int
+    card_id: int
+    question_type: str
+    prompt_text: str
+    example_sentence: str
+    choices_pool: list[str]
+    correct_english: str
+    status: str
+    model_id: str
+    prompt_version: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class QuizCoverageStats:
+    eligible: int
+    ready: int
+    missing_any: int
+    missing_by_type: dict[str, int]
+
+
+@dataclass(frozen=True)
+class GlobalQuizCoverageStats:
+    decks_total: int
+    decks_complete: int
+    decks_incomplete: int
 
 
 @dataclass
@@ -183,6 +217,56 @@ def init_learning_tables() -> None:
         )
         _migrate_deck_columns(conn)
         _migrate_learning_columns(conn)
+        _migrate_quiz_questions(conn)
+        _migrate_quiz_logs_columns(conn)
+
+
+def _quiz_logs_columns(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("PRAGMA table_info(quiz_logs)").fetchall()
+    return {row["name"] for row in rows}
+
+
+def _migrate_quiz_questions(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS quiz_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id INTEGER NOT NULL,
+            question_type TEXT NOT NULL,
+            prompt_text TEXT NOT NULL,
+            example_sentence TEXT NOT NULL DEFAULT '',
+            choices_pool TEXT NOT NULL,
+            correct_english TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            model_id TEXT NOT NULL DEFAULT '',
+            prompt_version TEXT NOT NULL DEFAULT 'v1',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (card_id) REFERENCES learning_cards(id) ON DELETE CASCADE,
+            UNIQUE(card_id, question_type)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_quiz_questions_card
+        ON quiz_questions(card_id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_quiz_questions_status
+        ON quiz_questions(status)
+        """
+    )
+
+
+def _migrate_quiz_logs_columns(conn: sqlite3.Connection) -> None:
+    cols = _quiz_logs_columns(conn)
+    if "question_id" not in cols:
+        conn.execute("ALTER TABLE quiz_logs ADD COLUMN question_id INTEGER")
+    if "choices_shown" not in cols:
+        conn.execute("ALTER TABLE quiz_logs ADD COLUMN choices_shown TEXT NOT NULL DEFAULT ''")
 
 
 _DECK_SELECT = """
@@ -671,12 +755,17 @@ def insert_quiz_log(
     selected: str,
     correct: bool,
     response_ms: int | None = None,
+    question_id: int | None = None,
+    choices_shown: str = "",
 ) -> None:
     with connection() as conn:
         conn.execute(
             """
-            INSERT INTO quiz_logs (card_id, question_type, selected, correct, response_ms)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO quiz_logs (
+                card_id, question_type, selected, correct, response_ms,
+                question_id, choices_shown
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 card_id,
@@ -684,6 +773,8 @@ def insert_quiz_log(
                 selected,
                 int(correct),
                 response_ms,
+                question_id,
+                choices_shown,
             ),
         )
 
@@ -694,8 +785,11 @@ def batch_insert_quiz_logs(entries: list[dict[str, object]]) -> None:
     with connection() as conn:
         conn.executemany(
             """
-            INSERT INTO quiz_logs (card_id, question_type, selected, correct, response_ms)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO quiz_logs (
+                card_id, question_type, selected, correct, response_ms,
+                question_id, choices_shown
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -704,10 +798,259 @@ def batch_insert_quiz_logs(entries: list[dict[str, object]]) -> None:
                     str(entry.get("selected", "")),
                     int(bool(entry.get("correct"))),
                     entry.get("response_ms"),
+                    entry.get("question_id"),
+                    str(entry.get("choices_shown", "")),
                 )
                 for entry in entries
             ],
         )
+
+
+def _parse_choices_pool(raw: str) -> list[str]:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [" ".join(str(item).split()).strip() for item in parsed if str(item).strip()]
+
+
+def _serialize_choices_pool(items: list[str]) -> str:
+    cleaned = [" ".join(str(item).split()).strip() for item in items if str(item).strip()]
+    return json.dumps(cleaned, ensure_ascii=False)
+
+
+def _row_to_quiz_question(row: sqlite3.Row) -> QuizQuestionRecord:
+    return QuizQuestionRecord(
+        id=int(row["id"]),
+        card_id=int(row["card_id"]),
+        question_type=str(row["question_type"]),
+        prompt_text=str(row["prompt_text"] or ""),
+        example_sentence=str(row["example_sentence"] or ""),
+        choices_pool=_parse_choices_pool(str(row["choices_pool"] or "")),
+        correct_english=str(row["correct_english"] or ""),
+        status=str(row["status"] or "active"),
+        model_id=str(row["model_id"] or ""),
+        prompt_version=str(row["prompt_version"] or "v1"),
+        created_at=str(row["created_at"] or ""),
+        updated_at=str(row["updated_at"] or ""),
+    )
+
+
+def upsert_quiz_question(
+    *,
+    card_id: int,
+    question_type: str,
+    prompt_text: str,
+    example_sentence: str,
+    choices_pool: list[str],
+    correct_english: str,
+    status: str = "active",
+    model_id: str = "",
+    prompt_version: str = "v1",
+) -> int:
+    payload = _serialize_choices_pool(choices_pool)
+    with connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO quiz_questions (
+                card_id, question_type, prompt_text, example_sentence,
+                choices_pool, correct_english, status, model_id, prompt_version,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(card_id, question_type) DO UPDATE SET
+                prompt_text = excluded.prompt_text,
+                example_sentence = excluded.example_sentence,
+                choices_pool = excluded.choices_pool,
+                correct_english = excluded.correct_english,
+                status = excluded.status,
+                model_id = excluded.model_id,
+                prompt_version = excluded.prompt_version,
+                updated_at = datetime('now')
+            """,
+            (
+                card_id,
+                question_type,
+                prompt_text.strip(),
+                example_sentence.strip(),
+                payload,
+                correct_english.strip(),
+                status,
+                model_id,
+                prompt_version,
+            ),
+        )
+        row = conn.execute(
+            """
+            SELECT id FROM quiz_questions
+            WHERE card_id = ? AND question_type = ?
+            """,
+            (card_id, question_type),
+        ).fetchone()
+    return int(row["id"]) if row else 0
+
+
+def get_quiz_question(card_id: int, question_type: str) -> QuizQuestionRecord | None:
+    with connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, card_id, question_type, prompt_text, example_sentence,
+                   choices_pool, correct_english, status, model_id, prompt_version,
+                   created_at, updated_at
+            FROM quiz_questions
+            WHERE card_id = ? AND question_type = ?
+            """,
+            (card_id, question_type),
+        ).fetchone()
+    return _row_to_quiz_question(row) if row else None
+
+
+def list_quiz_questions_for_cards(
+    card_ids: list[int],
+    *,
+    status: str = "active",
+) -> list[QuizQuestionRecord]:
+    if not card_ids:
+        return []
+    placeholders = ",".join("?" for _ in card_ids)
+    params: list[object] = list(card_ids)
+    query = f"""
+        SELECT id, card_id, question_type, prompt_text, example_sentence,
+               choices_pool, correct_english, status, model_id, prompt_version,
+               created_at, updated_at
+        FROM quiz_questions
+        WHERE card_id IN ({placeholders})
+    """
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    with connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [_row_to_quiz_question(row) for row in rows]
+
+
+def count_active_quiz_questions(card_id: int) -> int:
+    with connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM quiz_questions
+            WHERE card_id = ? AND status = 'active'
+            """,
+            (card_id,),
+        ).fetchone()
+    return int(row["cnt"]) if row else 0
+
+
+def card_has_full_quiz_coverage(card_id: int) -> bool:
+    return count_active_quiz_questions(card_id) >= len(QUIZ_QUESTION_TYPES)
+
+
+def delete_quiz_questions_for_card(card_id: int) -> None:
+    with connection() as conn:
+        conn.execute("DELETE FROM quiz_questions WHERE card_id = ?", (card_id,))
+
+
+def list_recent_quiz_question_types(card_id: int, *, limit: int = 10) -> list[str]:
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT question_type FROM quiz_logs
+            WHERE card_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (card_id, max(1, limit)),
+        ).fetchall()
+    return [str(row["question_type"]) for row in rows]
+
+
+def get_quiz_coverage(deck_id: int) -> QuizCoverageStats:
+    from quicklingo.config.loader import resolve_learning_direction
+    from quicklingo.learning.quiz.eligibility import is_quiz_eligible
+    from quicklingo.learning.quiz.normalize import card_to_quiz_word
+
+    deck = get_deck(deck_id)
+    if deck is None:
+        return QuizCoverageStats(eligible=0, ready=0, missing_any=0, missing_by_type={})
+
+    kind = resolve_learning_direction(deck.direction)
+    if kind not in ("ua-en", "en-ua"):
+        return QuizCoverageStats(eligible=0, ready=0, missing_any=0, missing_by_type={})
+
+    eligible_ids: set[int] = set()
+    ready = 0
+    missing_by_type = {qtype: 0 for qtype in QUIZ_QUESTION_TYPES}
+
+    for card in list_cards(deck_id):
+        word = card_to_quiz_word(card, deck.direction)
+        if not is_quiz_eligible(card, word):
+            continue
+        eligible_ids.add(card.id)
+        active_types: set[str] = set()
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT question_type FROM quiz_questions
+                WHERE card_id = ? AND status = 'active'
+                """,
+                (card.id,),
+            ).fetchall()
+        active_types = {str(row["question_type"]) for row in rows}
+        if len(active_types) >= len(QUIZ_QUESTION_TYPES):
+            ready += 1
+        else:
+            for qtype in QUIZ_QUESTION_TYPES:
+                if qtype not in active_types:
+                    missing_by_type[qtype] += 1
+
+    eligible = len(eligible_ids)
+    return QuizCoverageStats(
+        eligible=eligible,
+        ready=ready,
+        missing_any=max(0, eligible - ready),
+        missing_by_type=missing_by_type,
+    )
+
+
+def count_failed_quiz_questions_for_deck(deck_id: int) -> int:
+    with connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM quiz_questions qq
+            INNER JOIN learning_cards c ON c.id = qq.card_id
+            WHERE c.deck_id = ? AND qq.status = 'failed'
+            """,
+            (deck_id,),
+        ).fetchone()
+    return int(row["cnt"]) if row else 0
+
+
+def get_global_quiz_coverage() -> GlobalQuizCoverageStats:
+    from quicklingo.config.loader import resolve_learning_direction
+
+    decks = list_decks()
+    quiz_decks = [
+        deck
+        for deck in decks
+        if resolve_learning_direction(deck.direction) in ("ua-en", "en-ua")
+    ]
+    complete = 0
+    for deck in quiz_decks:
+        stats = get_quiz_coverage(deck.id)
+        if stats.eligible == 0 or stats.ready >= stats.eligible:
+            complete += 1
+    total = len(quiz_decks)
+    return GlobalQuizCoverageStats(
+        decks_total=total,
+        decks_complete=complete,
+        decks_incomplete=max(0, total - complete),
+    )
 
 
 def record_review(

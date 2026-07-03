@@ -111,6 +111,11 @@ def _replace_term(sentence: str, term: str, replacement: str) -> str:
     return sentence
 
 
+def is_generic_slot_blank_sentence(sentence: str) -> bool:
+    """True when the blanked sentence uses a template where almost any word could fit."""
+    return _is_generic_slot_sentence(sentence)
+
+
 def _is_generic_slot_sentence(sentence: str) -> bool:
     blanked = sentence.replace("_______", "___")
     return any(pattern.search(blanked) for pattern in _GENERIC_SLOT_PATTERNS)

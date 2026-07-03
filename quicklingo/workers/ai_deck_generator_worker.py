@@ -11,6 +11,7 @@ from quicklingo.learning.ai_deck.word_list_parser import parse_word_list_respons
 from quicklingo.learning.ai_deck.word_list_prompt import build_word_list_prompt
 from quicklingo.learning.card_prompt import enrich_card_fields
 from quicklingo.learning.corpus_analysis import AnalysisSummary, parse_analysis_response
+from quicklingo.logging.ai_requests import ai_request_scope
 from quicklingo.providers.registry import ModelEntry
 
 
@@ -147,12 +148,13 @@ class AiDeckGeneratorWorker(QThread):
 
     async def _fetch_word_list(self) -> list[str]:
         prompt = build_word_list_prompt(self._params)
-        raw = await self._model_entry.provider.complete(
-            "You are a vocabulary curator for language learners. Output JSON only.",
-            prompt,
-            self._model_entry.model_id,
-            temperature=0.4,
-        )
+        with ai_request_scope("learning.ai_deck.word_list"):
+            raw = await self._model_entry.provider.complete(
+                "You are a vocabulary curator for language learners. Output JSON only.",
+                prompt,
+                self._model_entry.model_id,
+                temperature=0.4,
+            )
         words = parse_word_list_response(raw, expected_count=self._params.word_count)
         return words[: self._params.word_count]
 
@@ -178,13 +180,14 @@ class AiDeckGeneratorWorker(QThread):
 
     async def _request_batch(self, batch) -> tuple[list[dict], AnalysisSummary]:
         prompt = build_ai_word_card_prompt(batch, self._params)
-        raw = await self._model_entry.provider.complete(
-            "You are a language learning assistant creating flashcards for active recall. "
-            "The learner must recall back without spoilers in hint. Output JSON only.",
-            prompt,
-            self._model_entry.model_id,
-            temperature=0.3,
-        )
+        with ai_request_scope("learning.ai_deck.cards"):
+            raw = await self._model_entry.provider.complete(
+                "You are a language learning assistant creating flashcards for active recall. "
+                "The learner must recall back without spoilers in hint. Output JSON only.",
+                prompt,
+                self._model_entry.model_id,
+                temperature=0.3,
+            )
         return parse_analysis_response(raw)
 
 

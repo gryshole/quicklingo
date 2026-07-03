@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import re
 from typing import Protocol
 
-from quicklingo.learning.quiz.local_generator import LocalQuizGenerator
+from quicklingo.learning.quiz.db_generator import DbQuizGenerator
 from quicklingo.learning.quiz.models import QuizQuestion, QuizWordDto
 
 
@@ -12,4 +11,4 @@ class QuizGenerator(Protocol):
 
 
 def get_quiz_generator() -> QuizGenerator:
-    return LocalQuizGenerator()
+    return DbQuizGenerator()

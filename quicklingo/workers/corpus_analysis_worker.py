@@ -14,6 +14,7 @@ from quicklingo.learning.corpus_analysis import (
     select_candidates,
 )
 from quicklingo.learning.difficult_words import compute_difficult_words
+from quicklingo.logging.ai_requests import ai_request_scope
 from quicklingo.providers.registry import ModelEntry
 
 
@@ -190,13 +191,14 @@ class CorpusAnalysisWorker(QThread):
         self, batch: list[CorpusCandidate]
     ) -> tuple[list[dict], AnalysisSummary]:
         prompt = build_analysis_prompt(batch, tag=self._tag, direction=self._direction)
-        raw = await self._model_entry.provider.complete(
-            "You are a language learning assistant creating flashcards for active recall. "
-            "The learner must recall back without spoilers in hint. Output JSON only.",
-            prompt,
-            self._model_entry.model_id,
-            temperature=0.3,
-        )
+        with ai_request_scope("learning.corpus_analysis"):
+            raw = await self._model_entry.provider.complete(
+                "You are a language learning assistant creating flashcards for active recall. "
+                "The learner must recall back without spoilers in hint. Output JSON only.",
+                prompt,
+                self._model_entry.model_id,
+                temperature=0.3,
+            )
         return parse_analysis_response(raw)
 
 

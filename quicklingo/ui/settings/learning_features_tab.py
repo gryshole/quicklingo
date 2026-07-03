@@ -1,6 +1,8 @@
 from PySide6.QtWidgets import QFormLayout
 
 from quicklingo.learning.card_prompt import get_builtin_card_prompt_template
+from quicklingo.learning.quiz.models import QuizQuestionType
+from quicklingo.learning.quiz.quiz_prompts import get_builtin_quiz_prompt, get_builtin_quiz_system_prompt
 from quicklingo.ui.settings.feature_settings_editor import FeatureSettingsEditor, GroupSpecs
 
 
@@ -82,6 +84,34 @@ def _learning_extras(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
         "settings.features.quiz_feedback_delay_ms",
         500,
         5000,
+    )
+    editor._add_text_area(
+        form,
+        "learning.quiz",
+        "quiz_system_prompt_template",
+        "settings.features.quiz_system_prompt",
+        reset_factory=get_builtin_quiz_system_prompt,
+    )
+    editor._add_text_area(
+        form,
+        "learning.quiz",
+        "quiz_prompt_fill_blank",
+        "settings.features.quiz_prompt_fill_blank",
+        reset_factory=lambda: get_builtin_quiz_prompt(QuizQuestionType.FILL_BLANK),
+    )
+    editor._add_text_area(
+        form,
+        "learning.quiz",
+        "quiz_prompt_definition_match",
+        "settings.features.quiz_prompt_definition",
+        reset_factory=lambda: get_builtin_quiz_prompt(QuizQuestionType.DEFINITION_MATCH),
+    )
+    editor._add_text_area(
+        form,
+        "learning.quiz",
+        "quiz_prompt_translation_recall",
+        "settings.features.quiz_prompt_translation",
+        reset_factory=lambda: get_builtin_quiz_prompt(QuizQuestionType.TRANSLATION_RECALL),
     )
     editor._add_spin(
         form,

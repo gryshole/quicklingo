@@ -12,16 +12,22 @@ from quicklingo.providers.extra_providers import (
 )
 from quicklingo.providers.gemini import GeminiProvider
 from quicklingo.providers.groq import GroqProvider
+from quicklingo.providers.logging_wrapper import LoggingProviderWrapper
 from quicklingo.settings import API_PROVIDERS
 
-_groq = GroqProvider()
-_gemini = GeminiProvider()
-_openrouter = OpenRouterProvider()
-_mistral = MistralProvider()
-_ollama = OllamaProvider()
-_deepseek = DeepSeekProvider()
-_openai = OpenAIProvider()
-_anthropic = AnthropicProvider()
+
+def _wrap_provider(provider_id: str, provider: TranslationProvider) -> TranslationProvider:
+    return LoggingProviderWrapper(provider, provider_id=provider_id)
+
+
+_groq = _wrap_provider("groq", GroqProvider())
+_gemini = _wrap_provider("gemini", GeminiProvider())
+_openrouter = _wrap_provider("openrouter", OpenRouterProvider())
+_mistral = _wrap_provider("mistral", MistralProvider())
+_ollama = _wrap_provider("ollama", OllamaProvider())
+_deepseek = _wrap_provider("deepseek", DeepSeekProvider())
+_openai = _wrap_provider("openai", OpenAIProvider())
+_anthropic = _wrap_provider("anthropic", AnthropicProvider())
 
 
 @dataclass(frozen=True)

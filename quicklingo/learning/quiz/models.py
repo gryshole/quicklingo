@@ -33,6 +33,8 @@ class QuizQuestion:
     source_card_id: int
     prompt_spoken_text: str = ""
     answer_spoken_text: str = ""
+    question_id: int | None = None
+    choices_shown: list[str] = field(default_factory=list)
 
 
 @dataclass

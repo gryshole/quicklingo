@@ -76,9 +76,10 @@ def tr(key: str, **params: object) -> str:
 
 
 class TranslatableError(Exception):
-    def __init__(self, key: str, **params: object) -> None:
+    def __init__(self, key: str, *, raw_detail: str | None = None, **params: object) -> None:
         self.key = key
         self.params = params
+        self.raw_detail = raw_detail
         super().__init__(key)
 
     def __str__(self) -> str:

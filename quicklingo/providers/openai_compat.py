@@ -5,6 +5,7 @@ import httpx
 
 from quicklingo import settings
 from quicklingo.i18n.translator import TranslatableError
+from quicklingo.providers.api_errors import raise_openai_compat_api_error
 from quicklingo.providers.base import TranslationProvider
 
 REQUEST_TIMEOUT = 30.0
@@ -87,11 +88,9 @@ class OpenAICompatProvider(TranslationProvider):
         if response.status_code == 401:
             raise TranslatableError(f"errors.{self._provider_id}_invalid_key")
         if response.status_code >= 400:
-            detail = response.text.strip() or response.reason_phrase
-            raise TranslatableError(
-                "errors.api_error",
-                status=response.status_code,
-                detail=detail,
+            raise_openai_compat_api_error(
+                status_code=response.status_code,
+                body=response.text.strip() or response.reason_phrase or "",
             )
 
         data = response.json()
@@ -122,11 +121,9 @@ class OpenAICompatProvider(TranslationProvider):
                         raise TranslatableError(f"errors.{self._provider_id}_invalid_key")
                     if response.status_code >= 400:
                         body = (await response.aread()).decode("utf-8", errors="replace")
-                        detail = body.strip() or response.reason_phrase
-                        raise TranslatableError(
-                            "errors.api_error",
-                            status=response.status_code,
-                            detail=detail,
+                        raise_openai_compat_api_error(
+                            status_code=response.status_code,
+                            body=body.strip() or response.reason_phrase or "",
                         )
                     async for line in response.aiter_lines():
                         if not line.startswith("data:"):

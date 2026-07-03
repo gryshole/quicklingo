@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -19,11 +21,13 @@ from PySide6.QtWidgets import (
 
 from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
-from quicklingo.learning.quiz.aggregator import get_quiz_pool_stats
+from quicklingo.learning.quiz.aggregator import get_quiz_pool_stats, list_quiz_eligible_decks
 from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch import collect_quiz_tts_texts, collect_question_tts_texts
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
 from quicklingo.ui.controllers.quiz_session_controller import QuizSessionController
+from quicklingo.ui.widgets.quiz_deck_combo import QuizDeckComboBox
+from quicklingo.ui.widgets.quiz_generation_panel import QuizGenerationPanel
 
 _CARD_MAX_WIDTH = 672
 _VICTORY_CARD_MAX_WIDTH = 760
@@ -34,10 +38,29 @@ _PROGRESS_BAR_HEIGHT = 10
 _SPEAKER_SLOT_HEIGHT = 44
 
 _CARD_STYLE = """
-    QWidget#quizCard, QWidget#victoryCard, QWidget#idleCard {
+    QWidget#quizCard, QWidget#victoryCard {
         background: #f8fafc;
         border: 1px solid #e2e8f0;
         border-radius: 12px;
+    }
+"""
+_IDLE_SETUP_STYLE = """
+    QWidget#quizIdleHost {
+        background: #f8fafc;
+    }
+    QFrame#quizSetupCard {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+    }
+    QLabel#quizSetupTitle {
+        font-size: 18pt;
+        font-weight: 600;
+        color: #0f172a;
+    }
+    QLabel#quizSetupStats {
+        font-size: 11pt;
+        color: #64748b;
     }
 """
 _CHOICE_STYLE = """
@@ -203,15 +226,17 @@ class QuizSessionWidget(QWidget):
     session_finished = Signal()
     results_shown = Signal()
     finish_requested = Signal()
+    deck_selection_changed = Signal(object)
+    generation_finished = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setStyleSheet(_CARD_STYLE)
+        self.setStyleSheet(_CARD_STYLE + _IDLE_SETUP_STYLE)
         self._controller = QuizSessionController()
         self._audio = AudioService(self)
         self._current_spoken_text = ""
         self._tts_answer_revealed = False
-        self._tag: str | None = None
+        self._deck_ids: frozenset[int] | None = None
         self._choice_buttons: list[QPushButton] = []
 
         layout = QVBoxLayout(self)
@@ -238,22 +263,48 @@ class QuizSessionWidget(QWidget):
         self._stack = QStackedWidget()
 
         idle_page = QWidget()
+        idle_page.setObjectName("quizIdleHost")
         idle_layout = QVBoxLayout(idle_page)
         idle_layout.setContentsMargins(0, 0, 0, 0)
         idle_layout.addStretch(1)
         idle_center = QHBoxLayout()
         idle_center.addStretch(1)
-        self._idle_card = QWidget()
-        self._idle_card.setObjectName("idleCard")
-        self._idle_card.setMaximumWidth(_CARD_MAX_WIDTH)
+
+        self._idle_stack = QWidget()
+        self._idle_stack.setMinimumWidth(440)
+        self._idle_stack.setMaximumWidth(_CARD_MAX_WIDTH)
+        idle_stack_layout = QVBoxLayout(self._idle_stack)
+        idle_stack_layout.setContentsMargins(0, 0, 0, 0)
+        idle_stack_layout.setSpacing(12)
+
+        self._generation_panel = QuizGenerationPanel()
+        self._generation_panel.generation_finished.connect(self._on_generation_finished)
+        idle_stack_layout.addWidget(self._generation_panel)
+
+        self._idle_card = QFrame()
+        self._idle_card.setObjectName("quizSetupCard")
         self._idle_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        shadow = QGraphicsDropShadowEffect(self._idle_card)
+        shadow.setBlurRadius(24)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(15, 23, 42, 28))
+        self._idle_card.setGraphicsEffect(shadow)
         idle_card_layout = QVBoxLayout(self._idle_card)
-        idle_card_layout.setContentsMargins(28, 32, 28, 32)
-        idle_card_layout.setSpacing(20)
-        self._idle_label = QLabel()
-        self._idle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._idle_label.setWordWrap(True)
-        self._idle_label.setStyleSheet("color: #64748b; font-size: 12pt;")
+        idle_card_layout.setContentsMargins(32, 36, 32, 36)
+        idle_card_layout.setSpacing(18)
+
+        self._idle_title = QLabel()
+        self._idle_title.setObjectName("quizSetupTitle")
+        self._idle_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._deck_combo = QuizDeckComboBox()
+        self._deck_combo.selection_changed.connect(self._on_deck_selection_changed)
+
+        self._idle_stats = QLabel()
+        self._idle_stats.setObjectName("quizSetupStats")
+        self._idle_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._idle_stats.setWordWrap(True)
+
         self._start_btn = QPushButton()
         self._start_btn.setMinimumWidth(160)
         self._start_btn.setStyleSheet(_PRIMARY_BTN)
@@ -262,13 +313,19 @@ class QuizSessionWidget(QWidget):
         self._refresh_btn.setStyleSheet(_SECONDARY_BTN)
         self._refresh_btn.clicked.connect(self.refresh_preview)
         idle_btn_row = QHBoxLayout()
+        idle_btn_row.setSpacing(12)
         idle_btn_row.addStretch()
         idle_btn_row.addWidget(self._refresh_btn)
         idle_btn_row.addWidget(self._start_btn)
         idle_btn_row.addStretch()
-        idle_card_layout.addWidget(self._idle_label)
+
+        idle_card_layout.addWidget(self._idle_title)
+        idle_card_layout.addWidget(self._deck_combo)
+        idle_card_layout.addWidget(self._idle_stats)
+        idle_card_layout.addSpacing(4)
         idle_card_layout.addLayout(idle_btn_row)
-        idle_center.addWidget(self._idle_card, stretch=0)
+        idle_stack_layout.addWidget(self._idle_card)
+        idle_center.addWidget(self._idle_stack, stretch=0)
         idle_center.addStretch(1)
         idle_layout.addLayout(idle_center)
         idle_layout.addStretch(1)
@@ -469,9 +526,38 @@ class QuizSessionWidget(QWidget):
         layout.addWidget(self._stack, stretch=1)
 
         self._show_idle()
+        self._deck_ids = self._deck_combo.selected_deck_ids()
+        self._generation_panel.set_deck_scope(self._deck_ids)
 
-    def set_tag(self, tag: str | None) -> None:
-        self._tag = tag.strip() if tag else None
+    @property
+    def generation_panel(self) -> QuizGenerationPanel:
+        return self._generation_panel
+
+    def _on_generation_finished(self) -> None:
+        self._deck_combo.reload_decks()
+        self._deck_ids = self._deck_combo.selected_deck_ids()
+        self._generation_panel.set_deck_scope(self._deck_ids)
+        self.refresh_preview()
+        self.generation_finished.emit()
+
+    def selected_deck_ids(self) -> frozenset[int] | None:
+        return self._deck_ids
+
+    def reload_decks(self) -> None:
+        self._deck_combo.reload_decks()
+        self._deck_ids = self._deck_combo.selected_deck_ids()
+        self._generation_panel.set_deck_scope(self._deck_ids)
+        self._refresh_idle()
+
+    def _on_deck_selection_changed(self, deck_ids: object) -> None:
+        if isinstance(deck_ids, frozenset) or deck_ids is None:
+            self._deck_ids = deck_ids
+            self._generation_panel.set_deck_scope(deck_ids)
+            self._refresh_idle()
+            self.deck_selection_changed.emit(deck_ids)
+
+    def set_deck_ids(self, deck_ids: frozenset[int] | None) -> None:
+        self._deck_ids = deck_ids
         self._refresh_idle()
 
     def refresh_preview(self) -> None:
@@ -490,6 +576,9 @@ class QuizSessionWidget(QWidget):
         self._apply_victory_card_max_height()
 
     def retranslate_ui(self) -> None:
+        self._idle_title.setText(tr("learning.quiz_setup_title"))
+        self._deck_combo.retranslate_ui()
+        self._generation_panel.retranslate_ui()
         self._start_btn.setText(tr("learning.quiz_start"))
         self._refresh_btn.setText(tr("learning.quiz_refresh"))
         self._restart_btn.setText(tr("learning.quiz_restart"))
@@ -513,30 +602,71 @@ class QuizSessionWidget(QWidget):
 
     def _refresh_idle(self) -> None:
         if not is_enabled("learning.quiz"):
-            self._idle_label.setText(tr("learning.quiz_disabled"))
+            self._idle_stats.setText(tr("learning.quiz_disabled"))
             self._start_btn.setEnabled(False)
             self._refresh_btn.setEnabled(False)
+            self._deck_combo.setEnabled(False)
             return
-        stats = get_quiz_pool_stats(tag=self._tag)
-        count = stats.eligible
+        self._deck_combo.setEnabled(True)
+        stats = get_quiz_pool_stats(deck_ids=self._deck_ids)
+        ready = stats.ready_with_questions
         limit = int(get_feature("learning.quiz").get("question_count", 15))
         self._refresh_btn.setEnabled(True)
-        if count == 0:
+        if self._deck_ids is not None and len(self._deck_ids) == 0:
+            self._idle_stats.setText(tr("learning.quiz_decks_none"))
+            self._start_btn.setEnabled(False)
+            return
+        if stats.eligible == 0:
             if stats.total_cards > 0 and stats.skipped_no_examples > 0:
-                self._idle_label.setText(
+                self._idle_stats.setText(
                     tr("learning.quiz_no_words_missing_examples", missing=stats.skipped_no_examples)
                 )
             else:
-                self._idle_label.setText(tr("learning.quiz_no_words"))
+                self._idle_stats.setText(tr("learning.quiz_no_words"))
             self._start_btn.setEnabled(False)
-        else:
-            shown = min(count, limit)
-            lines = [tr("learning.quiz_idle_hint", count=shown, available=count)]
+        elif ready < limit:
+            lines = [
+                tr(
+                    "learning.quiz_not_ready",
+                    ready=ready,
+                    needed=limit,
+                    missing=stats.missing_questions,
+                )
+            ]
             if stats.skipped_no_examples > 0:
                 lines.append(
                     tr("learning.quiz_idle_skipped_examples", missing=stats.skipped_no_examples)
                 )
-            self._idle_label.setText("\n".join(lines))
+            self._idle_stats.setText("\n".join(lines))
+            self._start_btn.setEnabled(False)
+        else:
+            shown = min(ready, limit)
+            multi_deck = self._deck_ids is None or len(self._deck_ids) > 1
+            if multi_deck:
+                deck_count = (
+                    len(list_quiz_eligible_decks())
+                    if self._deck_ids is None
+                    else len(self._deck_ids)
+                )
+                lines = [
+                    tr(
+                        "learning.quiz_idle_hint_multi",
+                        count=shown,
+                        ready=ready,
+                        decks=deck_count,
+                    )
+                ]
+            else:
+                lines = [tr("learning.quiz_idle_hint", count=shown, available=ready)]
+            if stats.missing_questions > 0:
+                lines.append(
+                    tr("learning.quiz_idle_partial_ready", missing=stats.missing_questions)
+                )
+            if stats.skipped_no_examples > 0:
+                lines.append(
+                    tr("learning.quiz_idle_skipped_examples", missing=stats.skipped_no_examples)
+                )
+            self._idle_stats.setText("\n".join(lines))
             self._start_btn.setEnabled(True)
 
     def _show_idle(self) -> None:
@@ -547,6 +677,7 @@ class QuizSessionWidget(QWidget):
         self._progress.setValue(0)
         self._progress.setMaximum(max(1, int(get_feature("learning.quiz").get("question_count", 15))))
         self._progress_label.setText("")
+        self._generation_panel.set_deck_scope(self._deck_ids)
         self._refresh_idle()
         self.session_finished.emit()
 
@@ -555,12 +686,13 @@ class QuizSessionWidget(QWidget):
         self.finish_requested.emit()
 
     def _start_session(self) -> None:
-        if not self._controller.start_session(self._tag):
+        if not self._controller.start_session(self._deck_ids):
             self._refresh_idle()
             return
         total = self._controller.progress()[1]
         self._progress.setMaximum(total)
         self._set_progress_header_visible(True)
+        self._generation_panel.setVisible(False)
         self._stack.setCurrentIndex(1)
         self.session_started.emit()
         self._prefetch_session_tts()

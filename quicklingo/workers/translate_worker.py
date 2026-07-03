@@ -5,6 +5,7 @@ from PySide6.QtCore import QThread, Signal
 from quicklingo.config.loader import get_profile, get_prompt, resolve_active_profile_id
 from quicklingo.db import history
 from quicklingo.features import get_feature, is_enabled
+from quicklingo.logging.ai_requests import ai_request_scope
 from quicklingo.providers.registry import ModelEntry
 from quicklingo.translation import glossary
 
@@ -97,21 +98,23 @@ class TranslateWorker(QThread):
 
         if is_enabled("translation.streaming"):
             parts: list[str] = []
-            async for piece in provider.translate_stream(
+            with ai_request_scope("main.translation.stream"):
+                async for piece in provider.translate_stream(
+                    self._text,
+                    prompt,
+                    self._model_entry.model_id,
+                    temperature=temperature,
+                ):
+                    if self._cancelled or self.isInterruptionRequested():
+                        raise asyncio.CancelledError()
+                    parts.append(piece)
+                    self.chunk.emit(piece)
+            return "".join(parts).strip()
+
+        with ai_request_scope("main.translation"):
+            return await provider.translate(
                 self._text,
                 prompt,
                 self._model_entry.model_id,
                 temperature=temperature,
-            ):
-                if self._cancelled or self.isInterruptionRequested():
-                    raise asyncio.CancelledError()
-                parts.append(piece)
-                self.chunk.emit(piece)
-            return "".join(parts).strip()
-
-        return await provider.translate(
-            self._text,
-            prompt,
-            self._model_entry.model_id,
-            temperature=temperature,
-        )
+            )

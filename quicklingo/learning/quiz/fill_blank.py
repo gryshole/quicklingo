@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import re
 
-from quicklingo.learning.quiz.distractors import score_example_for_distractors
+from quicklingo.learning.quiz.distractors import (
+    is_generic_slot_blank_sentence,
+    score_example_for_distractors,
+)
 from quicklingo.learning.quiz.models import QuizWordDto
 
 _BLANK = "_______"
@@ -51,13 +54,29 @@ def is_usable_fill_blank_example(example: str, term: str) -> bool:
     return not is_degenerate_blank_prompt(blanked)
 
 
+def is_discriminating_fill_blank_example(example: str, term: str) -> bool:
+    if not is_usable_fill_blank_example(example, term):
+        return False
+    return not is_generic_slot_blank_sentence(blank_word(example, term))
+
+
+def discriminating_fill_blank_examples(examples: list[str], term: str) -> list[str]:
+    return [example for example in examples if is_discriminating_fill_blank_example(example, term)]
+
+
+def all_fill_blank_examples_unviable(examples: list[str], term: str) -> bool:
+    return not discriminating_fill_blank_examples(examples, term)
+
+
 def usable_fill_blank_examples(examples: list[str], term: str) -> list[str]:
     return [example for example in examples if is_usable_fill_blank_example(example, term)]
 
 
 def best_fill_blank_example(word: QuizWordDto) -> str:
     examples = [example for example in word.examples if example.strip()]
-    usable = usable_fill_blank_examples(examples, word.english)
+    usable = discriminating_fill_blank_examples(examples, word.english)
+    if not usable:
+        usable = usable_fill_blank_examples(examples, word.english)
     if not usable:
         return word.english
     scored = [
