@@ -177,6 +177,18 @@ def save_ui_preferences(model_id: str, direction: str) -> None:
     _save(data)
 
 
+def get_last_tag() -> str:
+    data = _load()
+    tag = data.get("last_tag")
+    return tag.strip() if isinstance(tag, str) else ""
+
+
+def save_last_tag(tag: str) -> None:
+    data = _load()
+    data["last_tag"] = tag.strip()
+    _save(data)
+
+
 def get_profile_order() -> list[str]:
     data = _load()
     stored = data.get("profile_order")

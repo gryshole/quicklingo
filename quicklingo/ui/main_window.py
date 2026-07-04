@@ -860,6 +860,8 @@ class MainWindow(QMainWindow):
 
         ):
 
+            settings.save_last_tag(self._current_tag())
+
             event.ignore()
 
             self.hide()
@@ -869,6 +871,7 @@ class MainWindow(QMainWindow):
         model_entry = get_model_by_index(self._model_combo.currentIndex())
 
         settings.save_ui_preferences(model_entry.model_id, self._current_direction())
+        settings.save_last_tag(self._current_tag())
 
         settings.save_zoom_steps(
             self._input_field.zoom_steps(),
@@ -921,6 +924,19 @@ class MainWindow(QMainWindow):
         if direction and self._direction_control is not None:
 
             self._direction_control.set_current_id(direction)
+
+        saved_tag = settings.get_last_tag()
+        if saved_tag and is_enabled("history.tags"):
+            self._set_tag_combo_text(saved_tag)
+
+
+
+    def _set_tag_combo_text(self, tag: str) -> None:
+        index = self._tag_combo.findText(tag)
+        if index >= 0:
+            self._tag_combo.setCurrentIndex(index)
+        else:
+            self._tag_combo.setEditText(tag)
 
 
 
@@ -1171,7 +1187,7 @@ class MainWindow(QMainWindow):
 
             self._tag_combo.setCurrentIndex(index)
 
-        else:
+        elif current:
 
             self._tag_combo.setEditText(current)
 

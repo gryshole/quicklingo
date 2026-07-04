@@ -2,6 +2,7 @@
 
 from quicklingo.db.history_analytics import (
     count_untagged,
+    count_corpus_records,
     get_daily_counts,
     get_direction_counts,
     get_distinct_models,
@@ -37,6 +38,7 @@ __all__ = [
     "TranslationRecord",
     "bulk_apply_tags",
     "clear_all",
+    "count_corpus_records",
     "count_untagged",
     "delete_by_id",
     "export_csv",

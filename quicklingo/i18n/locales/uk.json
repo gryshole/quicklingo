@@ -288,7 +288,7 @@
   "learning.analysis_confirm_body": "Записів: {records}\nКандидатів: {candidates}\nКолода: {deck}\nНапрямок: {direction}\n\nКартки збережуться в колоду автоматично.",
   "learning.analysis_batch": "Пакет {index}/{total}",
   "learning.empty_untagged_title": "Ще немає перекладів без категорії",
-  "learning.empty_untagged_body": "Перекладайте на головному екрані без тегу — слова потраплять сюди як «Слова без категорії».",
+  "learning.empty_untagged_body": "Перекладайте на головному екрані без тегу — слова потраплять сюди як «Слова без категорії». Або оберіть інший тег нижче.",
   "learning.empty_tag_title": "Ще немає перекладів з тегом «{tag}»",
   "learning.empty_tag_body": "Перекладайте на головному екрані з тегом «{tag}», щоб зібрати цю колоду.",
   "learning.empty_open_main": "Відкрити головне вікно",

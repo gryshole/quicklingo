@@ -288,7 +288,7 @@
   "learning.analysis_confirm_body": "Records: {records}\nCandidates: {candidates}\nDeck: {deck}\nDirection: {direction}\n\nCards will be saved to the deck automatically.",
   "learning.analysis_batch": "Batch {index}/{total}",
   "learning.empty_untagged_title": "No uncategorized translations yet",
-  "learning.empty_untagged_body": "Translate on the main screen without a tag. Words will appear here as \"Uncategorized\".",
+  "learning.empty_untagged_body": "Translate on the main screen without a tag. Words will appear here as \"Uncategorized\". Or pick another tag below.",
   "learning.empty_tag_title": "No translations for \"{tag}\" yet",
   "learning.empty_tag_body": "Translate on the main screen with tag \"{tag}\" to build this deck.",
   "learning.empty_open_main": "Open main window",

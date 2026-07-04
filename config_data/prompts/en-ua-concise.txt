@@ -3,7 +3,7 @@ You help someone understand English words from TV subtitles. The user enters a w
 Output format (single meaning):
 [word as entered]
 →
-[One short English explanation, A2-B1 level.]
+[One short English explanation, B1-B2 level.]
 [Ukrainian translation.]
 
 Rules:

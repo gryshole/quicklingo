@@ -4,9 +4,12 @@ For EACH meaning, output one block in this exact format:
 
 [word or phrase as entered]
 →
-[Simple English explanation in 1-2 short sentences. Use easy words (A2-B1 level). Explain like to a learner, not like a dictionary. No rare synonyms in the definition.]
+[Simple English explanation in 1-2 short sentences. Use easy words (B1-B2 level). Explain like to a learner, not like a dictionary. No rare synonyms in the definition.]
 
 [Ukrainian translation — one or several words, comma-separated if needed.]
+
+After the FIRST meaning block only (the single block, or [1] when there are several), add exactly one line:
+Example: [one short English sentence using the word in that primary sense. Everyday spoken English, B1-B2 level.]
 
 When there are MULTIPLE meanings of the same word, number each block and separate them:
 
@@ -26,6 +29,7 @@ When there are MULTIPLE meanings of the same word, number each block and separat
 
 Rules:
 - If the word has several meanings (same spelling, different senses), give a separate numbered block for each common one (max 4). Use [1], [2], [3] labels and ────────────────── separator lines between blocks — including the FIRST meaning ([1], not unnumbered). Never use "Also, if you meant" for different meanings of the same word (e.g. fine = "ok/good" vs fine = "high quality" → use [1] fine and [2] fine, NOT "Also, if you meant").
+- Add Example only after the first meaning block ([1] or the only block). Never add Example after [2], [3], or "Also, if you meant" blocks.
 - If the input is an idiom or slang, explain its figurative meaning in the context of everyday speech (not the literal words).
 - If the input looks like an obvious typo (misspelling — not a real English word), start with one line: "You probably meant: [correct word]" — then continue with the standard block for the corrected word. Use this ONLY for typos like "recieve" → receive. Never use "You probably meant" for a valid English word or another word form (e.g. "tried" is valid; "embezzling" is valid — not a typo for "embezzlement").
 - Always answer the input word FIRST, exactly as entered.
@@ -41,6 +45,8 @@ A place where dead people are buried; a graveyard.
 
 Цвинтар, кладовище.
 
+Example: We walked through the old cemetery at sunset.
+
 Example (one meaning):
 tired
 →
@@ -48,12 +54,16 @@ Feeling that you need rest or sleep; having no energy.
 
 Втомлений, змучений.
 
+Example: I'm too tired to watch another episode tonight.
+
 Example (idiom):
 piece of cake
 →
 Something that is very easy to do.
 
 Простіше простого, раз плюнути, дрібниця.
+
+Example: Don't worry — the interview will be a piece of cake.
 
 Example (obvious typo — user typed "recieve"):
 You probably meant: receive
@@ -64,12 +74,16 @@ To get something that someone sends or gives you.
 
 Отримувати, приймати.
 
+Example: Did you receive my message about the meeting?
+
 Example (valid word + related form — user typed "embezzling"):
 embezzling
 →
 Taking money that is not yours, usually from a job where people trust you with it.
 
 Привласнення, розтрата чужих коштів.
+
+Example: He was caught embezzling funds from the company.
 
 Also, if you meant: embezzlement
 
@@ -87,6 +101,8 @@ Good or acceptable; not bad. Often used to say you agree or that something is OK
 
 Добре, гаразд.
 
+Example: "I'm fine, thanks," she said with a smile.
+
 ──────────────────
 [2] fine
 →
@@ -101,6 +117,8 @@ Example (two meanings):
 The land along the side of a river.
 
 Берег (річки).
+
+Example: We sat on the river bank and watched the boats.
 
 ──────────────────
 [2] bank

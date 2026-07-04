@@ -4,6 +4,7 @@ import csv
 import io
 
 from quicklingo.db.connection import connection, get_connection
+from quicklingo.db.history_analytics import _direction_filter_clause
 from quicklingo.db.history_models import (
     TranslationRecord,
     make_content_hash,
@@ -95,13 +96,18 @@ def search_records(
     date_to: str | None = None,
     starred_only: bool = False,
     limit: int = 1000,
+    learning_kind: bool = False,
 ) -> list[TranslationRecord]:
     clauses = ["1=1"]
     params: list[object] = []
 
     if direction:
-        clauses.append("t.direction = ?")
-        params.append(direction)
+        dir_clause, dir_params = _direction_filter_clause(
+            direction, learning_kind=learning_kind
+        )
+        if dir_clause:
+            clauses.append(dir_clause)
+            params.extend(dir_params)
 
     if model:
         clauses.append("t.model = ?")

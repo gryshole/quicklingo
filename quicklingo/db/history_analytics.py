@@ -104,36 +104,81 @@ def get_distinct_tags() -> list[str]:
     return [str(row["name"]) for row in rows]
 
 
-def _direction_clause(direction: str | None) -> tuple[str, list[object]]:
+def directions_for_learning_kind(direction_id: str) -> list[str]:
+    kind = resolve_learning_direction(direction_id)
+    ids: set[str] = {kind, direction_id.strip()}
+    from quicklingo.config.loader import get_all_directions
+
+    for direction in get_all_directions():
+        if resolve_learning_direction(direction.id) == kind:
+            ids.add(direction.id)
+    rows = get_connection().execute(
+        "SELECT DISTINCT direction FROM translations"
+    ).fetchall()
+    for row in rows:
+        stored = str(row["direction"])
+        if resolve_learning_direction(stored) == kind:
+            ids.add(stored)
+    return sorted(ids)
+
+
+def _direction_filter_clause(
+    direction: str | None,
+    *,
+    learning_kind: bool = False,
+) -> tuple[str, list[object]]:
     if not direction:
         return "", []
-    return " AND t.direction = ?", [direction]
+    if not learning_kind:
+        return "t.direction = ?", [direction]
+    ids = directions_for_learning_kind(direction)
+    if len(ids) == 1:
+        return "t.direction = ?", [ids[0]]
+    placeholders = ",".join("?" * len(ids))
+    return f"t.direction IN ({placeholders})", list(ids)
 
 
-def count_untagged(*, direction: str | None = None) -> int:
-    clause, params = _direction_clause(direction)
+def count_corpus_records(*, direction: str, learning_kind: bool = True) -> int:
+    clause, params = _direction_filter_clause(direction, learning_kind=learning_kind)
+    if not clause:
+        return 0
     row = get_connection().execute(
         f"""
         SELECT COUNT(*) AS cnt
         FROM translations t
-        WHERE NOT EXISTS (
-            SELECT 1 FROM translation_tags tt WHERE tt.translation_id = t.id
-        ){clause}
+        WHERE {clause}
         """,
         params,
     ).fetchone()
     return int(row["cnt"] or 0)
 
 
-def get_tag_counts(*, direction: str | None = None) -> list[tuple[str, int]]:
-    clause, params = _direction_clause(direction)
+def count_untagged(*, direction: str | None = None, learning_kind: bool = False) -> int:
+    clause, params = _direction_filter_clause(direction, learning_kind=learning_kind)
+    where = ["NOT EXISTS (SELECT 1 FROM translation_tags tt WHERE tt.translation_id = t.id)"]
+    if clause:
+        where.append(clause)
+    row = get_connection().execute(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM translations t
+        WHERE {' AND '.join(where)}
+        """,
+        params,
+    ).fetchone()
+    return int(row["cnt"] or 0)
+
+
+def get_tag_counts(*, direction: str | None = None, learning_kind: bool = False) -> list[tuple[str, int]]:
+    clause, params = _direction_filter_clause(direction, learning_kind=learning_kind)
+    extra = f" AND {clause}" if clause else ""
     rows = get_connection().execute(
         f"""
         SELECT MIN(tg.name) AS name, COUNT(DISTINCT t.id) AS cnt
         FROM tags tg
         INNER JOIN translation_tags tt ON tt.tag_id = tg.id
         INNER JOIN translations t ON t.id = tt.translation_id
-        WHERE 1=1{clause}
+        WHERE 1=1{extra}
         GROUP BY lower(trim(tg.name))
         ORDER BY lower(trim(tg.name))
         """,

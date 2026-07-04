@@ -11,6 +11,8 @@ from quicklingo.ui.format_output import (
     format_en_ua_output,
     format_plain_output,
     format_ua_en_output,
+    merge_ua_en_wrapped_lines,
+    _ua_en_gloss_row,
 )
 
 _CYRILLIC = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
@@ -173,7 +175,7 @@ def _example_block(sentence: str) -> str:
 
 def _format_ua_en_block_rules(block: str) -> str:
     parts: list[str] = []
-    for line in block.split("\n"):
+    for line in merge_ua_en_wrapped_lines(block).split("\n"):
         stripped = line.strip()
         if not stripped or stripped == "──────────────────":
             continue
@@ -196,12 +198,7 @@ def _format_ua_en_block_rules(block: str) -> str:
         if context_match and _CYRILLIC.search(context_match[1]):
             english = html.escape(context_match[0])
             note = html.escape(context_match[1])
-            parts.append(
-                f'<div style="margin:4px 0">'
-                f'<span style="font-weight:600;color:#1e40af">{english}</span>'
-                f'<span style="color:#64748b"> — {note}</span>'
-                "</div>"
-            )
+            parts.append(_ua_en_gloss_row(english, note))
             continue
         if not _CYRILLIC.search(stripped):
             parts.append(_header_line(stripped))

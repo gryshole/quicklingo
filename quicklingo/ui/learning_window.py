@@ -367,25 +367,29 @@ class LearningWindow(QMainWindow):
         self._tag_combo = QComboBox()
         configure_single_line_combo(self._tag_combo)
         self._direction_combo = QComboBox()
+        seen_kinds: set[str] = set()
         for direction in get_directions():
             kind = resolve_learning_direction(direction.id)
+            if kind in seen_kinds:
+                continue
+            seen_kinds.add(kind)
             if kind == "ua-en":
                 label = tr("learning.direction_learn_english")
             elif kind == "en-ua":
                 label = tr("learning.direction_from_content")
             else:
                 label = direction.label
-            self._direction_combo.addItem(label, direction.id)
-        ua_en_index = next(
-            (
-                i
-                for i in range(self._direction_combo.count())
-                if resolve_learning_direction(self._direction_combo.itemData(i)) == "ua-en"
-            ),
-            0,
-        )
-        if ua_en_index >= 0:
-            self._direction_combo.setCurrentIndex(ua_en_index)
+            self._direction_combo.addItem(label, kind)
+        default_index = 0
+        best_count = -1
+        for index in range(self._direction_combo.count()):
+            kind = self._direction_combo.itemData(index)
+            count = history.count_corpus_records(direction=kind, learning_kind=True)
+            if count > best_count:
+                best_count = count
+                default_index = index
+        if self._direction_combo.count():
+            self._direction_combo.setCurrentIndex(default_index)
         self._direction_combo.currentIndexChanged.connect(self._reload_tags)
         self._starred_only = QCheckBox()
         self._model_combo = QComboBox()
@@ -638,15 +642,19 @@ class LearningWindow(QMainWindow):
         current = self._tag_combo.currentData()
         self._tag_combo.blockSignals(True)
         self._tag_combo.clear()
-        untagged = history.count_untagged(direction=direction)
+        untagged = history.count_untagged(direction=direction, learning_kind=True)
         self._tag_combo.addItem(tr("learning.tag_untagged", count=untagged), UNTAGGED_SENTINEL)
         if is_enabled("history.tags"):
-            for tag, count in history.get_tag_counts(direction=direction):
+            for tag, count in history.get_tag_counts(direction=direction, learning_kind=True):
                 self._tag_combo.addItem(f"{tag} ({count})", tag)
         if current is not None:
             index = self._tag_combo.findData(current)
             if index >= 0:
                 self._tag_combo.setCurrentIndex(index)
+        elif untagged > 0:
+            self._tag_combo.setCurrentIndex(0)
+        elif self._tag_combo.count() > 1:
+            self._tag_combo.setCurrentIndex(1)
         elif self._tag_combo.count():
             self._tag_combo.setCurrentIndex(0)
         self._tag_combo.blockSignals(False)
@@ -663,21 +671,27 @@ class LearningWindow(QMainWindow):
         tag, untagged, _label = self._corpus_tag_selection()
         direction = self._direction_combo.currentData()
         if untagged:
-            return history.search_records(direction=direction, untagged_only=True, limit=5000)
+            return history.search_records(
+                direction=direction, untagged_only=True, limit=5000, learning_kind=True
+            )
         if not tag:
             return []
-        return history.search_records(direction=direction, tag=tag, limit=5000)
+        return history.search_records(
+            direction=direction, tag=tag, limit=5000, learning_kind=True
+        )
 
     def _update_analyze_empty_state(self) -> None:
         if not hasattr(self, "_analyze_empty"):
             return
         records = self._corpus_records()
-        if records:
+        has_records = bool(records)
+        self._analyze_form_host.setVisible(True)
+        self._preview_btn.setEnabled(has_records)
+        self._analyze_btn.setEnabled(has_records)
+        if has_records:
             self._analyze_empty.hide_state()
-            self._analyze_form_host.setVisible(True)
             return
         _tag, untagged, label = self._corpus_tag_selection()
-        self._analyze_form_host.setVisible(False)
         if untagged:
             title = tr("learning.empty_untagged_title")
             body = tr("learning.empty_untagged_body")
