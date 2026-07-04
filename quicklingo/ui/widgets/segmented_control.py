@@ -30,6 +30,7 @@ class SegmentedControl(QWidget):
 
     def add_segment(self, segment_id: str, label: str, *, checked: bool = False) -> None:
         button = QPushButton(label)
+        button.setMinimumWidth(48)
         button.setCheckable(True)
         button.setChecked(checked)
         button_id = len(self._segments)

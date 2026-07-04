@@ -78,6 +78,7 @@ from quicklingo.ui.app_theme import (
     apply_combo_font,
     apply_section_title_style,
     compact_form_row,
+    sync_compact_form_label_width,
     make_compact_section_card,
     make_section_card,
 )
@@ -203,6 +204,7 @@ class MainWindow(QMainWindow):
         apply_compact_form_label_style(self._tag_label)
         self._tag_combo = QComboBox()
         self._tag_combo.setEditable(True)
+        self._tag_combo.setMinimumWidth(48)
         apply_combo_font(self._tag_combo)
         self._reload_tag_combo()
 
@@ -210,6 +212,8 @@ class MainWindow(QMainWindow):
         apply_section_title_style(self._input_section_label)
 
         self._input_label = QLabel()
+        self._input_label.setWordWrap(True)
+        self._input_label.setMinimumWidth(0)
 
         self._tutor_capture_btn = QPushButton()
         self._tutor_capture_btn.setObjectName("globalInputBtn")
@@ -371,6 +375,7 @@ class MainWindow(QMainWindow):
         self._apply_tag_visibility()
 
         self._restore_window_geometry()
+        self.setMinimumWidth(260)
 
 
 
@@ -389,6 +394,14 @@ class MainWindow(QMainWindow):
 
         self._tag_label.setText(tr("main.tag_label"))
         self._tag_combo.setPlaceholderText(tr("main.tag_placeholder"))
+        sync_compact_form_label_width(
+            [
+                self._model_label,
+                self._direction_label,
+                self._profile_label,
+                self._tag_label,
+            ]
+        )
 
         self._refresh_input_label()
         self._input_field.setPlaceholderText(tr("main.input_placeholder"))

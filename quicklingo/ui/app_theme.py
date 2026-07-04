@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 APP_BG = "#f8fafc"
@@ -22,8 +22,8 @@ ERROR = "#dc2626"
 RADIUS_CARD = "12px"
 RADIUS_CONTROL = "8px"
 
-SETTINGS_LABEL_WIDTH = 160
-COMPACT_ROW_SPACING = 6
+SETTINGS_LABEL_WIDTH = 108  # fallback until labels are measured
+COMPACT_ROW_SPACING = 3
 COMPACT_SECTION_SPACING = 6
 COMPACT_SECTION_MARGINS = (12, 12, 12, 12)
 SETTINGS_CONTROL_HEIGHT = 28
@@ -269,7 +269,7 @@ QPushButton:disabled {{
 GLOBAL_BTN_BASE = (
     "QPushButton#globalInputBtn {"
     " border: 1px solid; padding: 4px 10px;"
-    " min-width: 72px; min-height: 28px; max-height: 28px;"
+    " min-width: 52px; min-height: 28px; max-height: 28px;"
     f" border-radius: {RADIUS_CONTROL}; font-weight: 500;"
 )
 
@@ -330,12 +330,21 @@ def make_compact_section_card(object_name: str) -> tuple[QWidget, QVBoxLayout]:
     )
 
 
+def sync_compact_form_label_width(labels: list[QLabel]) -> None:
+    """Size the label column to the widest caption so fields sit close to the text."""
+    if not labels:
+        return
+    metrics = QFontMetrics(labels[0].font())
+    width = max(metrics.horizontalAdvance(label.text()) for label in labels)
+    for label in labels:
+        label.setWordWrap(False)
+        label.setFixedWidth(width)
+
+
 def compact_form_row(label: QLabel, widget: QWidget) -> QHBoxLayout:
     row = QHBoxLayout()
     row.setContentsMargins(0, 0, 0, 0)
     row.setSpacing(COMPACT_ROW_SPACING)
-    label.setFixedWidth(SETTINGS_LABEL_WIDTH)
-    label.setWordWrap(False)
     label.setSizePolicy(
         QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
     )
