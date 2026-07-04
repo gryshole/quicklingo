@@ -72,3 +72,4 @@ jobs:
             2. **From 0.1.0+:** use **Help → Check for updates → Update now** in the app.
             3. **Manual update:** unzip over the old folder.
             4. Settings, history, and API keys in `%APPDATA%\QuickLingo\` are preserved.
+            5. **QuickLingoLearning.exe** — standalone learning app (same data folder as QuickLingo.exe).

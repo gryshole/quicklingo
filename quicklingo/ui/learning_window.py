@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -38,7 +39,9 @@ from quicklingo.learning.difficult_words import compute_difficult_words
 from quicklingo.learning.review_queue import card_bucket, count_due_cards
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.ui.dialogs.ai_deck_generator_dialog import AiDeckGeneratorDialog
-from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
+from quicklingo.ui.controllers.update_controller import UpdateController
+from quicklingo.ui.qt_utils import configure_single_line_combo, open_help, reload_combo
+from quicklingo.ui.settings_dialog import SettingsDialog
 from quicklingo.ui.widgets.learning_progress import LearningProgressWidget
 from quicklingo.ui.widgets.quiz_session import QuizSessionWidget
 from quicklingo.ui.widgets.review_session import ReviewSessionWidget
@@ -222,15 +225,25 @@ class _CardEditDialog(QDialog):
         }
 
 
-class LearningWindow(QDialog):
-    def __init__(self, parent=None) -> None:
+class LearningWindow(QMainWindow):
+    closed = Signal()
+
+    def __init__(self, parent=None, *, standalone: bool = False) -> None:
         super().__init__(parent)
+        self._standalone = standalone
+        self._updates: UpdateController | None = None
+        self._settings_action = None
+        self._tools_menu = None
+        self._help_menu = None
+        self._help_about_action = None
+        self._help_check_updates_action = None
+        self._help_learning_action = None
+        self._quit_action = None
         restore_window_geometry(self, "learning", default_width=860, default_height=640)
         self._worker: CorpusAnalysisWorker | None = None
         self._media_worker: CardMediaWorker | None = None
         self._current_deck_id: int | None = None
 
-        layout = QVBoxLayout(self)
         self._tabs = QTabWidget()
 
         self._analyze_tab = self._build_analyze_tab()
@@ -251,7 +264,16 @@ class LearningWindow(QDialog):
             self._tabs.addTab(self._progress_tab, "")
         self._tabs.currentChanged.connect(self._on_tab_changed)
 
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._tabs)
+        self.setCentralWidget(central)
+
+        if standalone:
+            self._build_standalone_menu()
+            self._updates = UpdateController(self)
+
         restore_table_columns(
             self._cards_table,
             "learning",
@@ -263,6 +285,38 @@ class LearningWindow(QDialog):
         self.retranslate_ui()
         self._reload_tags()
         self._reload_decks()
+
+    def _build_standalone_menu(self) -> None:
+        menu_bar = self.menuBar()
+        self._tools_menu = menu_bar.addMenu("")
+        self._settings_action = self._tools_menu.addAction("")
+        self._settings_action.triggered.connect(self._open_settings)
+
+        self._help_menu = menu_bar.addMenu("")
+        self._help_about_action = self._help_menu.addAction("")
+        self._help_about_action.triggered.connect(lambda: self._open_help_topic("about"))
+        self._help_check_updates_action = self._help_menu.addAction("")
+        self._help_check_updates_action.triggered.connect(self._check_for_updates)
+        self._help_menu.addSeparator()
+        self._help_learning_action = self._help_menu.addAction("")
+        self._help_learning_action.triggered.connect(lambda: self._open_help_topic("learning"))
+
+        self._quit_action = menu_bar.addAction("")
+        self._quit_action.triggered.connect(self.close)
+
+    def _open_settings(self) -> None:
+        dialog = SettingsDialog(self)
+        dialog.exec()
+        self._reload_model_combo()
+        self._reload_decks()
+        self.retranslate_ui()
+
+    def _open_help_topic(self, topic: str) -> None:
+        open_help(topic, self)
+
+    def _check_for_updates(self) -> None:
+        if self._updates is not None:
+            self._updates.check_for_updates()
 
     def _build_analyze_tab(self) -> QWidget:
         widget = QWidget()
@@ -426,7 +480,23 @@ class LearningWindow(QDialog):
         return widget
 
     def retranslate_ui(self) -> None:
-        self.setWindowTitle(tr("learning.window_title"))
+        title = tr("learning.app_title") if self._standalone else tr("learning.window_title")
+        self.setWindowTitle(title)
+        if self._standalone:
+            if self._tools_menu is not None:
+                self._tools_menu.setTitle(tr("main.menu_tools"))
+            if self._settings_action is not None:
+                self._settings_action.setText(tr("main.menu_settings"))
+            if self._help_menu is not None:
+                self._help_menu.setTitle(tr("main.menu_help"))
+            if self._help_about_action is not None:
+                self._help_about_action.setText(tr("main.menu_help_about"))
+            if self._help_check_updates_action is not None:
+                self._help_check_updates_action.setText(tr("main.menu_help_check_updates"))
+            if self._help_learning_action is not None:
+                self._help_learning_action.setText(tr("main.menu_help_learning"))
+            if self._quit_action is not None:
+                self._quit_action.setText(tr("tray.quit"))
         self._tabs.setTabText(0, tr("learning.tab_analyze"))
         self._tabs.setTabText(1, tr("learning.tab_cards"))
         self._tabs.setTabText(2, tr("learning.tab_review"))
@@ -860,4 +930,5 @@ class LearningWindow(QDialog):
             self._media_worker.cancel()
         save_table_columns(self._cards_table, "learning", "cards")
         save_window_geometry(self, "learning")
+        self.closed.emit()
         super().closeEvent(event)

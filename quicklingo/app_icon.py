@@ -9,13 +9,13 @@ _APP_ID = "gryshole.quicklingo.1"
 _ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
-def configure_windows_app_id() -> None:
+def configure_windows_app_id(app_id: str | None = None) -> None:
     if sys.platform != "win32":
         return
     try:
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(_APP_ID)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id or _APP_ID)
     except (AttributeError, OSError):
         pass
 

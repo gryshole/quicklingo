@@ -1073,7 +1073,7 @@ class MainWindow(QMainWindow):
     def _open_learning(self) -> None:
         if self._learning_window is None:
             self._learning_window = LearningWindow(self)
-            self._learning_window.finished.connect(self._on_learning_closed)
+            self._learning_window.closed.connect(self._on_learning_closed)
         self._learning_window._reload_tags()
         self._learning_window._reload_decks()
         self._learning_window._reload_model_combo()
@@ -1107,7 +1107,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         if self._learning_window is None:
             self._learning_window = LearningWindow(self)
-            self._learning_window.finished.connect(self._on_learning_closed)
+            self._learning_window.closed.connect(self._on_learning_closed)
         if resolve_learning_direction(direction) == "en-ua":
             front, back = word, source.strip()
         else:

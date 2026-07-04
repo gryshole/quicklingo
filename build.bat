@@ -52,7 +52,8 @@ copy /Y "dist\QuickLingoUpdater.exe" "dist\QuickLingo\QuickLingoUpdater.exe" >nu
 
 echo.
 echo === Build complete ===
-echo   dist\QuickLingo\QuickLingo.exe   ^<-- run THIS one
+echo   dist\QuickLingo\QuickLingo.exe           ^<-- main app
+echo   dist\QuickLingo\QuickLingoLearning.exe   ^<-- learning app
 echo   dist\QuickLingo\QuickLingoUpdater.exe
 echo   dist\QuickLingo\config_data\
 echo.
@@ -63,7 +64,7 @@ echo To distribute: zip the dist\QuickLingo\ folder.
 echo.
 echo To use on another PC:
 echo   1. Unzip so QuickLingo.exe and config_data\ stay in the same folder
-echo   2. Run QuickLingo.exe
+echo   2. Run QuickLingo.exe or QuickLingoLearning.exe
 echo   3. Add API keys in Tools - Settings - API keys
 echo.
 pause
