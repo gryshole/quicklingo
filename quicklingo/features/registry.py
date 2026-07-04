@@ -9,22 +9,13 @@ from quicklingo import settings
 
 FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
     "ui.always_on_top": {"enabled": True},
-    "ui.remember_geometry": {"enabled": True},
-    "ui.remember_zoom": {"enabled": True},
     "ui.auto_copy_result": {"enabled": False},
     "ui.single_line_input": {"enabled": True},
     "ui.system_tray": {"enabled": False, "hotkey": "<ctrl>+<shift>+q"},
     "ui.autostart": {"enabled": False},
     "history.auto_save": {"enabled": True},
-    "history.search": {"enabled": True},
-    "history.filters": {"enabled": True},
-    "history.export": {"enabled": True},
-    "history.dashboard": {"enabled": True},
-    "history.model_stats": {"enabled": True},
     "history.tags": {"enabled": True},
     "history.meeting_transcript": {"enabled": True, "session_gap_min": 15},
-    "learning.phrasebook": {"enabled": True},
-    "learning.difficult_words": {"enabled": True},
     "learning.ai_corpus_analysis": {
         "enabled": True,
         "max_candidates": 120,
@@ -33,16 +24,14 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
         "card_prompt_template_ua_en": "",
         "card_prompt_template_en_ua": "",
     },
-    "learning.anki_preview": {"enabled": True},
     "learning.anki_export": {"enabled": True},
-    "learning.deck_scope": {"enabled": True},
-    "learning.daily_review": {"enabled": True, "daily_limit": 20},
-    "learning.srs_review": {"enabled": True, "desired_retention": 90, "new_cards_per_day": 10},
-    "learning.review_typing": {"enabled": True},
+    "learning.srs_review": {
+        "enabled": True,
+        "desired_retention": 90,
+        "new_cards_per_day": 10,
+        "daily_limit": 20,
+    },
     "learning.card_images": {"enabled": False, "max_images_per_batch": 25},
-    "learning.card_pronunciation": {"enabled": True},
-    "learning.streak": {"enabled": True},
-    "learning.extract_vocab": {"enabled": False},
     "learning.quiz": {
         "enabled": True,
         "question_count": 15,
@@ -59,15 +48,11 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
         "last_deck_ids": [],
         "last_generation_deck_id": "",
     },
-    "learning.progress_dashboard": {"enabled": True},
     "learning.tts_enabled": {"enabled": True},
     "learning.tts_auto_play": {"enabled": False},
     "learning.ai_deck_generator": {"enabled": True, "batch_size": 10, "max_words": 30},
     "translation.response_cache": {"enabled": True, "ttl_days": 30},
     "translation.context_window": {"enabled": False, "last_n": 3},
-    "translation.glossary": {"enabled": False},
-    "translation.streaming": {"enabled": True},
-    "translation.request_queue": {"enabled": True},
     "input.global_hotkey.translate_selection": {
         "enabled": False,
         "combo": "<ctrl>+<shift>+t",
@@ -144,7 +129,7 @@ def save_features(features: dict[str, dict[str, Any]]) -> None:
         {key: merged[key] for key in FEATURE_DEFAULTS if key in merged}
     )
     _apply_side_effects(merged)
-    _notifier.changed.emit(list(patch.keys()))
+    _notifier.changed.emit(list(features.keys()))
 
 
 def _apply_side_effects(features: dict[str, dict[str, Any]]) -> None:

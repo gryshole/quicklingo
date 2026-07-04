@@ -61,17 +61,21 @@ def load_fsrs_card(learning_card: LearningCard) -> FsrsCard:
 def _save_fsrs_state(card_id: int, fsrs_card: FsrsCard) -> None:
     due_date = fsrs_card.due.astimezone(timezone.utc).date().isoformat()
     last_reviewed = ""
+    interval_days = 0
     if fsrs_card.last_review is not None:
         last_reviewed = fsrs_card.last_review.astimezone(timezone.utc).date().isoformat()
+        due_day = fsrs_card.due.astimezone(timezone.utc).date()
+        last_day = fsrs_card.last_review.astimezone(timezone.utc).date()
+        interval_days = max(1, (due_day - last_day).days)
     payload = json.dumps(fsrs_card.to_dict())
     with connection() as conn:
         conn.execute(
             """
             UPDATE learning_cards
-            SET fsrs_state = ?, next_review_date = ?, last_reviewed = ?
+            SET fsrs_state = ?, next_review_date = ?, last_reviewed = ?, interval_days = ?
             WHERE id = ?
             """,
-            (payload, due_date, last_reviewed, card_id),
+            (payload, due_date, last_reviewed, interval_days, card_id),
         )
 
 
@@ -122,3 +126,17 @@ def _row_to_learning_card(row) -> LearningCard:
         last_reviewed=row["last_reviewed"] or "",
         fsrs_state=row["fsrs_state"] or "",
     )
+
+
+def preview_fsrs_intervals(learning_card: LearningCard) -> dict[int, int]:
+    """Return mapping rating (1-4) -> scheduled days until next review (preview only)."""
+    fsrs_card = load_fsrs_card(learning_card)
+    scheduler = get_scheduler()
+    now = datetime.now(timezone.utc)
+    previews: dict[int, int] = {}
+    for rating in (Rating.Again, Rating.Hard, Rating.Good, Rating.Easy):
+        clone = FsrsCard.from_dict(fsrs_card.to_dict())
+        updated, _log = scheduler.review_card(clone, rating)
+        delta = updated.due.astimezone(timezone.utc) - now
+        previews[rating.value] = max(0, int(delta.total_seconds() // 86400))
+    return previews

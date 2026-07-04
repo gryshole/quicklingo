@@ -90,6 +90,7 @@ def search_records(
     direction: str | None = None,
     model: str | None = None,
     tag: str | None = None,
+    untagged_only: bool = False,
     date_from: str | None = None,
     date_to: str | None = None,
     starred_only: bool = False,
@@ -106,7 +107,17 @@ def search_records(
         clauses.append("t.model = ?")
         params.append(model)
 
-    if tag:
+    if untagged_only:
+        clauses.append(
+            """
+            NOT EXISTS (
+                SELECT 1
+                FROM translation_tags tt
+                WHERE tt.translation_id = t.id
+            )
+            """
+        )
+    elif tag:
         clauses.append(
             """
             EXISTS (

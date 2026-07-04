@@ -102,3 +102,41 @@ def get_distinct_tags() -> list[str]:
         """
     ).fetchall()
     return [str(row["name"]) for row in rows]
+
+
+def _direction_clause(direction: str | None) -> tuple[str, list[object]]:
+    if not direction:
+        return "", []
+    return " AND t.direction = ?", [direction]
+
+
+def count_untagged(*, direction: str | None = None) -> int:
+    clause, params = _direction_clause(direction)
+    row = get_connection().execute(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM translations t
+        WHERE NOT EXISTS (
+            SELECT 1 FROM translation_tags tt WHERE tt.translation_id = t.id
+        ){clause}
+        """,
+        params,
+    ).fetchone()
+    return int(row["cnt"] or 0)
+
+
+def get_tag_counts(*, direction: str | None = None) -> list[tuple[str, int]]:
+    clause, params = _direction_clause(direction)
+    rows = get_connection().execute(
+        f"""
+        SELECT MIN(tg.name) AS name, COUNT(DISTINCT t.id) AS cnt
+        FROM tags tg
+        INNER JOIN translation_tags tt ON tt.tag_id = tg.id
+        INNER JOIN translations t ON t.id = tt.translation_id
+        WHERE 1=1{clause}
+        GROUP BY lower(trim(tg.name))
+        ORDER BY lower(trim(tg.name))
+        """,
+        params,
+    ).fetchall()
+    return [(str(row["name"]), int(row["cnt"])) for row in rows]

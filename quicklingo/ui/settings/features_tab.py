@@ -37,14 +37,6 @@ def _translation_extras(form: QFormLayout, editor: FeatureSettingsEditor) -> Non
         1,
         365,
     )
-    editor._add_spin(
-        form,
-        "translation.context_window",
-        "last_n",
-        "settings.features.context_last_n",
-        1,
-        20,
-    )
 
 
 def _history_extras(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
@@ -63,8 +55,6 @@ _FEATURE_GROUP_SPECS: GroupSpecs = {
         "settings.features.group_general",
         [
             "ui.always_on_top",
-            "ui.remember_geometry",
-            "ui.remember_zoom",
             "ui.auto_copy_result",
             "ui.system_tray",
             "ui.autostart",
@@ -75,9 +65,7 @@ _FEATURE_GROUP_SPECS: GroupSpecs = {
         [
             "input.global_hotkey.translate_selection",
             "input.global_hotkey.translate_clipboard",
-            "input.double_ctrl_c",
             "input.tutor_capture",
-            "input.replace_in_place",
             "ui.single_line_input",
         ],
     ),
@@ -85,23 +73,13 @@ _FEATURE_GROUP_SPECS: GroupSpecs = {
         "settings.features.group_translation",
         [
             "translation.response_cache",
-            "translation.context_window",
-            "translation.glossary",
-            "translation.streaming",
-            "translation.request_queue",
         ],
     ),
     "history": (
         "settings.features.group_history",
         [
             "history.auto_save",
-            "history.search",
-            "history.filters",
-            "history.export",
-            "history.dashboard",
-            "history.model_stats",
             "history.tags",
-            "history.meeting_transcript",
         ],
     ),
     "privacy": (

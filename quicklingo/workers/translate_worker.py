@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 
 from PySide6.QtCore import QThread, Signal
 
@@ -7,16 +7,11 @@ from quicklingo.db import history
 from quicklingo.features import get_feature, is_enabled
 from quicklingo.logging.ai_requests import ai_request_scope
 from quicklingo.providers.registry import ModelEntry
-from quicklingo.translation import glossary
 
 
 def build_prompt(direction: str, profile_id: str, source_text: str) -> str:
     prompt = get_prompt(direction, profile_id)
     extras: list[str] = []
-    if is_enabled("translation.glossary"):
-        glossary_block = glossary.format_for_prompt(direction)
-        if glossary_block:
-            extras.append(glossary_block)
     if is_enabled("translation.context_window"):
         last_n = int(get_feature("translation.context_window").get("last_n", 3))
         recent = history.get_recent_for_context(
@@ -96,25 +91,16 @@ class TranslateWorker(QThread):
         temperature = profile.temperature if profile else 0.2
         provider = self._model_entry.provider
 
-        if is_enabled("translation.streaming"):
-            parts: list[str] = []
-            with ai_request_scope("main.translation.stream"):
-                async for piece in provider.translate_stream(
-                    self._text,
-                    prompt,
-                    self._model_entry.model_id,
-                    temperature=temperature,
-                ):
-                    if self._cancelled or self.isInterruptionRequested():
-                        raise asyncio.CancelledError()
-                    parts.append(piece)
-                    self.chunk.emit(piece)
-            return "".join(parts).strip()
-
-        with ai_request_scope("main.translation"):
-            return await provider.translate(
+        parts: list[str] = []
+        with ai_request_scope("main.translation.stream"):
+            async for piece in provider.translate_stream(
                 self._text,
                 prompt,
                 self._model_entry.model_id,
                 temperature=temperature,
-            )
+            ):
+                if self._cancelled or self.isInterruptionRequested():
+                    raise asyncio.CancelledError()
+                parts.append(piece)
+                self.chunk.emit(piece)
+        return "".join(parts).strip()

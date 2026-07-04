@@ -4,6 +4,7 @@ from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
 from PySide6.QtCore import QMargins, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -13,7 +14,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from quicklingo.features import is_enabled
+from quicklingo.config.loader import get_direction_label
+from quicklingo.db import learning
 from quicklingo.i18n import tr
 from quicklingo.learning.analytics.repository import LearningAnalyticsRepository
 from quicklingo.ui.widgets.activity_heatmap import ActivityHeatmapWidget
@@ -61,10 +63,19 @@ class LearningProgressWidget(QWidget):
         super().__init__(parent)
         self.setStyleSheet(_KPI_STYLE)
         self._repo = LearningAnalyticsRepository()
+        self._deck_id: int | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
+
+        deck_row = QHBoxLayout()
+        self._deck_filter_label = QLabel()
+        self._deck_filter = QComboBox()
+        self._deck_filter.currentIndexChanged.connect(self._on_deck_filter_changed)
+        deck_row.addWidget(self._deck_filter_label)
+        deck_row.addWidget(self._deck_filter, stretch=1)
+        root.addLayout(deck_row)
 
         self._empty_label = QLabel()
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -119,17 +130,34 @@ class LearningProgressWidget(QWidget):
         self.retranslate_ui()
 
     def retranslate_ui(self) -> None:
+        self._deck_filter_label.setText(tr("learning.progress_deck_filter"))
+        self._reload_deck_filter()
         self._heatmap_title.setText(tr("learning.progress_activity"))
         self._chart_title.setText(tr("learning.progress_mastered_trend"))
         self.refresh()
 
+    def _reload_deck_filter(self) -> None:
+        current = self._deck_filter.currentData()
+        self._deck_filter.blockSignals(True)
+        self._deck_filter.clear()
+        self._deck_filter.addItem(tr("learning.progress_all_decks"), None)
+        for deck in learning.list_decks():
+            label = f"{deck.name} ({get_direction_label(deck.direction)})"
+            self._deck_filter.addItem(label, deck.id)
+        if current is not None:
+            index = self._deck_filter.findData(current)
+            if index >= 0:
+                self._deck_filter.setCurrentIndex(index)
+        self._deck_filter.blockSignals(False)
+
+    def _on_deck_filter_changed(self) -> None:
+        data = self._deck_filter.currentData()
+        self._deck_id = int(data) if data is not None else None
+        self.refresh()
+
     def refresh(self) -> None:
-        if not is_enabled("learning.progress_dashboard"):
-            self._empty_label.setText(tr("learning.progress_disabled"))
-            self._empty_label.setVisible(True)
-            return
         self._empty_label.setVisible(False)
-        dashboard = self._repo.refresh()
+        dashboard = self._repo.refresh(deck_id=self._deck_id)
         kpi = dashboard.kpi
         self._kpi_total.set_data(str(kpi.total_cards), tr("learning.progress_kpi_total"))
         self._kpi_learning.set_data(str(kpi.learning_cards), tr("learning.progress_kpi_learning"))

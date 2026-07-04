@@ -34,6 +34,7 @@ from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch import collect_review_card_tts_texts, collect_review_tts_texts
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
 from quicklingo.learning.cram_queue import cram_hard_cards, cram_train_cards
+from quicklingo.learning.fsrs_review import preview_fsrs_intervals
 from quicklingo.learning.review_queue import count_due_cards
 from quicklingo.ui.controllers.review_session_controller import ReviewSessionController, SessionStats
 
@@ -628,6 +629,24 @@ class ReviewSessionWidget(QWidget):
         self._update_due_label()
         self._show_idle_ui()
 
+    def start_cram_with_cards(
+        self,
+        deck_id: int,
+        cards: list[learning.LearningCard],
+        *,
+        direction: str,
+    ) -> None:
+        self._deck_id = deck_id
+        self._direction = direction
+        if not self._controller.start_cram_session(
+            deck_id, cards, direction=direction, mode=self._current_mode()
+        ):
+            return
+        self._stack.setCurrentIndex(0)
+        self._progress_widget.setVisible(True)
+        self._grade_widget.setVisible(True)
+        self._render_current_card()
+
     def update_streak(self) -> None:
         self._update_streak_label()
 
@@ -670,9 +689,6 @@ class ReviewSessionWidget(QWidget):
         )
 
     def _update_streak_label(self) -> None:
-        if not is_enabled("learning.streak"):
-            self._streak_label.setText("")
-            return
         from quicklingo import settings
 
         streak, _last = settings.get_learning_streak()
@@ -887,7 +903,7 @@ class ReviewSessionWidget(QWidget):
         return bool(self._card_phonetic_text(card)) or resolve_audio_path(card) is not None
 
     def _update_phonetic_visibility(self, card, *, revealed: bool) -> None:
-        enabled = is_enabled("learning.card_pronunciation")
+        enabled = is_enabled("learning.tts_enabled")
         has_media = self._has_pronunciation_media(card)
         phonetic_text = self._card_phonetic_text(card)
         if self._learning_kind() == "ua-en":
@@ -940,6 +956,38 @@ class ReviewSessionWidget(QWidget):
         self._hard_btn.setVisible(uses_fsrs)
         self._good_btn.setVisible(True)
         self._easy_btn.setVisible(uses_fsrs)
+        card = self._controller.current_card()
+        if card is not None and uses_fsrs:
+            try:
+                previews = preview_fsrs_intervals(card)
+                self._again_btn.setText(
+                    self._grade_button_label(tr("learning.review_again"), previews.get(1))
+                )
+                self._hard_btn.setText(
+                    self._grade_button_label(tr("learning.review_hard"), previews.get(2))
+                )
+                self._good_btn.setText(
+                    self._grade_button_label(tr("learning.review_good"), previews.get(3))
+                )
+                self._easy_btn.setText(
+                    self._grade_button_label(tr("learning.review_easy"), previews.get(4))
+                )
+            except (ValueError, TypeError):
+                self.retranslate_ui()
+        else:
+            self.retranslate_ui()
+
+    @staticmethod
+    def _grade_button_label(base: str, days: int | None) -> str:
+        if days is None:
+            return base
+        if days < 1:
+            interval = tr("learning.interval_lt_day")
+        elif days == 1:
+            interval = tr("learning.interval_one_day")
+        else:
+            interval = tr("learning.interval_days", count=days)
+        return f"{base}\n· {interval}"
 
     def _hide_grades(self) -> None:
         self._again_btn.setVisible(False)

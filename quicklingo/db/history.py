@@ -1,12 +1,14 @@
 """Translation history persistence — public API facade."""
 
 from quicklingo.db.history_analytics import (
+    count_untagged,
     get_daily_counts,
     get_direction_counts,
     get_distinct_models,
     get_distinct_tags,
     get_model_counts,
     get_stats,
+    get_tag_counts,
     get_translation_stats,
 )
 from quicklingo.db.history_models import (
@@ -35,6 +37,7 @@ __all__ = [
     "TranslationRecord",
     "bulk_apply_tags",
     "clear_all",
+    "count_untagged",
     "delete_by_id",
     "export_csv",
     "find_cached",
@@ -48,6 +51,7 @@ __all__ = [
     "get_recent_for_context",
     "get_source_text",
     "get_stats",
+    "get_tag_counts",
     "get_translation_stats",
     "init_db",
     "make_content_hash",

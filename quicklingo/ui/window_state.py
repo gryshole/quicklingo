@@ -7,11 +7,8 @@ from PySide6.QtCore import QByteArray, QTimer
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QWidget
 
 from quicklingo import settings
-from quicklingo.features import is_enabled
-
-
 def remember_geometry_enabled() -> bool:
-    return is_enabled("ui.remember_geometry")
+    return True
 
 
 def restore_window_geometry(

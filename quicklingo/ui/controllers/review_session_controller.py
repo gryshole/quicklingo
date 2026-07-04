@@ -99,17 +99,17 @@ class ReviewSessionController:
         return self._queue.current()
 
     def start_session(self, deck_id: int, *, direction: str, mode: str = "flip") -> bool:
-        if not is_enabled("learning.daily_review"):
-            return False
-        limit = int(get_feature("learning.daily_review").get("daily_limit", 20))
-        new_limit = int(get_feature("learning.srs_review").get("new_cards_per_day", 10))
+        srs = get_feature("learning.srs_review")
+        daily = get_feature("learning.daily_review")
+        limit = int(srs.get("daily_limit") or daily.get("daily_limit", 20))
+        new_limit = int(srs.get("new_cards_per_day", 10))
         queue = build_session_queue(deck_id, limit=limit, new_limit=new_limit)
         if not queue.cards:
             self._session_active = False
             return False
         self._deck_id = deck_id
         self._direction = direction
-        self._mode = mode if is_enabled("learning.review_typing") or mode == "flip" else "flip"
+        self._mode = mode
         self._study_mode = "normal"
         self._normal_session_card_ids = []
         self._queue = queue
@@ -133,7 +133,7 @@ class ReviewSessionController:
             return False
         self._deck_id = deck_id
         self._direction = direction
-        self._mode = mode if is_enabled("learning.review_typing") or mode == "flip" else "flip"
+        self._mode = mode
         self._study_mode = "cram"
         self._queue = build_cram_queue(cards)
         self._stats = SessionStats(total=len(self._queue.cards))
@@ -222,8 +222,7 @@ class ReviewSessionController:
             if self._study_mode == "normal":
                 if self._deck_id is not None and self._normal_session_card_ids:
                     self._session_snapshots[self._deck_id] = list(self._normal_session_card_ids)
-                if is_enabled("learning.streak"):
-                    settings.record_learning_review_today()
+                settings.record_learning_review_today()
         return True
 
     def session_cards(self) -> list[learning.LearningCard]:
@@ -239,7 +238,7 @@ class ReviewSessionController:
 
     def ensure_pronunciation(self) -> str | None:
         card = self.current_card()
-        if card is None or not is_enabled("learning.card_pronunciation"):
+        if card is None or not is_enabled("learning.tts_enabled"):
             return None
         updated = ensure_card_pronunciation(card.id, direction=self._direction)
         if updated is None:

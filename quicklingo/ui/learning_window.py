@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QShowEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -35,13 +35,16 @@ from quicklingo.i18n import tr
 from quicklingo.learning.anki_export import export_anki_apkg, export_anki_csv
 from quicklingo.learning.card_display import parse_context, serialize_context
 from quicklingo.learning.corpus_analysis import select_candidates
+from quicklingo.learning.corpus_tags import UNTAGGED_SENTINEL
 from quicklingo.learning.difficult_words import compute_difficult_words
 from quicklingo.learning.review_queue import card_bucket, count_due_cards
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.ui.dialogs.ai_deck_generator_dialog import AiDeckGeneratorDialog
+from quicklingo.ui.dialogs.learning_onboarding_dialog import LearningOnboardingDialog
 from quicklingo.ui.controllers.update_controller import UpdateController
 from quicklingo.ui.qt_utils import configure_single_line_combo, open_help, reload_combo
 from quicklingo.ui.settings_dialog import SettingsDialog
+from quicklingo.ui.widgets.learning_empty_state import LearningEmptyStateWidget
 from quicklingo.ui.widgets.learning_progress import LearningProgressWidget
 from quicklingo.ui.widgets.quiz_session import QuizSessionWidget
 from quicklingo.ui.widgets.review_session import ReviewSessionWidget
@@ -56,7 +59,13 @@ from quicklingo.workers.card_media_worker import CardMediaWorker
 from quicklingo.workers.corpus_analysis_worker import CorpusAnalysisWorker
 
 
-_LEARNING_CARDS_TABLE_WIDTHS = [140, 140, 100, 160, 80, 52]
+_TAB_CREATE_DECK = 0
+_TAB_CARDS = 1
+_TAB_REVIEW = 2
+_TAB_QUIZ = 3
+_TAB_STATS = 4
+
+_LEARNING_CARDS_TABLE_WIDTHS = [120, 120, 80, 120, 72, 88, 72, 56, 52]
 _LEARNING_CARDS_PRIORITY_WIDTH = 52
 
 _CARDS_TAB_STYLE = """
@@ -188,7 +197,7 @@ class _CardEditDialog(QDialog):
             examples = parse_context(card.context, direction=direction)
             self._context = QPlainTextEdit("\n".join(examples))
             self._context.setMaximumHeight(90)
-            self._context.setPlaceholderText("One English example sentence per line")
+            self._context.setPlaceholderText(tr("learning.card_context_placeholder"))
         else:
             self._context = QLineEdit(card.context)
         self._hint = QLineEdit(card.hint)
@@ -237,12 +246,14 @@ class LearningWindow(QMainWindow):
         self._help_menu = None
         self._help_about_action = None
         self._help_check_updates_action = None
+        self._help_onboarding_action = None
         self._help_learning_action = None
         self._quit_action = None
         restore_window_geometry(self, "learning", default_width=860, default_height=640)
         self._worker: CorpusAnalysisWorker | None = None
         self._media_worker: CardMediaWorker | None = None
         self._current_deck_id: int | None = None
+        self._pending_nav: dict | None = None
 
         self._tabs = QTabWidget()
 
@@ -251,18 +262,20 @@ class LearningWindow(QMainWindow):
         self._review_tab = self._build_review_tab()
         self._quiz_tab = self._build_quiz_tab()
         self._progress_tab = self._build_progress_tab()
-        self._review_session.session_finished.connect(self._quiz_session.refresh_preview)
-        self._review_session.session_finished.connect(self._progress_widget.refresh)
-        self._quiz_session.session_finished.connect(self._progress_widget.refresh)
-        self._quiz_session.results_shown.connect(self._progress_widget.refresh)
 
         self._tabs.addTab(self._analyze_tab, "")
         self._tabs.addTab(self._cards_tab, "")
         self._tabs.addTab(self._review_tab, "")
         self._tabs.addTab(self._quiz_tab, "")
-        if is_enabled("learning.progress_dashboard"):
-            self._tabs.addTab(self._progress_tab, "")
+        self._tabs.addTab(self._progress_tab, "")
         self._tabs.currentChanged.connect(self._on_tab_changed)
+
+        self._review_session.session_finished.connect(self._quiz_session.refresh_preview)
+        self._review_session.session_finished.connect(self._progress_widget.refresh)
+        self._review_session.session_finished.connect(self._refresh_deck_combo_due_counts)
+        self._quiz_session.session_finished.connect(self._progress_widget.refresh)
+        self._quiz_session.results_shown.connect(self._progress_widget.refresh)
+        self._quiz_session.review_weak_requested.connect(self._on_quiz_review_weak)
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -273,6 +286,8 @@ class LearningWindow(QMainWindow):
         if standalone:
             self._build_standalone_menu()
             self._updates = UpdateController(self)
+        else:
+            self._build_embedded_menu()
 
         restore_table_columns(
             self._cards_table,
@@ -286,6 +301,17 @@ class LearningWindow(QMainWindow):
         self._reload_tags()
         self._reload_decks()
 
+    def _build_help_menu(self, menu_bar) -> None:
+        self._help_menu = menu_bar.addMenu("")
+        self._help_onboarding_action = self._help_menu.addAction("")
+        self._help_onboarding_action.triggered.connect(self._show_onboarding_guide)
+        self._help_learning_action = self._help_menu.addAction("")
+        self._help_learning_action.triggered.connect(lambda: self._open_help_topic("learning"))
+
+    def _build_embedded_menu(self) -> None:
+        menu_bar = self.menuBar()
+        self._build_help_menu(menu_bar)
+
     def _build_standalone_menu(self) -> None:
         menu_bar = self.menuBar()
         self._tools_menu = menu_bar.addMenu("")
@@ -298,11 +324,16 @@ class LearningWindow(QMainWindow):
         self._help_check_updates_action = self._help_menu.addAction("")
         self._help_check_updates_action.triggered.connect(self._check_for_updates)
         self._help_menu.addSeparator()
+        self._help_onboarding_action = self._help_menu.addAction("")
+        self._help_onboarding_action.triggered.connect(self._show_onboarding_guide)
         self._help_learning_action = self._help_menu.addAction("")
         self._help_learning_action.triggered.connect(lambda: self._open_help_topic("learning"))
 
         self._quit_action = menu_bar.addAction("")
         self._quit_action.triggered.connect(self.close)
+
+    def _show_onboarding_guide(self) -> None:
+        LearningOnboardingDialog.show_guide(self, standalone=self._standalone)
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self)
@@ -321,14 +352,41 @@ class LearningWindow(QMainWindow):
     def _build_analyze_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self._analyze_empty = LearningEmptyStateWidget()
+        self._analyze_empty.action_requested.connect(self._on_analyze_empty_action)
+        layout.addWidget(self._analyze_empty)
+
+        self._analyze_form_host = QWidget()
+        form_layout = QVBoxLayout(self._analyze_form_host)
+        form_layout.setContentsMargins(0, 0, 0, 0)
 
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
         self._tag_combo = QComboBox()
-        self._tag_combo.setEditable(True)
+        configure_single_line_combo(self._tag_combo)
         self._direction_combo = QComboBox()
         for direction in get_directions():
-            self._direction_combo.addItem(direction.label, direction.id)
+            kind = resolve_learning_direction(direction.id)
+            if kind == "ua-en":
+                label = tr("learning.direction_learn_english")
+            elif kind == "en-ua":
+                label = tr("learning.direction_from_content")
+            else:
+                label = direction.label
+            self._direction_combo.addItem(label, direction.id)
+        ua_en_index = next(
+            (
+                i
+                for i in range(self._direction_combo.count())
+                if resolve_learning_direction(self._direction_combo.itemData(i)) == "ua-en"
+            ),
+            0,
+        )
+        if ua_en_index >= 0:
+            self._direction_combo.setCurrentIndex(ua_en_index)
+        self._direction_combo.currentIndexChanged.connect(self._reload_tags)
         self._starred_only = QCheckBox()
         self._model_combo = QComboBox()
         configure_single_line_combo(self._model_combo)
@@ -340,12 +398,13 @@ class LearningWindow(QMainWindow):
         form.addRow(self._direction_label, self._direction_combo)
         form.addRow(self._model_label, self._model_combo)
         form.addRow("", self._starred_only)
-        layout.addLayout(form)
+        form_layout.addLayout(form)
 
         btn_row = QHBoxLayout()
         self._preview_btn = QPushButton()
         self._preview_btn.clicked.connect(self._preview_local)
         self._analyze_btn = QPushButton()
+        self._analyze_btn.setObjectName("btnPrimary")
         self._analyze_btn.clicked.connect(self._run_analysis)
         self._cancel_btn = QPushButton()
         self._cancel_btn.clicked.connect(self._cancel_analysis)
@@ -354,7 +413,7 @@ class LearningWindow(QMainWindow):
         btn_row.addWidget(self._analyze_btn)
         btn_row.addWidget(self._cancel_btn)
         btn_row.addStretch()
-        layout.addLayout(btn_row)
+        form_layout.addLayout(btn_row)
 
         self._status_label = QLabel()
         self._status_label.setWordWrap(True)
@@ -364,11 +423,13 @@ class LearningWindow(QMainWindow):
         self._summary_field.setReadOnly(True)
         self._preview_title = QLabel()
         self._summary_title = QLabel()
-        layout.addWidget(self._status_label)
-        layout.addWidget(self._preview_title)
-        layout.addWidget(self._preview_field, stretch=1)
-        layout.addWidget(self._summary_title)
-        layout.addWidget(self._summary_field, stretch=1)
+        form_layout.addWidget(self._status_label)
+        form_layout.addWidget(self._preview_title)
+        form_layout.addWidget(self._preview_field, stretch=1)
+        form_layout.addWidget(self._summary_title)
+        form_layout.addWidget(self._summary_field, stretch=1)
+        layout.addWidget(self._analyze_form_host, stretch=1)
+        self._tag_combo.currentIndexChanged.connect(self._update_analyze_empty_state)
         return widget
 
     def _build_cards_tab(self) -> QWidget:
@@ -422,7 +483,7 @@ class LearningWindow(QMainWindow):
         table_layout = QVBoxLayout(self._cards_table_card)
         table_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._cards_table = QTableWidget(0, 6)
+        self._cards_table = QTableWidget(0, 9)
         self._cards_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._cards_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._cards_table.verticalHeader().setVisible(False)
@@ -441,6 +502,9 @@ class LearningWindow(QMainWindow):
         self._review_deck_combo = QComboBox()
         self._review_deck_combo.currentIndexChanged.connect(self._on_review_deck_changed)
         self._review_deck_label = QLabel()
+        self._learn_context_label = QLabel()
+        self._learn_context_label.setStyleSheet("color: #64748b; font-size: 12px; font-weight: 600;")
+        top.addWidget(self._learn_context_label)
         top.addWidget(self._review_deck_label)
         top.addWidget(self._review_deck_combo, stretch=1)
         layout.addLayout(top)
@@ -458,7 +522,9 @@ class LearningWindow(QMainWindow):
         self._quiz_session = QuizSessionWidget()
         self._quiz_session.generation_finished.connect(self._on_quiz_generation_finished)
         self._quiz_session.session_finished.connect(self._on_quiz_session_finished)
-        self._quiz_session.finish_requested.connect(lambda: self._tabs.setCurrentIndex(0))
+        self._quiz_session.finish_requested.connect(
+            lambda: self._tabs.setCurrentIndex(_TAB_REVIEW)
+        )
         layout.addWidget(self._quiz_session, stretch=1)
         return widget
 
@@ -482,13 +548,15 @@ class LearningWindow(QMainWindow):
     def retranslate_ui(self) -> None:
         title = tr("learning.app_title") if self._standalone else tr("learning.window_title")
         self.setWindowTitle(title)
+        if self._help_menu is not None:
+            self._help_menu.setTitle(tr("main.menu_help"))
+        if self._help_onboarding_action is not None:
+            self._help_onboarding_action.setText(tr("learning.onboarding.show_again"))
         if self._standalone:
             if self._tools_menu is not None:
                 self._tools_menu.setTitle(tr("main.menu_tools"))
             if self._settings_action is not None:
                 self._settings_action.setText(tr("main.menu_settings"))
-            if self._help_menu is not None:
-                self._help_menu.setTitle(tr("main.menu_help"))
             if self._help_about_action is not None:
                 self._help_about_action.setText(tr("main.menu_help_about"))
             if self._help_check_updates_action is not None:
@@ -497,12 +565,13 @@ class LearningWindow(QMainWindow):
                 self._help_learning_action.setText(tr("main.menu_help_learning"))
             if self._quit_action is not None:
                 self._quit_action.setText(tr("tray.quit"))
-        self._tabs.setTabText(0, tr("learning.tab_analyze"))
-        self._tabs.setTabText(1, tr("learning.tab_cards"))
-        self._tabs.setTabText(2, tr("learning.tab_review"))
-        self._tabs.setTabText(3, tr("learning.tab_quiz"))
-        if is_enabled("learning.progress_dashboard") and self._tabs.count() > 4:
-            self._tabs.setTabText(4, tr("learning.tab_progress"))
+        elif self._help_learning_action is not None:
+            self._help_learning_action.setText(tr("main.menu_help_learning"))
+        self._tabs.setTabText(_TAB_CREATE_DECK, tr("learning.tab_create_deck"))
+        self._tabs.setTabText(_TAB_CARDS, tr("learning.tab_cards"))
+        self._tabs.setTabText(_TAB_REVIEW, tr("learning.tab_review"))
+        self._tabs.setTabText(_TAB_QUIZ, tr("learning.tab_quiz"))
+        self._tabs.setTabText(_TAB_STATS, tr("learning.section_stats"))
         self._tag_label.setText(tr("learning.corpus_tag"))
         self._direction_label.setText(tr("learning.direction"))
         self._model_label.setText(tr("learning.model"))
@@ -527,10 +596,15 @@ class LearningWindow(QMainWindow):
                 tr("learning.card_hint").upper(),
                 tr("learning.card_notes").upper(),
                 tr("learning.card_status").upper(),
+                tr("learning.card_next_review").upper(),
+                tr("learning.card_last_grade").upper(),
+                tr("learning.card_review_count").upper(),
                 tr("learning.card_priority").upper(),
             ]
         )
         self._review_deck_label.setText(tr("learning.deck"))
+        self._update_learn_context_label()
+        self._update_analyze_empty_state()
         self._review_session.retranslate_ui()
         self._quiz_session.retranslate_ui()
         if hasattr(self, "_progress_widget"):
@@ -544,7 +618,7 @@ class LearningWindow(QMainWindow):
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(5, min(header.sectionSize(5), _LEARNING_CARDS_PRIORITY_WIDTH))
+        header.resizeSection(8, min(header.sectionSize(8), _LEARNING_CARDS_PRIORITY_WIDTH))
 
     def _reload_model_combo(self) -> None:
         current = self._model_combo.currentData() if self._model_combo.count() else None
@@ -560,20 +634,139 @@ class LearningWindow(QMainWindow):
             self._model_combo.setCurrentIndex(0)
 
     def _reload_tags(self) -> None:
-        if not is_enabled("history.tags"):
-            return
-        current = self._tag_combo.currentText()
+        direction = self._direction_combo.currentData()
+        current = self._tag_combo.currentData()
         self._tag_combo.blockSignals(True)
         self._tag_combo.clear()
-        self._tag_combo.addItem("")
-        for tag in history.get_distinct_tags():
-            self._tag_combo.addItem(tag)
-        index = self._tag_combo.findText(current)
+        untagged = history.count_untagged(direction=direction)
+        self._tag_combo.addItem(tr("learning.tag_untagged", count=untagged), UNTAGGED_SENTINEL)
+        if is_enabled("history.tags"):
+            for tag, count in history.get_tag_counts(direction=direction):
+                self._tag_combo.addItem(f"{tag} ({count})", tag)
+        if current is not None:
+            index = self._tag_combo.findData(current)
+            if index >= 0:
+                self._tag_combo.setCurrentIndex(index)
+        elif self._tag_combo.count():
+            self._tag_combo.setCurrentIndex(0)
+        self._tag_combo.blockSignals(False)
+        self._update_analyze_empty_state()
+
+    def _corpus_tag_selection(self) -> tuple[str, bool, str]:
+        data = self._tag_combo.currentData()
+        if data == UNTAGGED_SENTINEL:
+            return "", True, tr("learning.untagged_deck_name")
+        tag = str(data or "").strip()
+        return tag, False, tag or tr("learning.untagged_deck_name")
+
+    def _corpus_records(self) -> list[history.TranslationRecord]:
+        tag, untagged, _label = self._corpus_tag_selection()
+        direction = self._direction_combo.currentData()
+        if untagged:
+            return history.search_records(direction=direction, untagged_only=True, limit=5000)
+        if not tag:
+            return []
+        return history.search_records(direction=direction, tag=tag, limit=5000)
+
+    def _update_analyze_empty_state(self) -> None:
+        if not hasattr(self, "_analyze_empty"):
+            return
+        records = self._corpus_records()
+        if records:
+            self._analyze_empty.hide_state()
+            self._analyze_form_host.setVisible(True)
+            return
+        _tag, untagged, label = self._corpus_tag_selection()
+        self._analyze_form_host.setVisible(False)
+        if untagged:
+            title = tr("learning.empty_untagged_title")
+            body = tr("learning.empty_untagged_body")
+        else:
+            title = tr("learning.empty_tag_title", tag=label)
+            body = tr("learning.empty_tag_body", tag=label)
+        action = "" if self._standalone else tr("learning.empty_open_main")
+        self._analyze_empty.set_content(title, body, action=action)
+
+    def _on_analyze_empty_action(self) -> None:
+        if not self._standalone and self.parent() is not None:
+            from quicklingo.ui.qt_utils import raise_window
+
+            raise_window(self.parent())
+
+    def navigate_to(
+        self,
+        tab: str = "create_deck",
+        *,
+        tag: str | None = None,
+        direction: str | None = None,
+        untagged: bool = False,
+    ) -> None:
+        tab_indices = {
+            "create_deck": _TAB_CREATE_DECK,
+            "cards": _TAB_CARDS,
+            "review": _TAB_REVIEW,
+            "quiz": _TAB_QUIZ,
+            "stats": _TAB_STATS,
+        }
+        if tag is not None or untagged:
+            self._pending_nav = {"tag": tag, "direction": direction, "untagged": untagged}
+            self._apply_pending_nav()
+        self._tabs.setCurrentIndex(tab_indices.get(tab, _TAB_CREATE_DECK))
+
+    def _apply_pending_nav(self) -> None:
+        if not self._pending_nav:
+            return
+        nav = self._pending_nav
+        self._pending_nav = None
+        if nav.get("direction"):
+            index = self._direction_combo.findData(nav["direction"])
+            if index >= 0:
+                self._direction_combo.setCurrentIndex(index)
+        self._reload_tags()
+        if nav.get("untagged"):
+            index = self._tag_combo.findData(UNTAGGED_SENTINEL)
+        else:
+            tag = nav.get("tag") or ""
+            index = self._tag_combo.findData(tag)
         if index >= 0:
             self._tag_combo.setCurrentIndex(index)
-        else:
-            self._tag_combo.setEditText(current)
-        self._tag_combo.blockSignals(False)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        if self._pending_nav:
+            self._apply_pending_nav()
+        LearningOnboardingDialog.maybe_show(self, standalone=self._standalone)
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == _TAB_CARDS:
+            self._load_cards()
+        elif index == _TAB_REVIEW:
+            self._on_review_deck_changed()
+            self._update_learn_context_label()
+        elif index == _TAB_QUIZ:
+            self._quiz_session.refresh_preview()
+            self._quiz_session.generation_panel.refresh()
+        elif index == _TAB_STATS:
+            self._progress_widget.refresh()
+
+    def _update_learn_context_label(self) -> None:
+        deck_id = self._review_deck_combo.currentData()
+        deck = learning.get_deck(deck_id) if deck_id else None
+        if deck is None:
+            self._learn_context_label.setText("")
+            return
+        due = count_due_cards(deck.id)
+        self._learn_context_label.setText(
+            tr("learning.learn_deck_context", name=deck.name, due=due)
+        )
+
+    def _on_quiz_review_weak(self, card_ids: list[int], deck_id: int) -> None:
+        deck = learning.get_deck(deck_id)
+        if deck is None or not card_ids:
+            return
+        cards = learning.list_cards_by_ids(card_ids)
+        self._tabs.setCurrentIndex(_TAB_REVIEW)
+        self._review_session.start_cram_with_cards(deck.id, cards, direction=deck.direction)
 
     def _reload_decks(self) -> None:
         decks = learning.list_decks()
@@ -611,38 +804,16 @@ class LearningWindow(QMainWindow):
                 combo.setItemText(index, label)
         if hasattr(self, "_quiz_session"):
             self._quiz_session.reload_decks()
-
-    def _on_tab_changed(self, index: int) -> None:
-        widget = self._tabs.widget(index)
-        if index == 1:
-            self._load_cards()
-        if index == 2:
-            self._on_review_deck_changed()
-        if widget is self._quiz_tab:
-            self._quiz_session.refresh_preview()
-            self._quiz_session.generation_panel.refresh()
-        progress_index = 4 if is_enabled("learning.progress_dashboard") else -1
-        if progress_index >= 0 and index == progress_index and hasattr(self, "_progress_widget"):
-            self._progress_widget.refresh()
+        self._update_learn_context_label()
 
     def _on_review_deck_changed(self) -> None:
         deck_id = self._review_deck_combo.currentData()
         deck = learning.get_deck(deck_id) if deck_id else None
         direction = deck.direction if deck else "ua-en"
         self._review_session.set_deck(deck_id, direction=direction)
-
-    def _corpus_records(self) -> list[history.TranslationRecord]:
-        tag = self._tag_combo.currentText().strip()
-        direction = self._direction_combo.currentData()
-        return history.search_records(
-            direction=direction,
-            tag=tag or None,
-            limit=5000,
-        )
+        self._update_learn_context_label()
 
     def _preview_local(self) -> None:
-        if not is_enabled("learning.difficult_words"):
-            return
         records = self._corpus_records()
         difficult = compute_difficult_words(records)
         max_candidates = int(get_feature("learning.ai_corpus_analysis").get("max_candidates", 120))
@@ -663,6 +834,11 @@ class LearningWindow(QMainWindow):
 
     def _run_analysis(self) -> None:
         if not is_enabled("learning.ai_corpus_analysis"):
+            QMessageBox.information(
+                self,
+                tr("learning.window_title"),
+                tr("learning.analysis_disabled"),
+            )
             return
         if self._worker is not None and self._worker.isRunning():
             return
@@ -670,8 +846,31 @@ class LearningWindow(QMainWindow):
         if not records:
             self._status_label.setText(tr("learning.no_corpus"))
             return
-        tag = self._tag_combo.currentText().strip()
+        tag, _untagged, deck_label = self._corpus_tag_selection()
         direction = self._direction_combo.currentData()
+        max_candidates = int(get_feature("learning.ai_corpus_analysis").get("max_candidates", 120))
+        candidates = select_candidates(
+            records,
+            max_candidates=max_candidates,
+            starred_only=self._starred_only.isChecked(),
+            difficult_items=compute_difficult_words(records),
+        )
+        direction_label = self._direction_combo.currentText()
+        confirm = QMessageBox.question(
+            self,
+            tr("learning.analysis_confirm_title"),
+            tr(
+                "learning.analysis_confirm_body",
+                records=len(records),
+                candidates=len(candidates),
+                deck=deck_label,
+                direction=direction_label,
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
         model_entry = get_model_by_index(self._model_combo.currentIndex())
         feature = get_feature("learning.ai_corpus_analysis")
         self._worker = CorpusAnalysisWorker(
@@ -679,6 +878,7 @@ class LearningWindow(QMainWindow):
             tag=tag,
             direction=direction,
             model_entry=model_entry,
+            deck_display_name=deck_label,
             max_candidates=int(feature.get("max_candidates", 120)),
             batch_size=int(feature.get("batch_size", 40)),
             starred_only=self._starred_only.isChecked(),
@@ -705,7 +905,7 @@ class LearningWindow(QMainWindow):
         self._status_label.setText(tr("learning.analysis_done"))
         self._reload_decks()
         self._load_cards()
-        self._tabs.setCurrentIndex(1)
+        self._tabs.setCurrentIndex(_TAB_CARDS)
         self._start_media_worker(deck_id, media_meta)
 
     def _on_analysis_error(self, message: str) -> None:
@@ -759,9 +959,16 @@ class LearningWindow(QMainWindow):
         bucket = card_bucket(card)
         return tr(f"learning.status_{bucket}")
 
+    def _grade_label(self, rating: int) -> str:
+        labels = {
+            1: tr("learning.review_again"),
+            2: tr("learning.review_hard"),
+            3: tr("learning.review_good"),
+            4: tr("learning.review_easy"),
+        }
+        return labels.get(rating, "—")
+
     def _load_cards(self) -> None:
-        if not is_enabled("learning.anki_preview"):
-            return
         deck_id = self._deck_combo.currentData()
         if deck_id is None:
             self._cards_table.setRowCount(0)
@@ -772,8 +979,13 @@ class LearningWindow(QMainWindow):
         cards = learning.list_cards(deck_id)
         learning.backfill_card_fields(deck_id)
         cards = learning.list_cards(deck_id)
+        stats = learning.get_card_review_stats([card.id for card in cards])
         self._cards_table.setRowCount(len(cards))
         for row, card in enumerate(cards):
+            card_stats = stats.get(card.id, {})
+            next_review = card.next_review_date[:10] if card.next_review_date else "—"
+            last_rating = int(card_stats.get("last_rating") or 0)
+            review_count = int(card_stats.get("review_count") or 0)
             for col, text in enumerate(
                 (
                     card.front,
@@ -781,6 +993,9 @@ class LearningWindow(QMainWindow):
                     card.hint,
                     card.notes,
                     self._status_label_for_card(card),
+                    next_review,
+                    self._grade_label(last_rating) if last_rating else "—",
+                    str(review_count),
                     str(card.priority),
                 )
             ):
@@ -880,7 +1095,7 @@ class LearningWindow(QMainWindow):
         index = self._deck_combo.findData(deck_id)
         if index >= 0:
             self._deck_combo.setCurrentIndex(index)
-        self._tabs.setCurrentIndex(1)
+        self._tabs.setCurrentIndex(_TAB_CARDS)
         self._load_cards()
         self._start_media_worker(deck_id, media_meta)
 

@@ -14,12 +14,9 @@ HELP_TOPICS = (
     "about",
     "models",
     "directions_profiles",
-    "formatters",
     "features",
     "history",
     "learning",
-    "dashboard",
-    "glossary",
 )
 
 

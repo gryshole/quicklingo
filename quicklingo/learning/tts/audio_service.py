@@ -63,8 +63,6 @@ class AudioService(QObject):
     def speak_card_term(self, card: LearningCard, *, direction: str) -> bool:
         if not is_enabled("learning.tts_enabled"):
             return False
-        if not is_enabled("learning.card_pronunciation"):
-            return self.speak_english(card.front)
         tts_prefetch_service().prefetch_card_term(card.id, direction=direction)
         self.stop()
         updated = ensure_card_pronunciation(card.id, direction=direction)

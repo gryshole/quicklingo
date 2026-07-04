@@ -410,6 +410,56 @@ def list_cards_by_ids(card_ids: list[int]) -> list[LearningCard]:
     return [_row_to_card(row) for row in rows]
 
 
+def get_card_review_stats(card_ids: list[int]) -> dict[int, dict[str, int | str]]:
+    if not card_ids:
+        return {}
+    placeholders = ",".join("?" * len(card_ids))
+    stats: dict[int, dict[str, int | str]] = {
+        card_id: {"review_count": 0, "last_rating": 0, "quiz_correct": 0, "quiz_total": 0}
+        for card_id in card_ids
+    }
+    with connection() as conn:
+        for row in conn.execute(
+            f"""
+            SELECT card_id, COUNT(*) AS cnt
+            FROM review_logs
+            WHERE card_id IN ({placeholders}) AND mode != 'cram'
+            GROUP BY card_id
+            """,
+            card_ids,
+        ).fetchall():
+            stats[int(row["card_id"])]["review_count"] = int(row["cnt"])
+        for row in conn.execute(
+            f"""
+            SELECT r.card_id, r.rating
+            FROM review_logs r
+            INNER JOIN (
+                SELECT card_id, MAX(reviewed_at) AS max_at
+                FROM review_logs
+                WHERE card_id IN ({placeholders}) AND mode != 'cram'
+                GROUP BY card_id
+            ) latest ON latest.card_id = r.card_id AND latest.max_at = r.reviewed_at
+            """,
+            card_ids,
+        ).fetchall():
+            stats[int(row["card_id"])]["last_rating"] = int(row["rating"])
+        for row in conn.execute(
+            f"""
+            SELECT card_id,
+                   SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS correct,
+                   COUNT(*) AS total
+            FROM quiz_logs
+            WHERE card_id IN ({placeholders})
+            GROUP BY card_id
+            """,
+            card_ids,
+        ).fetchall():
+            entry = stats[int(row["card_id"])]
+            entry["quiz_correct"] = int(row["correct"] or 0)
+            entry["quiz_total"] = int(row["total"] or 0)
+    return stats
+
+
 def list_struggled_cards_today(deck_id: int) -> list[LearningCard]:
     today = date.today().isoformat()
     with connection() as conn:

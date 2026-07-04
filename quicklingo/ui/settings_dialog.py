@@ -15,12 +15,9 @@ from quicklingo.ui.settings.api_keys_tab import ApiKeysTab
 from quicklingo.ui.settings.directions_tab import DirectionsTab
 from quicklingo.ui.settings.features_tab import FeaturesTab
 from quicklingo.ui.settings.learning_features_tab import LearningFeaturesTab
-from quicklingo.ui.settings.formatters_tab import FormattersTab
-from quicklingo.ui.settings.glossary_tab import GlossaryTab
 from quicklingo.ui.settings.interface_tab import InterfaceTab
 from quicklingo.ui.settings.models_tab import ModelsTab
 from quicklingo.ui.settings.profiles_tab import ProfilesTab
-from quicklingo.ui.settings.usage_tab import UsageTab
 from quicklingo.ui.window_state import restore_window_geometry, save_window_geometry
 
 
@@ -40,11 +37,8 @@ class SettingsDialog(QDialog):
         self._models_tab = ModelsTab()
         self._features_tab = FeaturesTab()
         self._learning_features_tab = LearningFeaturesTab()
-        self._glossary_tab = GlossaryTab()
-        self._usage_tab = UsageTab()
         self._directions_tab = DirectionsTab()
         self._profiles_tab = ProfilesTab()
-        self._formatters_tab = FormattersTab()
 
         self._tab_widgets = (
             self._interface_tab,
@@ -54,9 +48,6 @@ class SettingsDialog(QDialog):
             self._learning_features_tab,
             self._directions_tab,
             self._profiles_tab,
-            self._usage_tab,
-            self._formatters_tab,
-            self._glossary_tab,
         )
 
         layout.addWidget(self._tabs)
@@ -93,9 +84,6 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(self._learning_features_tab, tr("settings.tab_learning"))
         self._tabs.addTab(self._directions_tab, tr("settings.tab_directions"))
         self._tabs.addTab(self._profiles_tab, tr("settings.tab_profiles"))
-        self._tabs.addTab(self._usage_tab, tr("settings.tab_usage"))
-        self._tabs.addTab(self._formatters_tab, tr("settings.tab_formatters"))
-        self._tabs.addTab(self._glossary_tab, tr("settings.tab_glossary"))
         self._apply_btn.setText(tr("settings.apply"))
         self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText(tr("common.ok"))
         self._buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(
@@ -113,7 +101,6 @@ class SettingsDialog(QDialog):
     def _on_config_saved(self) -> None:
         self._config_dirty = True
         reload_config()
-        self._usage_tab.reload()
 
     def _apply(self) -> None:
         tab = self._current_tab()

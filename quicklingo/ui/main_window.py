@@ -88,8 +88,8 @@ from quicklingo.ui.qt_utils import (
     reload_combo,
 )
 from quicklingo.ui.widgets.segmented_control import SegmentedControl
+from quicklingo.ui.dialogs.learning_onboarding_dialog import LearningOnboardingDialog
 from quicklingo.ui.history_window import HistoryWindow
-from quicklingo.ui.dashboard_window import DashboardWindow
 from quicklingo.ui.learning_window import LearningWindow
 from quicklingo.ui.quiz_questions_window import QuizQuestionsWindow
 
@@ -116,8 +116,6 @@ class MainWindow(QMainWindow):
         self._history_window: HistoryWindow | None = None
         self._learning_window: LearningWindow | None = None
         self._quiz_questions_window: QuizQuestionsWindow | None = None
-        self._dashboard_window: DashboardWindow | None = None
-
         self._direction_control: SegmentedControl | None = None
 
         self._main_layout: QVBoxLayout | None = None
@@ -146,8 +144,6 @@ class MainWindow(QMainWindow):
 
         self._quiz_questions_action = None
 
-        self._dashboard_action = None
-
         self._settings_action = None
 
         self._help_menu = None
@@ -160,17 +156,12 @@ class MainWindow(QMainWindow):
 
         self._help_directions_profiles_action = None
 
-        self._help_formatters_action = None
-
         self._help_features_action = None
 
         self._help_history_action = None
 
         self._help_learning_action = None
-
-        self._help_dashboard_action = None
-
-        self._help_glossary_action = None
+        self._help_onboarding_action = None
 
         self._create_menu_bar()
 
@@ -397,6 +388,7 @@ class MainWindow(QMainWindow):
         self._profile_label.setText(tr("main.profile_label"))
 
         self._tag_label.setText(tr("main.tag_label"))
+        self._tag_combo.setPlaceholderText(tr("main.tag_placeholder"))
 
         self._refresh_input_label()
         self._input_field.setPlaceholderText(tr("main.input_placeholder"))
@@ -428,10 +420,6 @@ class MainWindow(QMainWindow):
             self._quiz_questions_action.setText(tr("main.menu_quiz_questions"))
             self._quiz_questions_action.setVisible(is_enabled("learning.quiz"))
 
-        if self._dashboard_action:
-
-            self._dashboard_action.setText(tr("main.menu_dashboard"))
-
         if self._settings_action:
 
             self._settings_action.setText(tr("main.menu_settings"))
@@ -458,10 +446,6 @@ class MainWindow(QMainWindow):
                 tr("main.menu_help_directions_profiles")
             )
 
-        if self._help_formatters_action:
-
-            self._help_formatters_action.setText(tr("main.menu_help_formatters"))
-
         if self._help_features_action:
 
             self._help_features_action.setText(tr("main.menu_help_features"))
@@ -474,13 +458,9 @@ class MainWindow(QMainWindow):
 
             self._help_learning_action.setText(tr("main.menu_help_learning"))
 
-        if self._help_dashboard_action:
+        if self._help_onboarding_action:
 
-            self._help_dashboard_action.setText(tr("main.menu_help_dashboard"))
-
-        if self._help_glossary_action:
-
-            self._help_glossary_action.setText(tr("main.menu_help_glossary"))
+            self._help_onboarding_action.setText(tr("learning.onboarding.show_again"))
 
         self._tutor_capture_btn.setText(f"⚡ {tr('main.tutor_capture_btn')}")
 
@@ -877,38 +857,20 @@ class MainWindow(QMainWindow):
 
         settings.save_ui_preferences(model_entry.model_id, self._current_direction())
 
-        if is_enabled("ui.remember_zoom"):
-
-            settings.save_zoom_steps(
-
-                self._input_field.zoom_steps(),
-
-                self._output_field.zoom_steps(),
-
-            )
-
-        if is_enabled("ui.remember_geometry"):
-
-            settings.save_window_geometry_state(bytes(self.saveGeometry()))
+        settings.save_zoom_steps(
+            self._input_field.zoom_steps(),
+            self._output_field.zoom_steps(),
+        )
+        settings.save_window_geometry_state(bytes(self.saveGeometry()))
 
         super().closeEvent(event)
 
 
 
     def _restore_window_geometry(self) -> None:
-
-        if not is_enabled("ui.remember_geometry"):
-
-            self._default_geometry()
-
-            return
-
         saved = settings.get_window_geometry_state()
-
         if saved and self.restoreGeometry(QByteArray(saved)):
-
             return
-
         self._default_geometry()
 
 
@@ -983,10 +945,6 @@ class MainWindow(QMainWindow):
         self._quiz_questions_action.triggered.connect(self._open_quiz_questions)
         self._quiz_questions_action.setVisible(is_enabled("learning.quiz"))
 
-        self._dashboard_action = self._tools_menu.addAction("")
-
-        self._dashboard_action.triggered.connect(self._open_dashboard)
-
         self._help_menu = menu_bar.addMenu("")
 
         self._help_about_action = self._help_menu.addAction("")
@@ -1009,12 +967,6 @@ class MainWindow(QMainWindow):
             lambda: self._open_help_topic("directions_profiles")
         )
 
-        self._help_formatters_action = self._help_menu.addAction("")
-
-        self._help_formatters_action.triggered.connect(
-            lambda: self._open_help_topic("formatters")
-        )
-
         self._help_features_action = self._help_menu.addAction("")
 
         self._help_features_action.triggered.connect(
@@ -1033,22 +985,16 @@ class MainWindow(QMainWindow):
             lambda: self._open_help_topic("learning")
         )
 
-        self._help_dashboard_action = self._help_menu.addAction("")
-
-        self._help_dashboard_action.triggered.connect(
-            lambda: self._open_help_topic("dashboard")
-        )
-
-        self._help_glossary_action = self._help_menu.addAction("")
-
-        self._help_glossary_action.triggered.connect(
-            lambda: self._open_help_topic("glossary")
-        )
+        self._help_onboarding_action = self._help_menu.addAction("")
+        self._help_onboarding_action.triggered.connect(self._show_learning_onboarding)
 
 
 
     def _open_help_topic(self, topic: str) -> None:
         open_help(topic, self)
+
+    def _show_learning_onboarding(self) -> None:
+        LearningOnboardingDialog.show_guide(self, standalone=False)
 
     def _check_for_updates(self) -> None:
         self._updates.check_for_updates()
@@ -1062,13 +1008,26 @@ class MainWindow(QMainWindow):
             self._history_window.finished.connect(self._on_history_closed)
 
             self._history_window.reopen_requested.connect(self._reopen_from_history)
-            self._history_window.add_to_deck_requested.connect(self._add_vocab_to_deck)
+            self._history_window.create_deck_from_tag_requested.connect(
+                self._create_deck_from_history_tag
+            )
 
         self._history_window.refresh()
 
         self._reload_tag_combo()
 
         raise_window(self._history_window)
+
+    def _create_deck_from_history_tag(self, tag: str, direction: str) -> None:
+        self._open_learning()
+        if self._learning_window is None:
+            return
+        self._learning_window.navigate_to(
+            "create_deck",
+            tag=tag or None,
+            direction=direction,
+            untagged=not tag,
+        )
 
     def _open_learning(self) -> None:
         if self._learning_window is None:
@@ -1091,16 +1050,6 @@ class MainWindow(QMainWindow):
 
     def _on_quiz_questions_closed(self) -> None:
         self._quiz_questions_window = None
-
-    def _open_dashboard(self) -> None:
-        if self._dashboard_window is None:
-            self._dashboard_window = DashboardWindow(self)
-            self._dashboard_window.finished.connect(self._on_dashboard_closed)
-        self._dashboard_window.refresh()
-        raise_window(self._dashboard_window)
-
-    def _on_dashboard_closed(self) -> None:
-        self._dashboard_window = None
 
     def _add_vocab_to_deck(
         self, word: str, source: str, direction: str, tag: str, result: str

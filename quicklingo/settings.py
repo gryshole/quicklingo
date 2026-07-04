@@ -382,3 +382,30 @@ def record_learning_review_today() -> int:
     data["learning_last_review_date"] = today
     _save(data)
     return streak
+
+
+def get_learning_show_onboarding() -> bool:
+    data = _load()
+    return bool(data.get("learning_show_onboarding", True))
+
+
+def set_learning_show_onboarding(show: bool) -> None:
+    _store.update({"learning_show_onboarding": show})
+
+
+def get_learning_flow_hint_dismissed() -> bool:
+    data = _load()
+    return bool(data.get("learning_flow_hint_dismissed", False))
+
+
+def set_learning_flow_hint_dismissed(dismissed: bool) -> None:
+    _store.update({"learning_flow_hint_dismissed": dismissed})
+
+
+def get_learning_flow_cycle_completed() -> bool:
+    data = _load()
+    return bool(data.get("learning_flow_cycle_completed", False))
+
+
+def set_learning_flow_cycle_completed(completed: bool) -> None:
+    _store.update({"learning_flow_cycle_completed": completed})

@@ -59,19 +59,18 @@ class TranslationController:
         if not text:
             return
         if self.is_busy():
-            if is_enabled("translation.request_queue"):
-                self._request_queue.append(
-                    QueuedRequest(
-                        text,
-                        self._window._current_direction(),
-                        self._window._current_profile_id(),
-                        self._window._model_combo.currentIndex(),
-                    )
+            self._request_queue.append(
+                QueuedRequest(
+                    text,
+                    self._window._current_direction(),
+                    self._window._current_profile_id(),
+                    self._window._model_combo.currentIndex(),
                 )
-                self._window._input_field.clear_input()
-                self._window._set_status(
-                    "main.status_queued", error=False, count=len(self._request_queue)
-                )
+            )
+            self._window._input_field.clear_input()
+            self._window._set_status(
+                "main.status_queued", error=False, count=len(self._request_queue)
+            )
             return
         self.start(text)
 
@@ -172,6 +171,13 @@ class TranslationController:
             )
             if tag and is_enabled("history.tags"):
                 self._window._reload_tag_combo()
+            saved_status = (
+                ("main.status_saved_tag", {"tag": tag})
+                if tag
+                else ("main.status_saved_untagged", {})
+            )
+        else:
+            saved_status = None
         if is_enabled("ui.auto_copy_result"):
             QGuiApplication.clipboard().setText(result)
         if self._replace_after_translate:
@@ -179,10 +185,14 @@ class TranslationController:
             self._replace_after_translate = False
         self._worker = None
         self._window._set_busy(False)
-        self._window._set_status(
-            "main.status_cached" if from_cache else "main.status_ready",
-            error=False,
-        )
+        if saved_status is not None:
+            key, params = saved_status
+            self._window._set_status(key, error=False, **params)
+        else:
+            self._window._set_status(
+                "main.status_cached" if from_cache else "main.status_ready",
+                error=False,
+            )
         self._process_queue()
         self._window._input_field.setFocus()
 
@@ -207,7 +217,7 @@ class TranslationController:
         self._window._input_field.setFocus()
 
     def _process_queue(self) -> None:
-        if not is_enabled("translation.request_queue") or not self._request_queue:
+        if not self._request_queue:
             return
         if self.is_busy():
             return

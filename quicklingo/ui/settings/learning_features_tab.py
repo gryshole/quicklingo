@@ -39,7 +39,7 @@ def _learning_extras(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
     )
     editor._add_spin(
         form,
-        "learning.daily_review",
+        "learning.srs_review",
         "daily_limit",
         "settings.features.daily_review_limit",
         5,
@@ -76,14 +76,6 @@ def _learning_extras(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
         "settings.features.quiz_question_count",
         5,
         30,
-    )
-    editor._add_spin(
-        form,
-        "learning.quiz",
-        "feedback_delay_ms",
-        "settings.features.quiz_feedback_delay_ms",
-        500,
-        5000,
     )
     editor._add_text_area(
         form,
@@ -127,24 +119,14 @@ _LEARNING_GROUP_SPECS: GroupSpecs = {
     "learning": (
         "settings.features.group_learning",
         [
-            "learning.phrasebook",
-            "learning.difficult_words",
             "learning.ai_corpus_analysis",
-            "learning.anki_preview",
             "learning.anki_export",
-            "learning.deck_scope",
-            "learning.daily_review",
             "learning.srs_review",
-            "learning.review_typing",
             "learning.card_images",
-            "learning.card_pronunciation",
-            "learning.streak",
-            "learning.extract_vocab",
             "learning.quiz",
-            "learning.progress_dashboard",
+            "learning.ai_deck_generator",
             "learning.tts_enabled",
             "learning.tts_auto_play",
-            "learning.ai_deck_generator",
         ],
     ),
 }

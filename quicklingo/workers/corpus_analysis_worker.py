@@ -30,6 +30,7 @@ class CorpusAnalysisWorker(QThread):
         tag: str,
         direction: str,
         model_entry: ModelEntry,
+        deck_display_name: str = "Corpus",
         max_candidates: int = 120,
         batch_size: int = 40,
         starred_only: bool = False,
@@ -39,6 +40,7 @@ class CorpusAnalysisWorker(QThread):
         self._records = records
         self._tag = tag
         self._direction = direction
+        self._deck_display_name = deck_display_name
         self._model_entry = model_entry
         self._max_candidates = max_candidates
         self._batch_size = batch_size
@@ -69,7 +71,7 @@ class CorpusAnalysisWorker(QThread):
         )
         difficult = compute_difficult_words(self._records)
         deck = learning.get_or_create_deck(
-            name=self._tag or "Corpus",
+            name=self._tag or self._deck_display_name,
             tag=self._tag,
             direction=self._direction,
         )
@@ -91,7 +93,7 @@ class CorpusAnalysisWorker(QThread):
         for index, batch in enumerate(batches, start=1):
             if self._cancelled:
                 raise asyncio.CancelledError()
-            self.progress.emit(f"Batch {index}/{len(batches)}")
+            self.progress.emit(tr("learning.analysis_batch", index=index, total=len(batches)))
             cards, summary = await self._analyze_batch(batch)
             all_cards.extend(cards)
             summaries.append(summary)

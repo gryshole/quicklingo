@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from quicklingo.db import learning
 from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.quiz.aggregator import get_quiz_pool_stats, list_quiz_eligible_decks
@@ -226,6 +227,7 @@ class QuizSessionWidget(QWidget):
     session_finished = Signal()
     results_shown = Signal()
     finish_requested = Signal()
+    review_weak_requested = Signal(list, int)
     deck_selection_changed = Signal(object)
     generation_finished = Signal()
 
@@ -504,12 +506,17 @@ class QuizSessionWidget(QWidget):
         victory_btn_row = QHBoxLayout(self._victory_footer)
         victory_btn_row.setContentsMargins(0, 24, 0, 0)
         victory_btn_row.addStretch()
+        self._review_weak_btn = QPushButton()
+        self._review_weak_btn.setStyleSheet(_PRIMARY_BTN)
+        self._review_weak_btn.clicked.connect(self._review_weak_words)
+        self._review_weak_btn.setVisible(False)
         self._finish_btn = QPushButton()
         self._finish_btn.setStyleSheet(_SECONDARY_BTN)
         self._finish_btn.clicked.connect(self._finish_and_return)
         self._restart_btn = QPushButton()
         self._restart_btn.setStyleSheet(_PRIMARY_BTN)
         self._restart_btn.clicked.connect(self._show_idle)
+        victory_btn_row.addWidget(self._review_weak_btn)
         victory_btn_row.addWidget(self._finish_btn)
         victory_btn_row.addWidget(self._restart_btn)
         victory_btn_row.addStretch()
@@ -583,6 +590,7 @@ class QuizSessionWidget(QWidget):
         self._refresh_btn.setText(tr("learning.quiz_refresh"))
         self._restart_btn.setText(tr("learning.quiz_restart"))
         self._finish_btn.setText(tr("learning.quiz_finish"))
+        self._review_weak_btn.setText(tr("learning.quiz_review_weak"))
         self._next_btn.setText(tr("learning.quiz_next"))
         self._wrong_title.setText(tr("learning.quiz_wrong_title"))
         self._wrong_table.setHorizontalHeaderLabels(
@@ -685,6 +693,16 @@ class QuizSessionWidget(QWidget):
         self._show_idle()
         self.finish_requested.emit()
 
+    def _review_weak_words(self) -> None:
+        result = self._controller.result()
+        card_ids = [word.card_id for word in result.wrong_words]
+        if not card_ids:
+            return
+        card = learning.get_card(card_ids[0])
+        if card is None:
+            return
+        self.review_weak_requested.emit(card_ids, card.deck_id)
+
     def _start_session(self) -> None:
         if not self._controller.start_session(self._deck_ids):
             self._refresh_idle()
@@ -780,10 +798,12 @@ class QuizSessionWidget(QWidget):
             _populate_wrong_table(self._wrong_table, self._controller)
             self._wrong_title.setVisible(True)
             self._wrong_table.setVisible(True)
+            self._review_weak_btn.setVisible(True)
         else:
             self._wrong_table.setRowCount(0)
             self._wrong_title.setVisible(False)
             self._wrong_table.setVisible(False)
+            self._review_weak_btn.setVisible(False)
         self._stack.setCurrentIndex(2)
         self._apply_victory_card_max_height()
         self.results_shown.emit()

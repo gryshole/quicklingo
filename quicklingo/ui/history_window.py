@@ -209,7 +209,7 @@ QFrame#previewCard QTextBrowser {
 
 class HistoryWindow(QDialog):
     reopen_requested = Signal(str, str, str)
-    add_to_deck_requested = Signal(str, str, str, str, str)
+    create_deck_from_tag_requested = Signal(str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -244,6 +244,9 @@ class HistoryWindow(QDialog):
         self._tag_wizard_btn = QPushButton()
         self._tag_wizard_btn.setObjectName("btnSecondary")
         self._tag_wizard_btn.clicked.connect(self._open_tag_wizard)
+        self._create_deck_btn = QPushButton()
+        self._create_deck_btn.setObjectName("btnPrimary")
+        self._create_deck_btn.clicked.connect(self._create_deck_from_filter)
         self._clear_btn = QPushButton()
         self._clear_btn.setObjectName("btnDanger")
         self._clear_btn.clicked.connect(self._clear_history)
@@ -254,6 +257,7 @@ class HistoryWindow(QDialog):
             self._transcript_btn,
             self._edit_tags_btn,
             self._tag_wizard_btn,
+            self._create_deck_btn,
         ):
             toolbar_row.addWidget(btn)
         toolbar_row.addWidget(self._clear_btn)
@@ -377,7 +381,7 @@ class HistoryWindow(QDialog):
         self._detail_field = QTextBrowser()
         self._detail_field.setOpenExternalLinks(False)
         self._detail_field.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._detail_field.customContextMenuRequested.connect(self._detail_context_menu)
+        self._detail_field.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         preview_layout.addWidget(self._detail_field, stretch=1)
         layout.addWidget(self._preview_card, stretch=1)
 
@@ -393,6 +397,7 @@ class HistoryWindow(QDialog):
         self._transcript_btn.setText(tr("history.export_transcript"))
         self._edit_tags_btn.setText(tr("history.edit_tags"))
         self._tag_wizard_btn.setText(tr("history.tag_wizard"))
+        self._create_deck_btn.setText(tr("history.create_deck_from_tag"))
         self._search_label.setText(tr("history.search_label"))
         self._search_field.setPlaceholderText(tr("history.search_placeholder"))
         self._starred_only.setText(tr("history.starred_only"))
@@ -434,7 +439,7 @@ class HistoryWindow(QDialog):
         if row < 0 or row >= len(self._records):
             return
         record = self._records[row]
-        if column == _COL_STAR and is_enabled("learning.phrasebook"):
+        if column == _COL_STAR:
             self._toggle_star(record.id, record.is_starred)
         elif column == _COL_DELETE:
             self._delete_record(record.id)
@@ -466,12 +471,12 @@ class HistoryWindow(QDialog):
         )
 
     def _apply_feature_visibility(self) -> None:
-        show_search = is_enabled("history.search")
-        show_filters = is_enabled("history.filters")
+        show_search = True
+        show_filters = True
         show_tags = is_enabled("history.tags")
-        show_export = is_enabled("history.export")
-        show_phrasebook = is_enabled("learning.phrasebook")
-        show_transcript = is_enabled("history.meeting_transcript")
+        show_export = True
+        show_phrasebook = True
+        show_transcript = True
         self._filter_card.setVisible(show_search or show_filters)
         self._search_label.setVisible(show_search)
         self._search_field.setVisible(show_search)
@@ -506,23 +511,18 @@ class HistoryWindow(QDialog):
     def refresh(self) -> None:
         self._apply_feature_visibility()
         stats = history.get_translation_stats()
-        query = self._search_field.text().strip() if is_enabled("history.search") else ""
+        query = self._search_field.text().strip()
         direction = None
         model = None
         tag = None
         date_from = None
         date_to = None
-        if is_enabled("history.filters"):
-            direction = self._direction_filter.currentData() or None
-            model = self._model_filter.currentData() or None
-            if is_enabled("history.tags"):
-                tag = self._tag_filter.currentData() or None
-            date_from, date_to = self._filter_dates()
-        starred_only = (
-            is_enabled("learning.phrasebook")
-            and is_enabled("history.filters")
-            and self._starred_only.isChecked()
-        )
+        direction = self._direction_filter.currentData() or None
+        model = self._model_filter.currentData() or None
+        if is_enabled("history.tags"):
+            tag = self._tag_filter.currentData() or None
+        date_from, date_to = self._filter_dates()
+        starred_only = self._starred_only.isChecked()
         self._records = history.search_records(
             query=query,
             direction=direction,
@@ -567,8 +567,7 @@ class HistoryWindow(QDialog):
                         )
                     self._table.setItem(row_idx, col, item)
 
-                if is_enabled("learning.phrasebook"):
-                    self._table.setItem(row_idx, _COL_STAR, _make_star_item(record.is_starred))
+                self._table.setItem(row_idx, _COL_STAR, _make_star_item(record.is_starred))
 
                 self._table.setItem(row_idx, _COL_DELETE, _make_delete_item())
 
@@ -645,39 +644,23 @@ class HistoryWindow(QDialog):
         self._reload_tag_filter()
         self.refresh()
 
-    def _detail_context_menu(self, pos) -> None:
-        if not is_enabled("learning.extract_vocab"):
-            return
-        cursor = self._detail_field.textCursor()
-        selected = cursor.selectedText().strip()
-        if not selected:
-            return
-        menu = QMenu(self)
-        action = menu.addAction(tr("history.add_to_deck"))
-        chosen = menu.exec(self._detail_field.mapToGlobal(pos))
-        if chosen != action:
-            return
-        record = self._selected_record()
-        if record is None:
-            return
-        tag = history.parse_tags(record.tags)[0] if record.tags else ""
-        self.add_to_deck_requested.emit(
-            selected,
-            record.source_text,
-            record.direction,
-            tag,
-            record.result_text,
-        )
+    def _create_deck_from_filter(self) -> None:
+        direction = self._direction_filter.currentData()
+        if not direction:
+            direction = self._direction_filter.currentText()
+        tag_data = self._tag_filter.currentData()
+        tag = ""
+        if tag_data and tag_data != "__all__":
+            tag = str(tag_data)
+        elif self._tag_filter.currentIndex() > 0:
+            tag = self._tag_filter.currentText().strip()
+        self.create_deck_from_tag_requested.emit(tag, str(direction or "ua-en"))
 
     def _toggle_star(self, record_id: int, starred: bool) -> None:
-        if not is_enabled("learning.phrasebook"):
-            return
         history.set_starred(record_id, not starred)
         self.refresh()
 
     def _export_history(self) -> None:
-        if not is_enabled("history.export"):
-            return
         path, selected_filter = QFileDialog.getSaveFileName(
             self,
             tr("history.export_title"),
@@ -701,8 +684,6 @@ class HistoryWindow(QDialog):
             handle.write(content)
 
     def _export_transcript(self) -> None:
-        if not is_enabled("history.meeting_transcript"):
-            return
         path, selected_filter = QFileDialog.getSaveFileName(
             self,
             tr("history.export_transcript_title"),

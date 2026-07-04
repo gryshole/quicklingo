@@ -51,7 +51,7 @@ class CardMediaWorker(QThread):
 
     def _process(self) -> None:
         images_enabled = is_enabled("learning.card_images")
-        pronunciation_enabled = is_enabled("learning.card_pronunciation")
+        pronunciation_enabled = is_enabled("learning.tts_enabled")
         max_images = int(get_feature("learning.card_images").get("max_images_per_batch", 25))
         images_done = 0
 

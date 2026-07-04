@@ -50,8 +50,6 @@ class TtsPrefetchService(QObject):
     def prefetch_card_term(self, card_id: int, *, direction: str, priority: bool = False) -> None:
         if not is_enabled("learning.tts_enabled"):
             return
-        if not is_enabled("learning.card_pronunciation"):
-            return
         key = (card_id, direction)
         if key in self._seen_terms:
             return

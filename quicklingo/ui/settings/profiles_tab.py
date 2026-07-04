@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from quicklingo.config.loader import get_all_directions, get_all_formatters, get_all_profiles
+from quicklingo.config.loader import get_all_directions, get_all_profiles, resolve_learning_direction
 from quicklingo.config.store import delete_profile, read_prompt_body, save_profile
 from quicklingo.config.validation import ValidationError
 from quicklingo import settings
@@ -29,6 +29,7 @@ class ProfilesTab(SettingsTab):
         self._current_id: str | None = None
         self._is_new = False
         self._direction_widgets: dict[str, dict] = {}
+        self._direction_formatters: dict[str, str] = {}
 
         root = QHBoxLayout(self)
         splitter = QSplitter()
@@ -125,9 +126,6 @@ class ProfilesTab(SettingsTab):
         for direction_id, widgets in self._direction_widgets.items():
             widgets["prompt_label"].setText(tr("settings.profiles.prompt"))
             widgets["remove_btn"].setText(tr("settings.profiles.remove_direction"))
-            formatter_label = widgets.get("formatter_label")
-            if formatter_label:
-                formatter_label.setText(tr("settings.profiles.formatter"))
 
     def reload(self) -> None:
         self._populate_list()
@@ -175,42 +173,35 @@ class ProfilesTab(SettingsTab):
     def _clear_direction_tabs(self) -> None:
         self._dir_tabs.clear()
         self._direction_widgets.clear()
+        self._direction_formatters.clear()
 
-    def _build_direction_tab(
-        self, direction_id: str, label: str, prompt: str, formatter_id: str
-    ) -> None:
+    @staticmethod
+    def _default_formatter(direction_id: str) -> str:
+        kind = resolve_learning_direction(direction_id)
+        if kind == "ua-en":
+            return "ua_en_cards"
+        if kind == "en-ua":
+            return "en_ua_cards"
+        return "plain"
+
+    def _build_direction_tab(self, direction_id: str, label: str, prompt: str) -> None:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         prompt_label = QLabel()
         prompt_edit = QPlainTextEdit()
         prompt_edit.setPlainText(prompt)
         prompt_edit.textChanged.connect(self.mark_dirty)
-        formatter_combo = QComboBox()
-        for fmt in get_all_formatters():
-            formatter_combo.addItem(fmt.name, fmt.id)
-        idx = formatter_combo.findData(formatter_id)
-        if idx >= 0:
-            formatter_combo.setCurrentIndex(idx)
-        elif formatter_combo.count():
-            formatter_combo.setCurrentIndex(0)
-        formatter_combo.currentIndexChanged.connect(lambda _: self.mark_dirty())
         remove_btn = QPushButton()
         remove_btn.clicked.connect(lambda: self._remove_direction(direction_id))
         prompt_label.setText(tr("settings.profiles.prompt"))
         layout.addWidget(prompt_label)
         layout.addWidget(prompt_edit, stretch=1)
-        form = QFormLayout()
-        formatter_label = QLabel(tr("settings.profiles.formatter"))
-        form.addRow(formatter_label, formatter_combo)
-        layout.addLayout(form)
         remove_btn.setText(tr("settings.profiles.remove_direction"))
         layout.addWidget(remove_btn)
         self._dir_tabs.addTab(widget, label)
         self._direction_widgets[direction_id] = {
             "prompt": prompt_edit,
-            "formatter": formatter_combo,
             "prompt_label": prompt_label,
-            "formatter_label": formatter_label,
             "remove_btn": remove_btn,
             "tab_label": label,
         }
@@ -236,8 +227,9 @@ class ProfilesTab(SettingsTab):
             body = read_prompt_body(profile.id, direction.id)
             if not body:
                 body = profile.prompts.get(direction.id, "")
-            fmt_id = profile.formatters.get(direction.id, "")
-            self._build_direction_tab(direction.id, direction.label, body, fmt_id)
+            fmt_id = profile.formatters.get(direction.id, "") or self._default_formatter(direction.id)
+            self._direction_formatters[direction.id] = fmt_id
+            self._build_direction_tab(direction.id, direction.label, body)
         self._refresh_add_direction_combo()
         self.mark_clean()
         self._update_move_buttons()
@@ -275,7 +267,8 @@ class ProfilesTab(SettingsTab):
         directions = get_all_directions()
         if directions:
             d = directions[0]
-            self._build_direction_tab(d.id, d.label, "You are a translation assistant.\n", "")
+            self._direction_formatters[d.id] = self._default_formatter(d.id)
+            self._build_direction_tab(d.id, d.label, "You are a translation assistant.\n")
         self._refresh_add_direction_combo()
         self.mark_dirty()
 
@@ -295,7 +288,10 @@ class ProfilesTab(SettingsTab):
         if not direction_id:
             return
         direction = next(d for d in get_all_directions() if d.id == direction_id)
-        self._build_direction_tab(direction.id, direction.label, "", "")
+        self._direction_formatters[direction.id] = self._direction_formatters.get(
+            direction.id, self._default_formatter(direction.id)
+        )
+        self._build_direction_tab(direction.id, direction.label, "")
         self._refresh_add_direction_combo()
         self.mark_dirty()
 
@@ -321,8 +317,8 @@ class ProfilesTab(SettingsTab):
             for did, w in self._direction_widgets.items()
         }
         formatters = {
-            did: w["formatter"].currentData()
-            for did, w in self._direction_widgets.items()
+            did: self._direction_formatters.get(did, self._default_formatter(did))
+            for did in self._direction_widgets
         }
         try:
             save_profile(
