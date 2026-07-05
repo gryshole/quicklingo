@@ -64,7 +64,7 @@ class AiDeckGeneratorDialog(QDialog):
         super().__init__(parent)
         self._initial_model_id = initial_model_id
         self._worker: AiDeckGeneratorWorker | None = None
-        self._result: tuple[int, str, dict] | None = None
+        self._result: tuple[int, str] | None = None
         self.setMinimumWidth(480)
         self.setModal(True)
 
@@ -78,7 +78,7 @@ class AiDeckGeneratorDialog(QDialog):
 
         self.retranslate_ui()
 
-    def result_data(self) -> tuple[int, str, dict]:
+    def result_data(self) -> tuple[int, str]:
         if self._result is None:
             raise RuntimeError("dialog not completed")
         return self._result
@@ -328,9 +328,9 @@ class AiDeckGeneratorDialog(QDialog):
             self._worker.cancel()
         self.reject()
 
-    def _on_worker_finished(self, deck_id: int, summary: str, media_meta: dict) -> None:
+    def _on_worker_finished(self, deck_id: int, summary: str) -> None:
         self._worker = None
-        self._result = (deck_id, summary, media_meta)
+        self._result = (deck_id, summary)
         self.accept()
 
     def _on_worker_error(self, message: str) -> None:

@@ -16,7 +16,7 @@ from quicklingo.providers.registry import ModelEntry
 
 
 class AiDeckGeneratorWorker(QThread):
-    finished = Signal(int, str, dict)
+    finished = Signal(int, str)
     error = Signal(str)
     progress = Signal(str)
 
@@ -40,7 +40,7 @@ class AiDeckGeneratorWorker(QThread):
 
     def run(self) -> None:
         try:
-            deck_id, summary_text, media_meta = asyncio.run(self._generate())
+            deck_id, summary_text = asyncio.run(self._generate())
         except Exception as exc:
             if self._cancelled or self.isInterruptionRequested():
                 return
@@ -48,9 +48,9 @@ class AiDeckGeneratorWorker(QThread):
             return
         if self._cancelled or self.isInterruptionRequested():
             return
-        self.finished.emit(deck_id, summary_text, media_meta)
+        self.finished.emit(deck_id, summary_text)
 
-    async def _generate(self) -> tuple[int, str, dict]:
+    async def _generate(self) -> tuple[int, str]:
         params = self._params
         tag = params.normalized_tag()
 
@@ -68,7 +68,7 @@ class AiDeckGeneratorWorker(QThread):
         if not candidates:
             summary = format_deck_summary(params, word_count=0)
             learning.update_deck_summary(deck.id, summary)
-            return deck.id, summary, {"card_ids": [], "imageable": {}, "image_prompts": {}}
+            return deck.id, summary
 
         all_cards: list[dict] = []
         summaries: list[AnalysisSummary] = []
@@ -118,14 +118,7 @@ class AiDeckGeneratorWorker(QThread):
                 )
             )
 
-        card_ids = learning.batch_upsert_cards(deck.id, prepared)
-        imageable: dict[int, bool] = {}
-        image_prompts: dict[int, str] = {}
-        for card_id, card in zip(card_ids, prepared[: len(card_ids)]):
-            imageable[card_id] = bool(card.get("imageable"))
-            prompt = str(card.get("image_prompt", "")).strip()
-            if prompt:
-                image_prompts[card_id] = prompt
+        learning.batch_upsert_cards(deck.id, prepared)
 
         merged = AnalysisSummary(
             themes=_merge_unique(s.themes for s in summaries),
@@ -139,12 +132,7 @@ class AiDeckGeneratorWorker(QThread):
         if merged.themes or merged.comment:
             summary_text += f"\nThemes: {', '.join(merged.themes)}. {merged.comment}".strip()
         learning.update_deck_summary(deck.id, summary_text)
-        media_meta = {
-            "card_ids": card_ids,
-            "imageable": imageable,
-            "image_prompts": image_prompts,
-        }
-        return deck.id, summary_text, media_meta
+        return deck.id, summary_text
 
     async def _fetch_word_list(self) -> list[str]:
         prompt = build_word_list_prompt(self._params)

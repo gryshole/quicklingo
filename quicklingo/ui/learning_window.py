@@ -3,14 +3,12 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QShowEvent
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -27,24 +25,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from quicklingo import settings
-from quicklingo.config.loader import get_direction_label, get_directions, resolve_learning_direction
-from quicklingo.db import history, learning
-from quicklingo.features import get_feature, is_enabled
+from quicklingo.config.loader import get_direction_label, resolve_learning_direction
+from quicklingo.db import learning
+from quicklingo.features import is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.anki_export import export_anki_apkg, export_anki_csv
 from quicklingo.learning.card_display import parse_context, serialize_context
-from quicklingo.learning.corpus_analysis import select_candidates
-from quicklingo.learning.corpus_tags import UNTAGGED_SENTINEL
-from quicklingo.learning.difficult_words import compute_difficult_words
 from quicklingo.learning.review_queue import card_bucket, count_due_cards
-from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.ui.dialogs.ai_deck_generator_dialog import AiDeckGeneratorDialog
 from quicklingo.ui.dialogs.learning_onboarding_dialog import LearningOnboardingDialog
 from quicklingo.ui.controllers.update_controller import UpdateController
-from quicklingo.ui.qt_utils import configure_single_line_combo, open_help, reload_combo
+from quicklingo.ui.qt_utils import configure_single_line_combo, open_help
 from quicklingo.ui.settings_dialog import SettingsDialog
-from quicklingo.ui.widgets.learning_empty_state import LearningEmptyStateWidget
+from quicklingo.ui.widgets.create_deck_tab import CreateDeckTabWidget
 from quicklingo.ui.widgets.learning_progress import LearningProgressWidget
 from quicklingo.ui.widgets.quiz_session import QuizSessionWidget
 from quicklingo.ui.widgets.review_session import ReviewSessionWidget
@@ -55,8 +48,6 @@ from quicklingo.ui.window_state import (
     save_table_columns,
     save_window_geometry,
 )
-from quicklingo.workers.card_media_worker import CardMediaWorker
-from quicklingo.workers.corpus_analysis_worker import CorpusAnalysisWorker
 
 
 _TAB_CREATE_DECK = 0
@@ -139,6 +130,21 @@ QPushButton#btnDanger:hover:enabled {
     background-color: #fef2f2;
     border-color: #ef4444;
     color: #ef4444;
+}
+QFrame#deckSummaryCard {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+QFrame#deckSummaryCard QLabel#deckSummaryLabel {
+    color: #475569;
+    font-size: 12px;
+}
+QFrame#deckSummaryCard QLabel#deckSummaryTitle {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
 }
 QFrame#cardsTableCard {
     background-color: #ffffff;
@@ -250,20 +256,20 @@ class LearningWindow(QMainWindow):
         self._help_learning_action = None
         self._quit_action = None
         restore_window_geometry(self, "learning", default_width=860, default_height=640)
-        self._worker: CorpusAnalysisWorker | None = None
-        self._media_worker: CardMediaWorker | None = None
         self._current_deck_id: int | None = None
         self._pending_nav: dict | None = None
 
         self._tabs = QTabWidget()
 
-        self._analyze_tab = self._build_analyze_tab()
+        self._create_deck_tab = CreateDeckTabWidget(standalone=standalone)
+        self._create_deck_tab.deck_created.connect(self._on_deck_created)
+        self._create_deck_tab.open_main_window.connect(self._on_create_deck_open_main)
         self._cards_tab = self._build_cards_tab()
         self._review_tab = self._build_review_tab()
         self._quiz_tab = self._build_quiz_tab()
         self._progress_tab = self._build_progress_tab()
 
-        self._tabs.addTab(self._analyze_tab, "")
+        self._tabs.addTab(self._create_deck_tab, "")
         self._tabs.addTab(self._cards_tab, "")
         self._tabs.addTab(self._review_tab, "")
         self._tabs.addTab(self._quiz_tab, "")
@@ -298,7 +304,6 @@ class LearningWindow(QMainWindow):
         self._configure_cards_table_columns()
         bind_table_columns_persistence(self._cards_table, "learning", "cards")
         self.retranslate_ui()
-        self._reload_tags()
         self._reload_decks()
 
     def _build_help_menu(self, menu_bar) -> None:
@@ -349,93 +354,6 @@ class LearningWindow(QMainWindow):
         if self._updates is not None:
             self._updates.check_for_updates()
 
-    def _build_analyze_tab(self) -> QWidget:
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        self._analyze_empty = LearningEmptyStateWidget()
-        self._analyze_empty.action_requested.connect(self._on_analyze_empty_action)
-        layout.addWidget(self._analyze_empty)
-
-        self._analyze_form_host = QWidget()
-        form_layout = QVBoxLayout(self._analyze_form_host)
-        form_layout.setContentsMargins(0, 0, 0, 0)
-
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
-        self._tag_combo = QComboBox()
-        configure_single_line_combo(self._tag_combo)
-        self._direction_combo = QComboBox()
-        seen_kinds: set[str] = set()
-        for direction in get_directions():
-            kind = resolve_learning_direction(direction.id)
-            if kind in seen_kinds:
-                continue
-            seen_kinds.add(kind)
-            if kind == "ua-en":
-                label = tr("learning.direction_learn_english")
-            elif kind == "en-ua":
-                label = tr("learning.direction_from_content")
-            else:
-                label = direction.label
-            self._direction_combo.addItem(label, kind)
-        default_index = 0
-        best_count = -1
-        for index in range(self._direction_combo.count()):
-            kind = self._direction_combo.itemData(index)
-            count = history.count_corpus_records(direction=kind, learning_kind=True)
-            if count > best_count:
-                best_count = count
-                default_index = index
-        if self._direction_combo.count():
-            self._direction_combo.setCurrentIndex(default_index)
-        self._direction_combo.currentIndexChanged.connect(self._reload_tags)
-        self._starred_only = QCheckBox()
-        self._model_combo = QComboBox()
-        configure_single_line_combo(self._model_combo)
-        self._reload_model_combo()
-        self._tag_label = QLabel()
-        self._direction_label = QLabel()
-        self._model_label = QLabel()
-        form.addRow(self._tag_label, self._tag_combo)
-        form.addRow(self._direction_label, self._direction_combo)
-        form.addRow(self._model_label, self._model_combo)
-        form.addRow("", self._starred_only)
-        form_layout.addLayout(form)
-
-        btn_row = QHBoxLayout()
-        self._preview_btn = QPushButton()
-        self._preview_btn.clicked.connect(self._preview_local)
-        self._analyze_btn = QPushButton()
-        self._analyze_btn.setObjectName("btnPrimary")
-        self._analyze_btn.clicked.connect(self._run_analysis)
-        self._cancel_btn = QPushButton()
-        self._cancel_btn.clicked.connect(self._cancel_analysis)
-        self._cancel_btn.setVisible(False)
-        btn_row.addWidget(self._preview_btn)
-        btn_row.addWidget(self._analyze_btn)
-        btn_row.addWidget(self._cancel_btn)
-        btn_row.addStretch()
-        form_layout.addLayout(btn_row)
-
-        self._status_label = QLabel()
-        self._status_label.setWordWrap(True)
-        self._preview_field = QTextEdit()
-        self._preview_field.setReadOnly(True)
-        self._summary_field = QTextEdit()
-        self._summary_field.setReadOnly(True)
-        self._preview_title = QLabel()
-        self._summary_title = QLabel()
-        form_layout.addWidget(self._status_label)
-        form_layout.addWidget(self._preview_title)
-        form_layout.addWidget(self._preview_field, stretch=1)
-        form_layout.addWidget(self._summary_title)
-        form_layout.addWidget(self._summary_field, stretch=1)
-        layout.addWidget(self._analyze_form_host, stretch=1)
-        self._tag_combo.currentIndexChanged.connect(self._update_analyze_empty_state)
-        return widget
-
     def _build_cards_tab(self) -> QWidget:
         widget = QWidget()
         widget.setObjectName("CardsTabWidget")
@@ -461,9 +379,6 @@ class LearningWindow(QMainWindow):
         self._edit_card_btn = QPushButton()
         self._edit_card_btn.setObjectName("btnSecondary")
         self._edit_card_btn.clicked.connect(self._edit_selected_card)
-        self._media_btn = QPushButton()
-        self._media_btn.setObjectName("btnSecondary")
-        self._media_btn.clicked.connect(self._generate_media_for_deck)
         self._delete_card_btn = QPushButton()
         self._delete_card_btn.setObjectName("btnDanger")
         self._delete_card_btn.clicked.connect(self._delete_selected_card)
@@ -476,11 +391,25 @@ class LearningWindow(QMainWindow):
         top.addWidget(self._generate_ai_deck_btn)
         top.addWidget(self._export_btn)
         top.addWidget(self._edit_card_btn)
-        top.addWidget(self._media_btn)
         top.addStretch()
         top.addWidget(self._delete_card_btn)
         top.addWidget(self._delete_deck_btn)
         layout.addLayout(top)
+
+        self._deck_summary_card = QFrame()
+        self._deck_summary_card.setObjectName("deckSummaryCard")
+        summary_layout = QVBoxLayout(self._deck_summary_card)
+        summary_layout.setContentsMargins(14, 12, 14, 12)
+        summary_layout.setSpacing(6)
+        self._deck_summary_title = QLabel()
+        self._deck_summary_title.setObjectName("deckSummaryTitle")
+        self._deck_summary_label = QLabel()
+        self._deck_summary_label.setObjectName("deckSummaryLabel")
+        self._deck_summary_label.setWordWrap(True)
+        summary_layout.addWidget(self._deck_summary_title)
+        summary_layout.addWidget(self._deck_summary_label)
+        self._deck_summary_card.setVisible(False)
+        layout.addWidget(self._deck_summary_card)
 
         self._cards_table_card = QFrame()
         self._cards_table_card.setObjectName("cardsTableCard")
@@ -576,19 +505,11 @@ class LearningWindow(QMainWindow):
         self._tabs.setTabText(_TAB_REVIEW, tr("learning.tab_review"))
         self._tabs.setTabText(_TAB_QUIZ, tr("learning.tab_quiz"))
         self._tabs.setTabText(_TAB_STATS, tr("learning.section_stats"))
-        self._tag_label.setText(tr("learning.corpus_tag"))
-        self._direction_label.setText(tr("learning.direction"))
-        self._model_label.setText(tr("learning.model"))
-        self._starred_only.setText(tr("learning.starred_only"))
-        self._preview_btn.setText(tr("learning.preview_local"))
-        self._analyze_btn.setText(tr("learning.run_analysis"))
-        self._cancel_btn.setText(tr("main.cancel"))
-        self._preview_title.setText(tr("learning.local_preview"))
-        self._summary_title.setText(tr("learning.analysis_summary"))
+        self._create_deck_tab.retranslate_ui()
         self._deck_label.setText(tr("learning.deck"))
+        self._deck_summary_title.setText(tr("learning.analysis_summary").upper())
         self._export_btn.setText(tr("learning.export_anki"))
         self._edit_card_btn.setText(tr("learning.edit_card"))
-        self._media_btn.setText(tr("learning.generate_media"))
         self._delete_card_btn.setText(tr("learning.delete_card"))
         self._delete_deck_btn.setText(tr("learning.delete_deck"))
         self._generate_ai_deck_btn.setText(tr("learning.ai_deck.generate_button"))
@@ -608,7 +529,6 @@ class LearningWindow(QMainWindow):
         )
         self._review_deck_label.setText(tr("learning.deck"))
         self._update_learn_context_label()
-        self._update_analyze_empty_state()
         self._review_session.retranslate_ui()
         self._quiz_session.retranslate_ui()
         if hasattr(self, "_progress_widget"):
@@ -625,83 +545,12 @@ class LearningWindow(QMainWindow):
         header.resizeSection(8, min(header.sectionSize(8), _LEARNING_CARDS_PRIORITY_WIDTH))
 
     def _reload_model_combo(self) -> None:
-        current = self._model_combo.currentData() if self._model_combo.count() else None
-        if current is None:
-            stored_model, _ = settings.get_ui_preferences()
-            current = stored_model
-        reload_combo(
-            self._model_combo,
-            [(entry.model_id, entry.display_name) for entry in get_model_entries()],
-            current_data=current,
-        )
-        if self._model_combo.count() and self._model_combo.currentIndex() < 0:
-            self._model_combo.setCurrentIndex(0)
+        self._create_deck_tab.reload_model_combo()
 
     def _reload_tags(self) -> None:
-        direction = self._direction_combo.currentData()
-        current = self._tag_combo.currentData()
-        self._tag_combo.blockSignals(True)
-        self._tag_combo.clear()
-        untagged = history.count_untagged(direction=direction, learning_kind=True)
-        self._tag_combo.addItem(tr("learning.tag_untagged", count=untagged), UNTAGGED_SENTINEL)
-        if is_enabled("history.tags"):
-            for tag, count in history.get_tag_counts(direction=direction, learning_kind=True):
-                self._tag_combo.addItem(f"{tag} ({count})", tag)
-        if current is not None:
-            index = self._tag_combo.findData(current)
-            if index >= 0:
-                self._tag_combo.setCurrentIndex(index)
-        elif untagged > 0:
-            self._tag_combo.setCurrentIndex(0)
-        elif self._tag_combo.count() > 1:
-            self._tag_combo.setCurrentIndex(1)
-        elif self._tag_combo.count():
-            self._tag_combo.setCurrentIndex(0)
-        self._tag_combo.blockSignals(False)
-        self._update_analyze_empty_state()
+        self._create_deck_tab._reload_tags()
 
-    def _corpus_tag_selection(self) -> tuple[str, bool, str]:
-        data = self._tag_combo.currentData()
-        if data == UNTAGGED_SENTINEL:
-            return "", True, tr("learning.untagged_deck_name")
-        tag = str(data or "").strip()
-        return tag, False, tag or tr("learning.untagged_deck_name")
-
-    def _corpus_records(self) -> list[history.TranslationRecord]:
-        tag, untagged, _label = self._corpus_tag_selection()
-        direction = self._direction_combo.currentData()
-        if untagged:
-            return history.search_records(
-                direction=direction, untagged_only=True, limit=5000, learning_kind=True
-            )
-        if not tag:
-            return []
-        return history.search_records(
-            direction=direction, tag=tag, limit=5000, learning_kind=True
-        )
-
-    def _update_analyze_empty_state(self) -> None:
-        if not hasattr(self, "_analyze_empty"):
-            return
-        records = self._corpus_records()
-        has_records = bool(records)
-        self._analyze_form_host.setVisible(True)
-        self._preview_btn.setEnabled(has_records)
-        self._analyze_btn.setEnabled(has_records)
-        if has_records:
-            self._analyze_empty.hide_state()
-            return
-        _tag, untagged, label = self._corpus_tag_selection()
-        if untagged:
-            title = tr("learning.empty_untagged_title")
-            body = tr("learning.empty_untagged_body")
-        else:
-            title = tr("learning.empty_tag_title", tag=label)
-            body = tr("learning.empty_tag_body", tag=label)
-        action = "" if self._standalone else tr("learning.empty_open_main")
-        self._analyze_empty.set_content(title, body, action=action)
-
-    def _on_analyze_empty_action(self) -> None:
+    def _on_create_deck_open_main(self) -> None:
         if not self._standalone and self.parent() is not None:
             from quicklingo.ui.qt_utils import raise_window
 
@@ -732,18 +581,11 @@ class LearningWindow(QMainWindow):
             return
         nav = self._pending_nav
         self._pending_nav = None
-        if nav.get("direction"):
-            index = self._direction_combo.findData(nav["direction"])
-            if index >= 0:
-                self._direction_combo.setCurrentIndex(index)
-        self._reload_tags()
-        if nav.get("untagged"):
-            index = self._tag_combo.findData(UNTAGGED_SENTINEL)
-        else:
-            tag = nav.get("tag") or ""
-            index = self._tag_combo.findData(tag)
-        if index >= 0:
-            self._tag_combo.setCurrentIndex(index)
+        self._create_deck_tab.apply_navigation(
+            tag=nav.get("tag"),
+            direction=nav.get("direction"),
+            untagged=bool(nav.get("untagged")),
+        )
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
@@ -752,7 +594,9 @@ class LearningWindow(QMainWindow):
         LearningOnboardingDialog.maybe_show(self, standalone=self._standalone)
 
     def _on_tab_changed(self, index: int) -> None:
-        if index == _TAB_CARDS:
+        if index == _TAB_CREATE_DECK:
+            self._create_deck_tab._reload_tags()
+        elif index == _TAB_CARDS:
             self._load_cards()
         elif index == _TAB_REVIEW:
             self._on_review_deck_changed()
@@ -827,147 +671,12 @@ class LearningWindow(QMainWindow):
         self._review_session.set_deck(deck_id, direction=direction)
         self._update_learn_context_label()
 
-    def _preview_local(self) -> None:
-        records = self._corpus_records()
-        difficult = compute_difficult_words(records)
-        max_candidates = int(get_feature("learning.ai_corpus_analysis").get("max_candidates", 120))
-        candidates = select_candidates(
-            records,
-            max_candidates=max_candidates,
-            starred_only=self._starred_only.isChecked(),
-            difficult_items=difficult,
-        )
-        lines = [
-            tr("learning.preview_stats", records=len(records), candidates=len(candidates)),
-            "",
-        ]
-        for item in difficult[:25]:
-            lines.append(f"- {item.term} ({item.count}) [{item.kind}]")
-        self._preview_field.setPlainText("\n".join(lines))
-        self._status_label.setText(tr("learning.preview_ready"))
-
-    def _run_analysis(self) -> None:
-        if not is_enabled("learning.ai_corpus_analysis"):
-            QMessageBox.information(
-                self,
-                tr("learning.window_title"),
-                tr("learning.analysis_disabled"),
-            )
-            return
-        if self._worker is not None and self._worker.isRunning():
-            return
-        records = self._corpus_records()
-        if not records:
-            self._status_label.setText(tr("learning.no_corpus"))
-            return
-        tag, _untagged, deck_label = self._corpus_tag_selection()
-        direction = self._direction_combo.currentData()
-        max_candidates = int(get_feature("learning.ai_corpus_analysis").get("max_candidates", 120))
-        candidates = select_candidates(
-            records,
-            max_candidates=max_candidates,
-            starred_only=self._starred_only.isChecked(),
-            difficult_items=compute_difficult_words(records),
-        )
-        direction_label = self._direction_combo.currentText()
-        confirm = QMessageBox.question(
-            self,
-            tr("learning.analysis_confirm_title"),
-            tr(
-                "learning.analysis_confirm_body",
-                records=len(records),
-                candidates=len(candidates),
-                deck=deck_label,
-                direction=direction_label,
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
-        model_entry = get_model_by_index(self._model_combo.currentIndex())
-        feature = get_feature("learning.ai_corpus_analysis")
-        self._worker = CorpusAnalysisWorker(
-            records,
-            tag=tag,
-            direction=direction,
-            model_entry=model_entry,
-            deck_display_name=deck_label,
-            max_candidates=int(feature.get("max_candidates", 120)),
-            batch_size=int(feature.get("batch_size", 40)),
-            starred_only=self._starred_only.isChecked(),
-            parent=self,
-        )
-        self._worker.progress.connect(self._status_label.setText)
-        self._worker.finished.connect(self._on_analysis_finished)
-        self._worker.error.connect(self._on_analysis_error)
-        self._analyze_btn.setEnabled(False)
-        self._cancel_btn.setVisible(True)
-        self._status_label.setText(tr("learning.analysis_running"))
-        self._worker.start()
-
-    def _cancel_analysis(self) -> None:
-        if self._worker is not None and self._worker.isRunning():
-            self._worker.cancel()
-
-    def _on_analysis_finished(self, deck_id: int, summary: str, media_meta: dict) -> None:
-        self._worker = None
+    def _on_deck_created(self, deck_id: int, summary: str) -> None:
         self._current_deck_id = deck_id
-        self._analyze_btn.setEnabled(True)
-        self._cancel_btn.setVisible(False)
-        self._summary_field.setPlainText(summary)
-        self._status_label.setText(tr("learning.analysis_done"))
         self._reload_decks()
         self._load_cards()
+        self._create_deck_tab._reload_tags()
         self._tabs.setCurrentIndex(_TAB_CARDS)
-        self._start_media_worker(deck_id, media_meta)
-
-    def _on_analysis_error(self, message: str) -> None:
-        self._worker = None
-        self._analyze_btn.setEnabled(True)
-        self._cancel_btn.setVisible(False)
-        self._status_label.setText(tr("main.status_error", message=message))
-
-    def _start_media_worker(self, deck_id: int, media_meta: dict) -> None:
-        card_ids = media_meta.get("card_ids", [])
-        if not card_ids:
-            return
-        if self._media_worker is not None and self._media_worker.isRunning():
-            self._media_worker.cancel()
-        deck = learning.get_deck(deck_id)
-        if deck is None:
-            return
-        self._media_worker = CardMediaWorker(
-            deck_id,
-            card_ids,
-            direction=deck.direction,
-            image_prompts=media_meta.get("image_prompts", {}),
-            imageable=media_meta.get("imageable", {}),
-            parent=self,
-        )
-        self._media_worker.progress.connect(
-            lambda msg: self._status_label.setText(tr("learning.media_progress", msg=msg))
-        )
-        self._media_worker.finished.connect(self._on_media_finished)
-        self._media_worker.start()
-
-    def _on_media_finished(self, _deck_id: int) -> None:
-        self._media_worker = None
-        self._load_cards()
-        self._status_label.setText(tr("learning.media_done"))
-
-    def _generate_media_for_deck(self) -> None:
-        deck_id = self._deck_combo.currentData()
-        deck = learning.get_deck(deck_id) if deck_id else None
-        if deck is None:
-            return
-        cards = learning.list_cards(deck.id)
-        imageable = {card.id: bool(card.image_prompt) for card in cards}
-        image_prompts = {card.id: card.image_prompt for card in cards if card.image_prompt}
-        self._start_media_worker(
-            deck.id,
-            {"card_ids": [card.id for card in cards], "imageable": imageable, "image_prompts": image_prompts},
-        )
 
     def _status_label_for_card(self, card: learning.LearningCard) -> str:
         bucket = card_bucket(card)
@@ -986,10 +695,15 @@ class LearningWindow(QMainWindow):
         deck_id = self._deck_combo.currentData()
         if deck_id is None:
             self._cards_table.setRowCount(0)
+            self._deck_summary_card.setVisible(False)
             return
         deck = learning.get_deck(deck_id)
         if deck and deck.analysis_summary:
-            self._summary_field.setPlainText(deck.analysis_summary)
+            self._deck_summary_label.setText(deck.analysis_summary)
+            self._deck_summary_card.setVisible(True)
+        else:
+            self._deck_summary_label.clear()
+            self._deck_summary_card.setVisible(False)
         cards = learning.list_cards(deck_id)
         learning.backfill_card_fields(deck_id)
         cards = learning.list_cards(deck_id)
@@ -1094,24 +808,22 @@ class LearningWindow(QMainWindow):
             return
         dialog = AiDeckGeneratorDialog(
             self,
-            initial_model_id=self._model_combo.currentData(),
+            initial_model_id=self._create_deck_tab.current_model_id(),
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        deck_id, summary, media_meta = dialog.result_data()
-        self._on_ai_deck_finished(deck_id, summary, media_meta)
+        deck_id, summary = dialog.result_data()
+        self._on_ai_deck_finished(deck_id, summary)
 
-    def _on_ai_deck_finished(self, deck_id: int, summary: str, media_meta: dict) -> None:
+    def _on_ai_deck_finished(self, deck_id: int, summary: str) -> None:
         self._current_deck_id = deck_id
-        self._summary_field.setPlainText(summary)
-        self._status_label.setText(tr("learning.ai_deck.done"))
+        self._create_deck_tab.set_status(tr("learning.ai_deck.done"))
         self._reload_decks()
         index = self._deck_combo.findData(deck_id)
         if index >= 0:
             self._deck_combo.setCurrentIndex(index)
         self._tabs.setCurrentIndex(_TAB_CARDS)
         self._load_cards()
-        self._start_media_worker(deck_id, media_meta)
 
     def _delete_selected_deck(self) -> None:
         deck_id = self._deck_combo.currentData()
@@ -1153,10 +865,9 @@ class LearningWindow(QMainWindow):
         self._current_deck_id = deck.id
         self._reload_decks()
         self._load_cards()
+        self._create_deck_tab._reload_tags()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._media_worker is not None and self._media_worker.isRunning():
-            self._media_worker.cancel()
         save_table_columns(self._cards_table, "learning", "cards")
         save_window_geometry(self, "learning")
         self.closed.emit()

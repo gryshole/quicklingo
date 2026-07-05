@@ -103,8 +103,23 @@ def settings_ui_font(family: str | None = None) -> QFont:
     return font
 
 
+def ensure_valid_point_font(widget: QWidget) -> QFont:
+    """QSS pixel font sizes leave pointSize at -1; normalize before Qt uses it."""
+    font = QFont(widget.font())
+    if font.pointSize() <= 0:
+        if font.pixelSize() > 0:
+            font.setPointSize(max(1, round(font.pixelSize() * 0.75)))
+        else:
+            font.setPointSize(SETTINGS_FONT_PT)
+        widget.setFont(font)
+    return font
+
+
 def apply_combo_font(combo: QComboBox) -> None:
     """Ensure combo, popup list, and line edit use a valid point-size font."""
+    if getattr(combo, "_ql_combo_font_patched", False):
+        return
+
     font = settings_ui_font(combo.font().family())
     combo.setFont(font)
     view = combo.view()
@@ -113,6 +128,18 @@ def apply_combo_font(combo: QComboBox) -> None:
     line_edit = combo.lineEdit()
     if line_edit is not None:
         line_edit.setFont(font)
+
+    original_show_popup = combo.showPopup
+
+    def show_popup_with_font() -> None:
+        ensure_valid_point_font(combo)
+        popup_view = combo.view()
+        if popup_view is not None:
+            popup_view.setFont(settings_ui_font(combo.font().family()))
+        original_show_popup()
+
+    combo.showPopup = show_popup_with_font  # type: ignore[method-assign]
+    combo._ql_combo_font_patched = True
 
 
 def _settings_combo_style() -> str:

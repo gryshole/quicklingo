@@ -220,16 +220,18 @@ def parse_analysis_response(raw: str) -> tuple[list[dict], AnalysisSummary]:
 
 
 def format_summary_text(summary: AnalysisSummary, *, difficult: list[DifficultItem]) -> str:
+    from quicklingo.i18n import tr
+
     lines = []
     if summary.comment:
         lines.append(summary.comment)
     if summary.themes:
-        lines.append("Themes: " + ", ".join(summary.themes))
-    lines.append(f"Recommended daily: {summary.recommended_daily_count}")
-    lines.append(f"Unique items: {summary.total_unique}")
+        lines.append(tr("learning.summary_themes", themes=", ".join(summary.themes)))
+    lines.append(tr("learning.summary_daily", count=summary.recommended_daily_count))
+    lines.append(tr("learning.summary_cards", count=summary.total_unique))
     if difficult:
         preview = ", ".join(item.term for item in difficult[:12])
-        lines.append(f"Difficult (local): {preview}")
+        lines.append(tr("learning.summary_difficult", terms=preview))
     return "\n".join(lines)
 
 

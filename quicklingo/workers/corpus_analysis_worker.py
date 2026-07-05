@@ -13,15 +13,18 @@ from quicklingo.learning.corpus_analysis import (
     parse_analysis_response,
     select_candidates,
 )
+from quicklingo.learning.deck_corpus import pending_corpus_records
 from quicklingo.learning.difficult_words import compute_difficult_words
+from quicklingo.i18n import tr
 from quicklingo.logging.ai_requests import ai_request_scope
 from quicklingo.providers.registry import ModelEntry
 
 
 class CorpusAnalysisWorker(QThread):
-    finished = Signal(int, str, dict)
+    finished = Signal(int, str)
     error = Signal(str)
     progress = Signal(str)
+    cancelled = Signal()
 
     def __init__(
         self,
@@ -53,23 +56,33 @@ class CorpusAnalysisWorker(QThread):
 
     def run(self) -> None:
         try:
-            deck_id, summary_text, media_meta = asyncio.run(self._analyze())
+            deck_id, summary_text = asyncio.run(self._analyze())
+        except asyncio.CancelledError:
+            self.cancelled.emit()
+            return
         except Exception as exc:
             if self._cancelled:
+                self.cancelled.emit()
                 return
             self.error.emit(str(exc))
             return
         if self._cancelled:
+            self.cancelled.emit()
             return
-        self.finished.emit(deck_id, summary_text, media_meta)
+        self.finished.emit(deck_id, summary_text)
 
-    async def _analyze(self) -> tuple[int, str, dict]:
-        candidates = select_candidates(
+    async def _analyze(self) -> tuple[int, str]:
+        records = pending_corpus_records(
             self._records,
+            tag=self._tag,
+            direction=self._direction,
+        )
+        candidates = select_candidates(
+            records,
             max_candidates=self._max_candidates,
             starred_only=self._starred_only,
         )
-        difficult = compute_difficult_words(self._records)
+        difficult = compute_difficult_words(records)
         deck = learning.get_or_create_deck(
             name=self._tag or self._deck_display_name,
             tag=self._tag,
@@ -78,11 +91,11 @@ class CorpusAnalysisWorker(QThread):
 
         if not candidates:
             summary = format_summary_text(
-                AnalysisSummary([], 20, 0, "No records in corpus."),
+                AnalysisSummary([], 20, 0, tr("learning.summary_no_records")),
                 difficult=difficult,
             )
             learning.update_deck_summary(deck.id, summary)
-            return deck.id, summary, {"card_ids": [], "imageable": {}, "image_prompts": {}}
+            return deck.id, summary
 
         all_cards: list[dict] = []
         summaries: list[AnalysisSummary] = []
@@ -149,23 +162,10 @@ class CorpusAnalysisWorker(QThread):
                 )
             )
 
-        card_ids = learning.batch_upsert_cards(deck.id, prepared)
-        imageable: dict[int, bool] = {}
-        image_prompts: dict[int, str] = {}
-        for card_id, card in zip(card_ids, prepared[: len(card_ids)]):
-            imageable[card_id] = bool(card.get("imageable"))
-            prompt = str(card.get("image_prompt", "")).strip()
-            if prompt:
-                image_prompts[card_id] = prompt
-
+        learning.batch_upsert_cards(deck.id, prepared)
         summary_text = format_summary_text(merged, difficult=difficult)
         learning.update_deck_summary(deck.id, summary_text)
-        media_meta = {
-            "card_ids": card_ids,
-            "imageable": imageable,
-            "image_prompts": image_prompts,
-        }
-        return deck.id, summary_text, media_meta
+        return deck.id, summary_text
 
     async def _analyze_batch(
         self, batch: list[CorpusCandidate]

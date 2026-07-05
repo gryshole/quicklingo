@@ -31,6 +31,8 @@ class TtsPrefetchWorker(QThread):
 
 
 class TtsTermPrefetchWorker(QThread):
+    finished_card = Signal(int)
+
     def __init__(self, card_id: int, *, direction: str, parent=None) -> None:
         super().__init__(parent)
         self._card_id = card_id
@@ -40,6 +42,8 @@ class TtsTermPrefetchWorker(QThread):
         if self.isInterruptionRequested():
             return
         ensure_card_pronunciation(self._card_id, direction=self._direction)
+        if not self.isInterruptionRequested():
+            self.finished_card.emit(self._card_id)
 
 
 class TtsSynthWorker(QThread):

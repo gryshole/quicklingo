@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 
 from quicklingo.db import learning
 from quicklingo.features import is_enabled
@@ -15,6 +15,8 @@ _service: TtsPrefetchService | None = None
 
 
 class TtsPrefetchService(QObject):
+    term_ready = Signal(int)
+
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._sentence_queue: list[str] = []
@@ -88,8 +90,12 @@ class TtsPrefetchService(QObject):
             return
         card_id, direction = self._term_queue.pop(0)
         self._term_worker = TtsTermPrefetchWorker(card_id, direction=direction, parent=self)
+        self._term_worker.finished_card.connect(self._on_term_worker_card_ready)
         self._term_worker.finished.connect(self._on_term_worker_finished)
         self._term_worker.start()
+
+    def _on_term_worker_card_ready(self, card_id: int) -> None:
+        self.term_ready.emit(card_id)
 
     def _on_term_worker_finished(self) -> None:
         self._term_worker = None

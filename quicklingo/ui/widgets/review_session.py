@@ -33,6 +33,7 @@ from quicklingo.learning.image_resolver import resolve_image_path
 from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch import collect_review_card_tts_texts, collect_review_tts_texts
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
+from quicklingo.workers.card_image_worker import CardImageFetchWorker
 from quicklingo.learning.cram_queue import cram_hard_cards, cram_train_cards
 from quicklingo.learning.fsrs_review import preview_fsrs_intervals
 from quicklingo.learning.review_queue import count_due_cards
@@ -308,8 +309,11 @@ class ReviewSessionWidget(QWidget):
         self._deck_id: int | None = None
         self._direction = "ua-en"
         self._example_sentences: list[str] = []
+        self._image_worker: CardImageFetchWorker | None = None
+        self._image_fetch_card_id: int | None = None
 
         self._audio = AudioService(self)
+        tts_prefetch_service().term_ready.connect(self._on_term_audio_ready)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -622,6 +626,7 @@ class ReviewSessionWidget(QWidget):
         self._update_done_buttons()
 
     def set_deck(self, deck_id: int | None, *, direction: str = "ua-en") -> None:
+        self._cancel_image_fetch()
         self._deck_id = deck_id
         self._direction = direction
         self._controller.reset()
@@ -824,17 +829,27 @@ class ReviewSessionWidget(QWidget):
         self._maybe_auto_play_term(card)
 
     def _render_image(self, card: learning.LearningCard) -> None:
-        if not is_enabled("learning.card_images") or not card.image_path:
-            self._image_label.clear()
-            self._image_label.setVisible(False)
+        if not is_enabled("learning.card_images"):
+            self._clear_image()
             return
-        path = resolve_image_path(card.image_path)
-        if path is None:
-            self._image_label.setVisible(False)
+        path = resolve_image_path(card.image_path) if card.image_path else None
+        if path is not None:
+            self._show_image_path(path)
             return
+        if not card.image_prompt.strip():
+            self._clear_image()
+            return
+        self._clear_image()
+        self._request_card_image(card)
+
+    def _clear_image(self) -> None:
+        self._image_label.clear()
+        self._image_label.setVisible(False)
+
+    def _show_image_path(self, path) -> None:
         pixmap = QPixmap(str(path))
         if pixmap.isNull():
-            self._image_label.setVisible(False)
+            self._clear_image()
             return
         scaled = pixmap.scaled(
             320,
@@ -844,6 +859,56 @@ class ReviewSessionWidget(QWidget):
         )
         self._image_label.setPixmap(scaled)
         self._image_label.setVisible(True)
+
+    def _cancel_image_fetch(self) -> None:
+        if self._image_worker is not None and self._image_worker.isRunning():
+            self._image_worker.requestInterruption()
+            self._image_worker.wait(200)
+        self._image_worker = None
+        self._image_fetch_card_id = None
+
+    def _request_card_image(self, card: learning.LearningCard) -> None:
+        if self._deck_id is None:
+            return
+        if (
+            self._image_worker is not None
+            and self._image_worker.isRunning()
+            and self._image_fetch_card_id == card.id
+        ):
+            return
+        self._cancel_image_fetch()
+        self._image_fetch_card_id = card.id
+        self._image_worker = CardImageFetchWorker(
+            self._deck_id,
+            card.id,
+            prompt=card.image_prompt,
+            search_term=card.front,
+            parent=self,
+        )
+        self._image_worker.finished_card.connect(self._on_image_fetched)
+        self._image_worker.start()
+
+    def _on_image_fetched(self, card_id: int, rel: str) -> None:
+        self._image_worker = None
+        self._image_fetch_card_id = None
+        if not rel:
+            return
+        current = self._controller.current_card()
+        if current is None or current.id != card_id:
+            return
+        updated = learning.get_card(card_id)
+        if updated is not None:
+            self._render_image(updated)
+
+    def _on_term_audio_ready(self, card_id: int) -> None:
+        current = self._controller.current_card()
+        if current is None or current.id != card_id:
+            return
+        updated = learning.get_card(card_id)
+        if updated is None or not updated.phonetic:
+            return
+        self._set_phonetic_text(updated.phonetic)
+        self._update_phonetic_visibility(updated, revealed=self._controller.revealed)
 
     def _hide_revealed_content(self) -> None:
         self._answer_block.setVisible(False)
