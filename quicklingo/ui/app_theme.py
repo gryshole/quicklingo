@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QFontMetrics
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtGui import QFont, QFontMetrics, QColor, QPalette
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 APP_BG = "#f8fafc"
 CARD_BG = "#ffffff"
@@ -18,12 +18,15 @@ PLACEHOLDER_MUTED = "#9ca3af"
 PRIMARY = "#2563eb"
 PRIMARY_DARK = "#1e40af"
 INPUT_BORDER = "#cbd5e1"
+BORDER_HOVER = "#a0c4ff"
+HOVER_BTN_BG = "#f7f7f7"
 ERROR = "#dc2626"
 RADIUS_CARD = "12px"
 RADIUS_CONTROL = "8px"
 
 SETTINGS_LABEL_WIDTH = 108  # fallback until labels are measured
-COMPACT_ROW_SPACING = 3
+SETTINGS_FORM_LABEL_MIN_WIDTH = 72
+COMPACT_ROW_SPACING = 8
 COMPACT_SECTION_SPACING = 6
 COMPACT_SECTION_MARGINS = (12, 12, 12, 12)
 SETTINGS_CONTROL_HEIGHT = 28
@@ -88,8 +91,8 @@ CARD_STYLE = (
 )
 
 SECTION_TITLE_STYLE = (
-    f"color: {PLACEHOLDER_MUTED}; font-size: 9pt;"
-    f" font-weight: 600; letter-spacing: 1.2px; margin-bottom: 8px;"
+    "color: #666666; font-size: 9pt;"
+    " font-weight: 600; letter-spacing: 1.2px; margin-bottom: 8px;"
 )
 
 COMPACT_FORM_LABEL_STYLE = (
@@ -115,6 +118,45 @@ def ensure_valid_point_font(widget: QWidget) -> QFont:
     return font
 
 
+def disable_combo_popup_animation(app) -> None:
+    """Windows animates combo popups with alpha; content underneath shows through."""
+    try:
+        app.setEffectEnabled(Qt.UIEffect.UI_AnimateCombo, False)
+    except (AttributeError, TypeError):
+        pass
+
+
+def _opaque_combo_popup_view(combo: QComboBox) -> None:
+    view = combo.view()
+    if view is None:
+        return
+    view.setAutoFillBackground(True)
+    view.setFrameShape(QFrame.Shape.NoFrame)
+    palette = view.palette()
+    bg = QColor(CARD_BG)
+    for role in (
+        QPalette.ColorRole.Base,
+        QPalette.ColorRole.Window,
+        QPalette.ColorRole.Button,
+    ):
+        palette.setColor(role, bg)
+    view.setPalette(palette)
+
+
+def _opaque_combo_popup_window(combo: QComboBox) -> None:
+    view = combo.view()
+    if view is None:
+        return
+    popup = view.window()
+    if popup is None or popup is combo:
+        return
+    popup.setAutoFillBackground(True)
+    popup.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+    palette = popup.palette()
+    palette.setColor(QPalette.ColorRole.Window, QColor(CARD_BG))
+    popup.setPalette(palette)
+
+
 def apply_combo_font(combo: QComboBox) -> None:
     """Ensure combo, popup list, and line edit use a valid point-size font."""
     if getattr(combo, "_ql_combo_font_patched", False):
@@ -125,6 +167,7 @@ def apply_combo_font(combo: QComboBox) -> None:
     view = combo.view()
     if view is not None:
         view.setFont(font)
+    _opaque_combo_popup_view(combo)
     line_edit = combo.lineEdit()
     if line_edit is not None:
         line_edit.setFont(font)
@@ -136,7 +179,9 @@ def apply_combo_font(combo: QComboBox) -> None:
         popup_view = combo.view()
         if popup_view is not None:
             popup_view.setFont(settings_ui_font(combo.font().family()))
+        _opaque_combo_popup_window(combo)
         original_show_popup()
+        _opaque_combo_popup_window(combo)
 
     combo.showPopup = show_popup_with_font  # type: ignore[method-assign]
     combo._ql_combo_font_patched = True
@@ -154,13 +199,18 @@ QWidget#settingsCard QComboBox {{
   color: {TEXT_PRIMARY};
   font-size: {SETTINGS_FONT_PT}pt;
 }}
+QWidget#settingsCard QComboBox:hover {{
+  border: 1px solid {BORDER_HOVER};
+}}
 QWidget#settingsCard QComboBox:focus, QWidget#settingsCard QComboBox:on {{
   border-color: {PRIMARY};
 }}
-QWidget#settingsCard QComboBox QAbstractItemView {{
+QWidget#settingsCard QComboBox QAbstractItemView,
+QWidget#settingsCard QComboBox QListView {{
   border: 1px solid {INPUT_BORDER};
   border-radius: 6px;
-  background: {CARD_BG};
+  background-color: {CARD_BG};
+  outline: none;
   font-size: {SETTINGS_FONT_PT}pt;
   selection-background-color: #eff6ff;
   selection-color: {PRIMARY_DARK};
@@ -195,6 +245,9 @@ QComboBox {{
   color: {TEXT_PRIMARY};
   font-size: {SETTINGS_FONT_PT}pt;
 }}
+QComboBox:hover {{
+  border: 1px solid {BORDER_HOVER};
+}}
 QComboBox:focus, QComboBox:on {{
   border-color: {PRIMARY};
 }}
@@ -206,10 +259,12 @@ QComboBox::drop-down {{
   background: transparent;
 }}
 {_combo_down_arrow_qss("QComboBox")}
-QComboBox QAbstractItemView {{
+QComboBox QAbstractItemView,
+QComboBox QListView {{
   border: 1px solid {INPUT_BORDER};
   border-radius: {RADIUS_CONTROL};
-  background: {CARD_BG};
+  background-color: {CARD_BG};
+  outline: none;
   font-size: {SETTINGS_FONT_PT}pt;
   selection-background-color: #eff6ff;
   selection-color: {PRIMARY_DARK};
@@ -233,6 +288,9 @@ QTextEdit#mainInput, QLineEdit#mainInput {{
   color: {TEXT_PRIMARY};
   font-size: 11pt;
 }}
+QTextEdit#mainInput:hover, QLineEdit#mainInput:hover {{
+  border: 1px solid {BORDER_HOVER};
+}}
 QTextEdit#mainInput:focus, QLineEdit#mainInput:focus {{
   border-color: {PRIMARY};
 }}
@@ -244,8 +302,8 @@ OUTPUT_PLACEHOLDER_STYLE = (
 
 SEGMENTED_STYLE = f"""
 QWidget#segmentedControl {{
-  background: #f1f5f9;
-  border-radius: 6px;
+  background: transparent;
+  border: none;
 }}
 QWidget#settingsCard QWidget#segmentedControl {{
   max-height: {SETTINGS_CONTROL_HEIGHT}px;
@@ -253,21 +311,22 @@ QWidget#settingsCard QWidget#segmentedControl {{
 QWidget#segmentedControl QPushButton {{
   background: transparent;
   border: none;
-  border-radius: 5px;
-  padding: 2px 8px;
-  color: {TEXT_MUTED};
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: {TEXT_LABEL};
   font-weight: 500;
   font-size: {SETTINGS_FONT_PT}pt;
   min-height: {SETTINGS_CONTROL_HEIGHT}px;
   max-height: {SETTINGS_CONTROL_HEIGHT}px;
 }}
 QWidget#segmentedControl QPushButton:checked {{
-  background: #eff6ff;
-  color: {PRIMARY_DARK};
+  background-color: #EBF5FF;
+  color: #0056b3;
   font-weight: 600;
 }}
 QWidget#segmentedControl QPushButton:hover:!checked {{
-  background: #e2e8f0;
+  background: transparent;
+  color: {TEXT_PRIMARY};
 }}
 QWidget#segmentedControl QPushButton:disabled {{
   color: #94a3b8;
@@ -284,8 +343,8 @@ QPushButton {{
   min-height: 28px;
 }}
 QPushButton:hover {{
-  background: #f1f5f9;
-  border-color: #94a3b8;
+  background-color: {HOVER_BTN_BG};
+  border: 1px solid {BORDER_HOVER};
 }}
 QPushButton:disabled {{
   color: #94a3b8;
@@ -297,18 +356,22 @@ GLOBAL_BTN_BASE = (
     "QPushButton#globalInputBtn {"
     " border: 1px solid; padding: 4px 10px;"
     " min-width: 52px; min-height: 28px; max-height: 28px;"
-    f" border-radius: {RADIUS_CONTROL}; font-weight: 500;"
+    " border-radius: 6px; font-weight: 500;"
 )
 
 GLOBAL_BTN_OFF = (
     GLOBAL_BTN_BASE
     + f" background: {CARD_BG}; border-color: {INPUT_BORDER}; color: {TEXT_LABEL}; }}"
+    "QPushButton#globalInputBtn:hover:!checked {"
+    f" background-color: {HOVER_BTN_BG}; border: 1px solid {BORDER_HOVER}; }}"
 )
 
 GLOBAL_BTN_ON = (
     GLOBAL_BTN_BASE
     + " background-color: #dbeafe; border-color: #93c5fd;"
     f" color: {PRIMARY_DARK}; font-weight: 600; }}"
+    "QPushButton#globalInputBtn:hover:checked {"
+    f" background-color: #cfe2ff; border: 1px solid {BORDER_HOVER}; }}"
 )
 
 GLOBAL_BTN_UNSUPPORTED = (
@@ -316,8 +379,9 @@ GLOBAL_BTN_UNSUPPORTED = (
     + f" border-color: #c8c8c8; background: #f3f4f6; color: #94a3b8; }}"
 )
 
-STATUS_MUTED_STYLE = f"color: {TEXT_MUTED};"
-STATUS_ERROR_STYLE = f"color: {ERROR};"
+STATUS_LABEL_STYLE = "color: #555555; padding-left: 8px; padding-bottom: 4px;"
+STATUS_MUTED_STYLE = STATUS_LABEL_STYLE
+STATUS_ERROR_STYLE = f"color: {ERROR}; padding-left: 8px; padding-bottom: 4px;"
 
 
 def main_window_stylesheet() -> str:
@@ -358,14 +422,21 @@ def make_compact_section_card(object_name: str) -> tuple[QWidget, QVBoxLayout]:
 
 
 def sync_compact_form_label_width(labels: list[QLabel]) -> None:
-    """Size the label column to the widest caption so fields sit close to the text."""
+    """Size the label column to the widest caption so fields align on one column."""
     if not labels:
         return
     metrics = QFontMetrics(labels[0].font())
-    width = max(metrics.horizontalAdvance(label.text()) for label in labels)
+    width = max(
+        SETTINGS_FORM_LABEL_MIN_WIDTH,
+        max(metrics.horizontalAdvance(label.text()) for label in labels),
+    )
     for label in labels:
         label.setWordWrap(False)
         label.setFixedWidth(width)
+
+
+def align_settings_form_labels(labels: list[QLabel]) -> None:
+    sync_compact_form_label_width(labels)
 
 
 def compact_form_row(label: QLabel, widget: QWidget) -> QHBoxLayout:

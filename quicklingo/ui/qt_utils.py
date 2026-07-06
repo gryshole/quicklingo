@@ -3,31 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QSizePolicy, QWidget
-from shiboken6 import isValid
 
 from quicklingo.ui.app_theme import apply_combo_font
 from quicklingo.ui.help_dialog import show_help
-
-
-class _ComboLineEditPopupFilter(QObject):
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if event.type() != QEvent.Type.MouseButtonPress:
-            return False
-        if event.button() != Qt.MouseButton.LeftButton:
-            return False
-        combo = self.parent()
-        if not isinstance(combo, QComboBox) or not isValid(combo):
-            return False
-        try:
-            line_edit = combo.lineEdit()
-        except RuntimeError:
-            return False
-        if watched is not line_edit:
-            return False
-        combo.showPopup()
-        return True
 
 
 def raise_window(widget: QWidget) -> None:
@@ -37,14 +17,8 @@ def raise_window(widget: QWidget) -> None:
 
 
 def configure_single_line_combo(combo: QComboBox) -> None:
-    """Keep the selected model name on one line (no wrap inside the control)."""
-    combo.setEditable(True)
-    line_edit = combo.lineEdit()
-    if line_edit is not None:
-        line_edit.setReadOnly(True)
-        line_edit.setFrame(False)
-        line_edit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        line_edit.installEventFilter(_ComboLineEditPopupFilter(combo))
+    """Select-only combo: one-line label, elided popup items, full text in tooltip."""
+    combo.setEditable(False)
     combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     combo.setSizeAdjustPolicy(
         QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon

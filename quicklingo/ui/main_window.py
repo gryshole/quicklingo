@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
 
     QComboBox,
 
+    QFormLayout,
+
     QFrame,
 
     QGridLayout,
@@ -77,8 +79,7 @@ from quicklingo.ui.app_theme import (
     apply_compact_form_label_style,
     apply_combo_font,
     apply_section_title_style,
-    compact_form_row,
-    sync_compact_form_label_width,
+    align_settings_form_labels,
     make_compact_section_card,
     make_section_card,
 )
@@ -123,7 +124,7 @@ class MainWindow(QMainWindow):
 
         self._input_layout: QVBoxLayout | None = None
 
-        self._tag_row: QHBoxLayout | None = None
+        self._tag_combo: QComboBox | None = None
 
         self._status_key = "main.status_ready"
 
@@ -192,6 +193,9 @@ class MainWindow(QMainWindow):
         apply_compact_form_label_style(self._direction_label)
 
         self._direction_control = SegmentedControl()
+        self._direction_control.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self._build_direction_segments()
 
         self._profile_label = QLabel()
@@ -218,6 +222,7 @@ class MainWindow(QMainWindow):
         self._tutor_capture_btn = QPushButton()
         self._tutor_capture_btn.setObjectName("globalInputBtn")
         self._tutor_capture_btn.setCheckable(True)
+        self._tutor_capture_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._tutor_capture_btn.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
@@ -318,15 +323,21 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
         settings_layout.addWidget(self._settings_section_label)
-        settings_layout.addLayout(compact_form_row(self._model_label, self._model_combo))
-        settings_layout.addLayout(
-            compact_form_row(self._direction_label, self._direction_control)
+        self._settings_form = QFormLayout()
+        self._settings_form.setContentsMargins(0, 0, 0, 0)
+        self._settings_form.setHorizontalSpacing(8)
+        self._settings_form.setVerticalSpacing(6)
+        self._settings_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
         )
-        settings_layout.addLayout(
-            compact_form_row(self._profile_label, self._profile_combo)
+        self._settings_form.setLabelAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        self._tag_row = compact_form_row(self._tag_label, self._tag_combo)
-        settings_layout.addLayout(self._tag_row)
+        self._settings_form.addRow(self._model_label, self._model_combo)
+        self._settings_form.addRow(self._direction_label, self._direction_control)
+        self._settings_form.addRow(self._profile_label, self._profile_combo)
+        self._settings_form.addRow(self._tag_label, self._tag_combo)
+        settings_layout.addLayout(self._settings_form)
 
         input_card, input_layout = make_section_card("inputCard", margins=(12, 10, 12, 10))
         self._input_layout = input_layout
@@ -348,6 +359,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(settings_card)
         layout.addWidget(input_card)
         layout.addWidget(result_card, stretch=1)
+        layout.addSpacing(2)
         layout.addWidget(self._status_label)
 
 
@@ -394,7 +406,7 @@ class MainWindow(QMainWindow):
 
         self._tag_label.setText(tr("main.tag_label"))
         self._tag_combo.setPlaceholderText(tr("main.tag_placeholder"))
-        sync_compact_form_label_width(
+        align_settings_form_labels(
             [
                 self._model_label,
                 self._direction_label,

@@ -7,6 +7,7 @@ from quicklingo.app_icon import configure_windows_app_id, load_app_icon
 from quicklingo.db import history
 from quicklingo.features import feature_changed
 from quicklingo.i18n import init_language, language_changed, tr
+from quicklingo.ui.app_theme import disable_combo_popup_animation
 from quicklingo.ui.learning_window import LearningWindow
 
 _LEARNING_APP_ID = "gryshole.quicklingo.learning.1"
@@ -27,6 +28,7 @@ def run() -> int:
     init_language()
 
     app = QApplication(sys.argv)
+    disable_combo_popup_animation(app)
     app.setApplicationName("QuickLingo Learning")
     app.setApplicationDisplayName(tr("learning.app_title"))
     icon = load_app_icon()

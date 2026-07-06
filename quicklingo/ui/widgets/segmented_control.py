@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QPushButton, QWidget
 
 
@@ -16,8 +16,8 @@ class SegmentedControl(QWidget):
         self._group.setExclusive(True)
         self._segments: list[tuple[QPushButton, str]] = []
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(1, 1, 1, 1)
-        layout.setSpacing(1)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
         self._layout = layout
         self._group.idClicked.connect(self._on_button_clicked)
 
@@ -33,6 +33,7 @@ class SegmentedControl(QWidget):
         button.setMinimumWidth(48)
         button.setCheckable(True)
         button.setChecked(checked)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
         button_id = len(self._segments)
         self._group.addButton(button, button_id)
         self._segments.append((button, segment_id))

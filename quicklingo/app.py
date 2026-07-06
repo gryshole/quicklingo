@@ -10,6 +10,7 @@ from quicklingo.i18n import init_language, language_changed
 from quicklingo.input.hotkeys import HotkeyManager
 from quicklingo.input.tutor_capture import TutorCaptureManager
 from quicklingo.input.tutor_capture_log import log_info, log_file_path
+from quicklingo.ui.app_theme import disable_combo_popup_animation
 from quicklingo.ui.main_window import MainWindow
 from quicklingo.ui.qt_utils import raise_window
 from quicklingo.ui.tray import TrayManager
@@ -145,6 +146,7 @@ def run() -> int:
     init_language()
 
     app = QApplication(sys.argv)
+    disable_combo_popup_animation(app)
     app.setApplicationName("QuickLingo")
     icon = load_app_icon()
     if icon is not None:
