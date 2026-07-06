@@ -3,6 +3,9 @@
 settings.json
 *.db
 logs/
+run
+.cursor/
+*.log
 
 __pycache__/
 *.py[cod]
