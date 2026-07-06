@@ -1,25 +1,47 @@
 # QuickLingo
 
-A lightweight Windows assistant for quick translation during online meetings and TV series.
+A lightweight Windows assistant for quick translation during online meetings and TV series, with built-in vocabulary learning.
 
 **Download:** [Latest release](https://github.com/gryshole/quicklingo/releases/latest) (Windows zip)
 
 ## Features
 
+### Translation
+
 - **Always on Top** window (~18% of screen width, docked to the right)
-- Translation via **Groq API** (Llama 3.1 8B / 3.3 70B) and **Google Gemini** (2.5 Flash / 2.5 Flash Lite)
-- Directions: **Укр → Англ** (meetings) and **Англ → Укр** (series)
-- Configurable **translation profiles** and **prompts** via JSON/text files
-- Automatic history in **SQLite** (`%APPDATA%/QuickLingo/history.db`)
+- Multiple AI providers: **Groq**, **Google Gemini**, **OpenRouter**, **Mistral**, **Ollama** (local), **DeepSeek**, **OpenAI**, **Anthropic**
+- Configurable **models**, **translation directions**, **profiles**, and **prompts**
+- Global hotkeys: translate selection, translate clipboard, optional **global input** capture
+- Response cache, auto-copy result, system tray, autostart
 - Non-blocking UI during API requests
 - Ctrl+/Ctrl- and mouse wheel zoom on input and result fields
+
+### History
+
+- Automatic SQLite history (`%APPDATA%/QuickLingo/history.db`)
+- Search, filter, star, tag, and export requests (JSON, Markdown, meeting transcripts)
+- Build vocabulary decks from translation history
+
+### Learning
+
+- **QuickLingoLearning.exe** — standalone learning app (same data folder as the main app)
+- Spaced-repetition **review**, **quiz** sessions, and **AI deck** generation
+- Corpus analysis from history, card images, TTS audio
+- **Anki** export (`.apkg` / CSV)
+- Progress dashboard with activity heatmap
+
+### Other
+
+- English / Ukrainian UI
+- In-app updates (**Help → Check for updates**)
+- API keys encrypted with Windows DPAPI (optional, in Settings → Features)
 
 ## Requirements
 
 - Python 3.12+
 - Windows 10/11
 
-## Quick start
+## Quick start (development)
 
 ```powershell
 git clone https://github.com/gryshole/quicklingo.git
@@ -29,13 +51,19 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Run:
+Run the main app:
 
 ```powershell
 python main.py
 ```
 
-On first launch, open **Tools → Settings → API keys** and add your key(s):
+Run the learning app only:
+
+```powershell
+python -m quicklingo.learning_app
+```
+
+On first launch, open **Tools → Settings → API keys** and add key(s) for the providers you use. At minimum, configure **Groq** and/or **Gemini**:
 
 - Groq: [console.groq.com](https://console.groq.com/)
 - Gemini: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
@@ -48,10 +76,10 @@ Keys are saved in `%APPDATA%/QuickLingo/settings.json`.
 
 1. Download `QuickLingo-0.x.y-win64.zip` from [GitHub Releases](https://github.com/gryshole/quicklingo/releases/latest).
 2. Unzip to a folder you can write to (e.g. `Documents\QuickLingo` or `%LOCALAPPDATA%\QuickLingo`). Avoid `Program Files` — in-app updates need write access.
-3. Run `QuickLingo.exe`.
+3. Run `QuickLingo.exe` (translation) or `QuickLingoLearning.exe` (learning only).
 4. Add API keys in **Tools → Settings → API keys**.
 
-Your settings, history, and config live in `%APPDATA%/QuickLingo/` and are **not** removed when you update the app folder.
+Your settings, history, decks, and config live in `%APPDATA%/QuickLingo/` and are **not** removed when you update the app folder.
 
 ### In-app update (0.1.0+)
 
@@ -63,20 +91,27 @@ Your settings, history, and config live in `%APPDATA%/QuickLingo/` and are **not
 2. Commit, tag, and push:
 
 ```powershell
-git tag v0.2.0
+git tag v0.1.1
 git push origin main --tags
 ```
 
-GitHub Actions builds the Windows zip and attaches it to the release.
+GitHub Actions builds the Windows zip and attaches it to the release. The tag must match the version in `version.py`.
 
 ## Usage
 
-1. Choose a model from the dropdown.
-2. Choose a translation direction.
-3. Type text and press **Enter**.
-4. The result appears in the output field; the request is saved to history automatically.
+1. Choose a **model** and **direction** from the dropdowns.
+2. Type text and press **Enter**.
+3. The result appears in the output field; the request is saved to history automatically.
 
-Use **Tools → Settings** to manage API keys, translation directions, profiles, prompts, formatters, and active profile selection. All configuration is editable in the UI — no manual JSON editing required.
+Use **Tools → Settings** to manage API keys, models, features, learning options, directions, and profiles. All configuration is editable in the UI — no manual JSON editing required.
+
+| Menu | Description |
+|------|-------------|
+| **Tools → Settings** | Full configuration dialog |
+| **Tools → Request history** | Browse, search, and export past translations |
+| **Tools → Learning** | Decks, review, quiz, stats |
+| **Tools → Quiz questions** | Manage AI-generated quiz questions |
+| **Help** | About, updates, and in-app documentation |
 
 ### UI language
 
@@ -91,11 +126,12 @@ On first run, QuickLingo copies the distribution `config_data/` into `%APPDATA%/
 | Tab | What you can do |
 |-----|-----------------|
 | **Interface** | Choose UI language (English / Ukrainian) |
-| **API keys** | Groq and Gemini API keys |
-| **Usage** | Pick active profile per direction |
+| **API keys** | Provider API keys and Ollama base URL |
+| **Models** | Enable/disable models in the main window dropdown |
+| **Features** | Always on top, hotkeys, tray, cache, history, encrypted keys |
+| **Learning** | SRS limits, quiz settings, AI prompts for cards and quizzes |
 | **Directions** | Add, edit, delete, enable/disable translation directions |
-| **Profiles** | Edit prompts, temperature, formatters per direction; add/delete profiles |
-| **Formatters** | Create formatters from presets or custom `rules:v1` pipelines with live preview |
+| **Profiles** | Edit prompts and formatters per direction; add/delete profiles |
 
 Distribution ships `config_data/` next to `QuickLingo.exe` (project root in dev). It seeds an empty user config folder on first run only.
 
@@ -120,28 +156,26 @@ Each profile JSON defines:
 
 ### Prompts
 
-Prompt bodies live in `.txt` files under `prompts/`. Keep output conventions aligned with the chosen formatter (see below).
+Prompt bodies live in `.txt` files under `prompts/`. Keep output conventions aligned with the chosen formatter.
 
 ### Formatters
 
-Formatters can use built-in presets (`builtin:plain`, `builtin:ua_en_cards`, `builtin:en_ua_cards`) or custom **`rules:v1`** pipelines edited in the **Formatters** tab.
+Built-in formatters ship in `config_data/formatters/`:
 
-| Formatter ID   | Engine                 | Use case                          |
-|-----|------------------------|-----------------------------------|
-| `ua_en_cards`  | `builtin:ua_en_cards`  | Structured cards for Ukr → Eng    |
-| `en_ua_cards`  | `builtin:en_ua_cards`  | Structured cards for Eng → Ukr    |
-| `plain`        | `builtin:plain`        | Simple escaped HTML with `<br>`   |
+| Formatter ID | Engine | Use case |
+|--------------|--------|----------|
+| `ua_en_cards` | `builtin:ua_en_cards` | Structured cards for Ukr → Eng |
+| `en_ua_cards` | `builtin:en_ua_cards` | Structured cards for Eng → Ukr |
+| `plain` | `builtin:plain` | Simple escaped HTML with `<br>` |
 
 ### Default profiles
 
-- **detailed** (default) — full explanations, context notes, and card layout. Matches the original QuickLingo behavior.
-- **concise** — shorter prompts and plain text output. Available in Preferences but not active by default.
-
-A fresh install with default settings behaves exactly like the pre-config QuickLingo app.
+- **detailed** (default) — full explanations, context notes, and card layout
+- **concise** — shorter prompts and plain text output
 
 ### Adding a direction
 
-Use **Tools → Settings → Directions → Add**, then add the direction to a profile under the **Profiles** tab.
+Use **Tools → Settings → Directions → Add**, then assign the direction to a profile under the **Profiles** tab.
 
 ## Build (Windows app folder)
 
@@ -149,41 +183,47 @@ Use **Tools → Settings → Directions → Add**, then add the direction to a p
 build.bat
 ```
 
-Output: `dist/QuickLingo/` — a folder with `QuickLingo.exe`, `QuickLingoUpdater.exe`, `_internal/`, and `config_data/`. Zip this folder for distribution; **onedir** starts much faster than a single self-extracting exe.
+Output: `dist/QuickLingo/` — a folder with:
 
-Manual build:
+- `QuickLingo.exe` — main translation app
+- `QuickLingoLearning.exe` — standalone learning app
+- `QuickLingoUpdater.exe` — used by in-app updates
+- `_internal/`, `config_data/`
 
-```powershell
-pip install pyinstaller pillow
-python scripts\make_icon.py
-pyinstaller --noconfirm --clean QuickLingo.spec
-pyinstaller --noconfirm --clean QuickLingoUpdater.spec
-copy dist\QuickLingoUpdater.exe dist\QuickLingo\
-xcopy /E /I /Y config_data dist\QuickLingo\config_data
-```
-
-Keep `config_data` next to `QuickLingo.exe`. After first run, add API keys via **Tools → Settings → API keys**.
+Zip this folder for distribution. **Onedir** starts much faster than a single self-extracting exe.
 
 ## Project structure
 
 ```
 config_data/              Distribution defaults (copied to APPDATA on first run)
 quicklingo/
-├── app.py                Bootstrap
+├── app.py                Main app bootstrap
+├── learning_app.py       Learning-only bootstrap
 ├── config/               Config loader, models, formatter registry
+├── db/                   SQLite (history + learning)
+├── features/             Feature flags and settings
+├── i18n/                 English / Ukrainian strings
+├── learning/             SRS, quiz, Anki export, TTS, AI deck generator
+├── providers/            Groq, Gemini, OpenRouter, Mistral, Ollama, etc.
 ├── ui/
-│   ├── main_window.py    Main interface
-│   ├── settings_dialog.py    Full settings editor (tabs)
-│   ├── settings/             Directions, profiles, formatters tabs
-│   └── format_output.py  Built-in HTML formatters
-├── db/history.py         SQLite history
-├── providers/            Groq, Gemini
-├── prompts.py            Thin wrapper over config loader
-└── workers/              Async QThread worker
+│   ├── main_window.py    Main translation window
+│   ├── history_window.py Request history
+│   ├── learning_window.py Decks, review, quiz, stats
+│   ├── settings_dialog.py Settings editor (tabs)
+│   └── settings/         Individual settings tabs
+├── update/               In-app update checker and installer
+└── workers/              Async QThread workers
 ```
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
 
 ## Extending
 
 - **New AI provider:** add a class under `providers/` and register it in `registry.py`
 - **Custom formatter:** add a function in `format_output.py` and register it in `config/formatter_registry.py`
-- **Future:** Anki export and word frequency stats from history
+
+## License
+
+MIT — see [LICENSE](LICENSE).
