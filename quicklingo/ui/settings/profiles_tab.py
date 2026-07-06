@@ -1,7 +1,9 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -9,6 +11,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTabWidget,
     QVBoxLayout,
@@ -21,6 +24,11 @@ from quicklingo.config.validation import ValidationError
 from quicklingo import settings
 from quicklingo.i18n import tr
 from quicklingo.ui.settings.base_tab import SettingsTab
+from quicklingo.ui.settings_theme import (
+    configure_profiles_remove_direction_button,
+    configure_profiles_tab_widgets,
+    configure_settings_group_box,
+)
 
 
 class ProfilesTab(SettingsTab):
@@ -32,15 +40,20 @@ class ProfilesTab(SettingsTab):
         self._direction_formatters: dict[str, str] = {}
 
         root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
         splitter = QSplitter()
         root.addWidget(splitter)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
         self._list = QListWidget()
         self._list.currentRowChanged.connect(self._on_select)
         left_layout.addWidget(self._list)
+
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
         self._add_btn = QPushButton()
         self._add_btn.clicked.connect(self._add_new)
         self._dup_btn = QPushButton()
@@ -50,23 +63,33 @@ class ProfilesTab(SettingsTab):
         btn_row.addWidget(self._add_btn)
         btn_row.addWidget(self._dup_btn)
         btn_row.addWidget(self._del_btn)
-        btn_row.addStretch()
         left_layout.addLayout(btn_row)
 
         move_row = QHBoxLayout()
+        move_row.setSpacing(8)
         self._up_btn = QPushButton()
         self._up_btn.clicked.connect(self._move_up)
         self._down_btn = QPushButton()
         self._down_btn.clicked.connect(self._move_down)
         move_row.addWidget(self._up_btn)
         move_row.addWidget(self._down_btn)
-        move_row.addStretch()
         left_layout.addLayout(move_row)
         splitter.addWidget(left)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
-        self._form = QFormLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
+        self._form_group = QGroupBox()
+        self._form = QFormLayout(self._form_group)
+        self._form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self._form.setLabelAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._form.setHorizontalSpacing(12)
+        self._form.setVerticalSpacing(10)
+
         self._id_edit = QLineEdit()
         self._id_edit.textChanged.connect(self.mark_dirty)
         self._name_edit = QLineEdit()
@@ -77,34 +100,70 @@ class ProfilesTab(SettingsTab):
         self._temperature.setRange(0.0, 2.0)
         self._temperature.setSingleStep(0.1)
         self._temperature.valueChanged.connect(lambda _: self.mark_dirty())
+        self._temperature.setObjectName("profileTemperatureSpin")
+        self._temperature.setMinimumWidth(100)
+        self._temperature.setMaximumWidth(110)
+        self._temperature.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         self._id_label = QLabel()
         self._name_label = QLabel()
         self._desc_label = QLabel()
         self._temp_label = QLabel()
+        self._direction_label = QLabel()
+
+        for field in (self._id_edit, self._name_edit, self._desc_edit):
+            field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
         self._form.addRow(self._id_label, self._id_edit)
         self._form.addRow(self._name_label, self._name_edit)
         self._form.addRow(self._desc_label, self._desc_edit)
         self._form.addRow(self._temp_label, self._temperature)
-        right_layout.addLayout(self._form)
 
-        dir_row = QHBoxLayout()
-        self._direction_label = QLabel()
         self._add_direction_combo = QComboBox()
+        self._add_direction_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self._add_dir_btn = QPushButton()
         self._add_dir_btn.clicked.connect(self._add_direction)
-        dir_row.addWidget(self._direction_label)
-        dir_row.addWidget(self._add_direction_combo, stretch=1)
-        dir_row.addWidget(self._add_dir_btn)
-        right_layout.addLayout(dir_row)
+        direction_row = QHBoxLayout()
+        direction_row.setContentsMargins(0, 0, 0, 0)
+        direction_row.setSpacing(8)
+        direction_row.addWidget(self._add_direction_combo, stretch=1)
+        direction_row.addWidget(self._add_dir_btn)
+        direction_wrap = QWidget()
+        direction_wrap.setLayout(direction_row)
+        self._form.addRow(self._direction_label, direction_wrap)
 
         self._dir_tabs = QTabWidget()
-        right_layout.addWidget(self._dir_tabs, stretch=1)
+        self._dir_tabs.setMinimumHeight(220)
+        self._form.addRow(self._dir_tabs)
 
         self._save_btn = QPushButton()
         self._save_btn.clicked.connect(self._save_current)
-        right_layout.addWidget(self._save_btn)
+        save_row = QHBoxLayout()
+        save_row.setContentsMargins(0, 8, 0, 0)
+        save_row.addStretch()
+        save_row.addWidget(self._save_btn)
+        save_wrap = QWidget()
+        save_wrap.setLayout(save_row)
+        self._form.addRow(save_wrap)
+
+        configure_settings_group_box(self._form_group)
+        configure_profiles_tab_widgets(
+            list_widget=self._list,
+            add_btn=self._add_btn,
+            duplicate_btn=self._dup_btn,
+            delete_btn=self._del_btn,
+            up_btn=self._up_btn,
+            down_btn=self._down_btn,
+            add_direction_btn=self._add_dir_btn,
+            save_btn=self._save_btn,
+            form_group=self._form_group,
+        )
+        right_layout.addWidget(self._form_group)
+        right_layout.addStretch()
         splitter.addWidget(right)
+        splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
 
         self.retranslate_ui()
@@ -116,6 +175,7 @@ class ProfilesTab(SettingsTab):
         self._del_btn.setText(tr("common.delete"))
         self._up_btn.setText(tr("settings.models.move_up"))
         self._down_btn.setText(tr("settings.models.move_down"))
+        self._form_group.setTitle(tr("settings.profiles.group"))
         self._id_label.setText(tr("common.id"))
         self._name_label.setText(tr("settings.profiles.name"))
         self._desc_label.setText(tr("settings.profiles.description"))
@@ -187,17 +247,25 @@ class ProfilesTab(SettingsTab):
     def _build_direction_tab(self, direction_id: str, label: str, prompt: str) -> None:
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(8)
         prompt_label = QLabel()
         prompt_edit = QPlainTextEdit()
         prompt_edit.setPlainText(prompt)
         prompt_edit.textChanged.connect(self.mark_dirty)
+        prompt_edit.setMinimumHeight(120)
         remove_btn = QPushButton()
+        configure_profiles_remove_direction_button(remove_btn)
         remove_btn.clicked.connect(lambda: self._remove_direction(direction_id))
         prompt_label.setText(tr("settings.profiles.prompt"))
         layout.addWidget(prompt_label)
         layout.addWidget(prompt_edit, stretch=1)
+        remove_row = QHBoxLayout()
+        remove_row.setContentsMargins(0, 0, 0, 0)
+        remove_row.addStretch()
+        remove_row.addWidget(remove_btn)
         remove_btn.setText(tr("settings.profiles.remove_direction"))
-        layout.addWidget(remove_btn)
+        layout.addLayout(remove_row)
         self._dir_tabs.addTab(widget, label)
         self._direction_widgets[direction_id] = {
             "prompt": prompt_edit,

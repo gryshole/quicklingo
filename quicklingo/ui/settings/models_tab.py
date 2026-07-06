@@ -21,6 +21,7 @@ from quicklingo.providers.registry import (
 )
 from quicklingo.providers.setup_info import API_PROVIDERS
 from quicklingo.ui.settings.base_tab import SettingsTab
+from quicklingo.ui.settings_theme import configure_models_tab_widgets, configure_settings_group_box
 
 _PROVIDER_ROLE = Qt.ItemDataRole.UserRole + 1
 
@@ -36,6 +37,7 @@ class ModelsTab(SettingsTab):
 
         self._group = QGroupBox()
         group_layout = QVBoxLayout(self._group)
+        group_layout.setSpacing(10)
         self._selected_label = QLabel()
         group_layout.addWidget(self._selected_label)
 
@@ -75,6 +77,15 @@ class ModelsTab(SettingsTab):
         btn_row.addWidget(self._reset_btn)
         group_layout.addLayout(btn_row)
 
+        configure_settings_group_box(self._group)
+        configure_models_tab_widgets(
+            list_widget=self._selected,
+            add_btn=self._add_btn,
+            remove_btn=self._remove_btn,
+            up_btn=self._up_btn,
+            down_btn=self._down_btn,
+            reset_btn=self._reset_btn,
+        )
         layout.addWidget(self._group)
         layout.addStretch()
         self.retranslate_ui()

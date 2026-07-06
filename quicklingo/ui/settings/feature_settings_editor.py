@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -20,6 +23,7 @@ from quicklingo.features import feature_keys, get_all_features, is_enabled, save
 from quicklingo.i18n import tr
 from quicklingo.ui.settings.base_tab import SettingsTab
 from quicklingo.ui.settings.feature_help import attach_feature_help
+from quicklingo.ui.settings_theme import configure_prompt_reset_button, configure_settings_group_box
 
 FEATURE_I18N: dict[str, tuple[str, str | None]] = {
     "ui.always_on_top": ("settings.features.ui_always_on_top", None),
@@ -92,10 +96,16 @@ class FeatureSettingsEditor(SettingsTab):
         self._group_hooks = group_hooks or {}
 
         outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
+        body.setObjectName("settingsTabBody")
         self._body_layout = QVBoxLayout(body)
+        self._body_layout.setSpacing(0)
+        self._body_layout.setContentsMargins(0, 0, 0, 0)
         scroll.setWidget(body)
         outer.addWidget(scroll)
 
@@ -105,7 +115,7 @@ class FeatureSettingsEditor(SettingsTab):
         self._line_edits: dict[tuple[str, str], QLineEdit] = {}
         self._text_edits: dict[tuple[str, str], QPlainTextEdit] = {}
         self._build_groups()
-        self._body_layout.addStretch()
+        self._body_layout.addSpacing(30)
         self.reload()
 
     def _add_checkbox(self, form: QFormLayout, key: str) -> None:
@@ -125,9 +135,31 @@ class FeatureSettingsEditor(SettingsTab):
     ) -> None:
         spin = QSpinBox()
         spin.setRange(min_v, max_v)
+        spin.setMaximumWidth(80)
+        spin.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         spin.valueChanged.connect(self.mark_dirty)
         self._spinboxes[(key, field)] = spin
-        form.addRow(tr(label_key), spin)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(QLabel(tr(label_key)))
+        row.addWidget(spin)
+        row.addStretch()
+        wrap = QWidget()
+        wrap.setLayout(row)
+        form.addRow(wrap)
+
+    def _add_spin_form(
+        self, form: QFormLayout, key: str, field: str, label_key: str, min_v: int, max_v: int
+    ) -> None:
+        spin = QSpinBox()
+        spin.setRange(min_v, max_v)
+        spin.setMaximumWidth(80)
+        spin.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        spin.valueChanged.connect(self.mark_dirty)
+        self._spinboxes[(key, field)] = spin
+        label = QLabel(tr(label_key))
+        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        form.addRow(label, spin)
 
     def _add_combo_field(self, form: QFormLayout, key: str, field: str, label_key: str) -> None:
         edit = QLineEdit()
@@ -164,16 +196,70 @@ class FeatureSettingsEditor(SettingsTab):
         self._text_edits[(key, field)] = edit
         form.addRow(tr(label_key), wrap)
 
+    def _add_prompt_field(
+        self,
+        form: QFormLayout,
+        key: str,
+        field: str,
+        label_key: str,
+        *,
+        reset_factory: Callable[[], str],
+        placeholder_key: str = "settings.features.corpus_card_prompt_placeholder",
+    ) -> None:
+        label = QLabel(tr(label_key))
+        label.setObjectName("promptFieldLabel")
+        edit = QPlainTextEdit()
+        edit.setObjectName("promptFieldEdit")
+        edit.setMinimumHeight(80)
+        edit.setMaximumHeight(90)
+        edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        edit.setPlaceholderText(tr(placeholder_key))
+        edit.textChanged.connect(self.mark_dirty)
+        reset_btn = QPushButton(tr("settings.features.corpus_card_prompt_reset"))
+        configure_prompt_reset_button(reset_btn)
+        reset_btn.clicked.connect(lambda: edit.setPlainText(reset_factory()))
+        field_column = QVBoxLayout()
+        field_column.setContentsMargins(0, 0, 0, 0)
+        field_column.setSpacing(6)
+        field_column.addWidget(edit)
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.addStretch()
+        btn_row.addWidget(reset_btn)
+        field_column.addLayout(btn_row)
+        field_wrap = QWidget()
+        field_wrap.setLayout(field_column)
+        field_wrap.setMinimumHeight(114)
+        field_wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        block = QVBoxLayout()
+        block.setContentsMargins(0, 0, 0, 0)
+        block.setSpacing(4)
+        block.addWidget(label)
+        block.addWidget(field_wrap)
+        wrap = QWidget()
+        wrap.setLayout(block)
+        wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        wrap.setMinimumHeight(148)
+        self._text_edits[(key, field)] = edit
+        form.addRow(wrap)
+
     def _build_groups(self) -> None:
-        for group_id, (_title_key, keys) in self._group_specs.items():
+        for index, (group_id, (_title_key, keys)) in enumerate(self._group_specs.items()):
             group = QGroupBox()
             form = QFormLayout(group)
+            form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+            form.setLabelAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
             self._groups[group_id] = group
             for key in keys:
                 self._add_checkbox(form, key)
             hook = self._group_hooks.get(group_id)
             if hook is not None:
                 hook(form)
+            configure_settings_group_box(group)
+            if index > 0:
+                self._body_layout.addSpacing(15)
             self._body_layout.addWidget(group)
 
     def retranslate_ui(self) -> None:

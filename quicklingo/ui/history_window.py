@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -42,20 +43,23 @@ from quicklingo.ui.window_state import (
     save_window_geometry,
 )
 
-_HISTORY_TABLE_WIDTHS = [130, 85, 110, 100, 150, 90, 44, 48]
+_HISTORY_TABLE_WIDTHS = [130, 85, 110, 100, 150, 90, 44, 44]
 _COL_STAR = 6
 _COL_DELETE = 7
 _STAR_COL_WIDTH = 44
-_DELETE_COL_WIDTH = 48
+_DELETE_COL_WIDTH = 44
+_TABLE_ROW_HEIGHT = 32
+_DATE_FILTER_WIDTH = 120
 
 _PAGE_STYLE = """
 HistoryWindow {
     background-color: #f1f5f9;
 }
 QLabel#summaryLabel {
-    color: #475569;
-    font-size: 13px;
-    font-weight: 500;
+    color: #666666;
+    font-size: 11px;
+    font-weight: 400;
+    padding-right: 15px;
 }
 QFrame#filterCard {
     background-color: #ffffff;
@@ -71,7 +75,7 @@ QFrame#filterCard QLineEdit,
 QFrame#filterCard QDateEdit {
     min-height: 30px;
     max-height: 30px;
-    border: 1px solid #d1d5db;
+    border: 1px solid #dcdcdc;
     border-radius: 6px;
     padding: 4px 8px;
     background-color: #ffffff;
@@ -81,7 +85,7 @@ QFrame#filterCard QDateEdit {
 QFrame#filterCard QComboBox:hover,
 QFrame#filterCard QLineEdit:hover,
 QFrame#filterCard QDateEdit:hover {
-    border-color: #94a3b8;
+    border-color: #a0c4ff;
 }
 QFrame#filterCard QComboBox:focus,
 QFrame#filterCard QLineEdit:focus,
@@ -96,14 +100,14 @@ QPushButton#btnStarredToggle {
     min-height: 30px;
     background-color: #ffffff;
     color: #475569;
-    border: 1px solid #d1d5db;
+    border: 1px solid #dcdcdc;
     border-radius: 6px;
     padding: 4px 12px;
     font-size: 13px;
 }
 QPushButton#btnStarredToggle:hover {
     background-color: #f8fafc;
-    border-color: #94a3b8;
+    border-color: #a0c4ff;
 }
 QPushButton#btnStarredToggle:checked {
     background-color: #eff6ff;
@@ -126,30 +130,29 @@ QPushButton#btnPrimary:hover:enabled {
 QPushButton#btnSecondary {
     background-color: #ffffff;
     color: #1e293b;
-    border: 1px solid #d1d5db;
+    border: 1px solid #dcdcdc;
     border-radius: 6px;
     padding: 6px 14px;
     font-size: 13px;
     min-height: 32px;
 }
 QPushButton#btnSecondary:hover:enabled {
-    background-color: #f8fafc;
-    border-color: #94a3b8;
+    background-color: #f7f7f7;
+    border-color: #a0c4ff;
 }
 QPushButton#btnDanger {
-    background-color: #ffffff;
+    background-color: transparent;
     color: #64748b;
-    border: 1px solid #d1d5db;
+    border: 1px solid transparent;
     border-radius: 6px;
     padding: 6px 14px;
     font-size: 13px;
     min-height: 32px;
-    margin-left: 8px;
 }
 QPushButton#btnDanger:hover:enabled {
-    background-color: #fef2f2;
-    border-color: #fca5a5;
-    color: #dc2626;
+    background-color: transparent;
+    color: #dc3545;
+    border-color: #dc3545;
 }
 QFrame#tableCard {
     background-color: #ffffff;
@@ -165,7 +168,7 @@ QFrame#tableCard QTableWidget {
     selection-color: #1e293b;
 }
 QFrame#tableCard QTableWidget::item {
-    padding: 8px 10px;
+    padding: 6px 10px;
     border: none;
     border-bottom: 1px solid #f3f4f6;
     color: #334155;
@@ -175,14 +178,14 @@ QFrame#tableCard QTableWidget::item:selected {
     color: #1e293b;
 }
 QFrame#tableCard QHeaderView::section {
-    background-color: #f8fafc;
+    background-color: #f5f5f5;
     color: #64748b;
     font-size: 11px;
     font-weight: 600;
-    padding: 10px 10px;
+    padding: 6px;
     border: none;
-    border-bottom: 1px solid #e5e7eb;
-    border-right: 1px solid #f1f5f9;
+    border-bottom: 1px solid #e0e0e0;
+    border-right: 1px solid #eeeeee;
 }
 QFrame#tableCard QHeaderView::section:last {
     border-right: none;
@@ -199,16 +202,17 @@ QLabel#previewTitle {
     letter-spacing: 0.03em;
     text-transform: uppercase;
 }
-QFrame#previewCard QTextBrowser {
-    background: transparent;
-    border: none;
-    padding: 8px 12px 8px 16px;
+QTextBrowser#detailField {
+    background-color: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 10px;
+    color: #334155;
 }
 """
 
 
 class HistoryWindow(QDialog):
-    reopen_requested = Signal(str, str, str)
     create_deck_from_tag_requested = Signal(str, str)
 
     def __init__(self, parent=None) -> None:
@@ -226,8 +230,8 @@ class HistoryWindow(QDialog):
         toolbar_row.setSpacing(8)
         self._summary_label = QLabel()
         self._summary_label.setObjectName("summaryLabel")
-        self._summary_label.setWordWrap(True)
-        toolbar_row.addWidget(self._summary_label, stretch=1)
+        self._summary_label.setWordWrap(False)
+        toolbar_row.addWidget(self._summary_label)
 
         self._refresh_btn = QPushButton()
         self._refresh_btn.setObjectName("btnPrimary")
@@ -251,26 +255,33 @@ class HistoryWindow(QDialog):
         self._clear_btn.setObjectName("btnDanger")
         self._clear_btn.clicked.connect(self._clear_history)
 
-        for btn in (
-            self._refresh_btn,
-            self._export_btn,
-            self._transcript_btn,
-            self._edit_tags_btn,
-            self._tag_wizard_btn,
-            self._create_deck_btn,
-        ):
-            toolbar_row.addWidget(btn)
+        main_actions = QHBoxLayout()
+        main_actions.setSpacing(8)
+        for btn in (self._refresh_btn, self._export_btn, self._transcript_btn):
+            main_actions.addWidget(btn)
+
+        tag_actions = QHBoxLayout()
+        tag_actions.setSpacing(8)
+        for btn in (self._edit_tags_btn, self._tag_wizard_btn, self._create_deck_btn):
+            tag_actions.addWidget(btn)
+
+        toolbar_row.addLayout(main_actions)
+        toolbar_row.addLayout(tag_actions)
+        toolbar_row.addStretch(1)
         toolbar_row.addWidget(self._clear_btn)
         layout.addLayout(toolbar_row)
 
         self._filter_card = QFrame()
         self._filter_card.setObjectName("filterCard")
         filter_layout = QVBoxLayout(self._filter_card)
-        filter_layout.setContentsMargins(12, 12, 12, 12)
-        filter_layout.setSpacing(10)
+        filter_layout.setContentsMargins(12, 10, 12, 10)
+        filter_layout.setSpacing(6)
 
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(10)
+        filter_grid = QGridLayout()
+        filter_grid.setContentsMargins(0, 0, 0, 0)
+        filter_grid.setHorizontalSpacing(8)
+        filter_grid.setVerticalSpacing(6)
+
         self._search_label = QLabel()
         self._search_field = QLineEdit()
         self._refresh_timer = QTimer(self)
@@ -290,15 +301,14 @@ class HistoryWindow(QDialog):
         configure_single_line_combo(self._tag_filter)
         self._tag_filter.setMinimumWidth(110)
         self._tag_filter.currentIndexChanged.connect(self.refresh)
-        filter_row.addWidget(self._search_label)
-        filter_row.addWidget(self._search_field, stretch=1)
-        filter_row.addWidget(self._direction_filter)
-        filter_row.addWidget(self._model_filter)
-        filter_row.addWidget(self._tag_filter)
-        filter_layout.addLayout(filter_row)
 
-        date_row = QHBoxLayout()
-        date_row.setSpacing(10)
+        filter_grid.addWidget(self._search_label, 0, 0)
+        filter_grid.addWidget(self._search_field, 0, 1)
+        filter_grid.addWidget(self._direction_filter, 0, 2)
+        filter_grid.addWidget(self._model_filter, 0, 3)
+        filter_grid.addWidget(self._tag_filter, 0, 4)
+        filter_grid.setColumnStretch(1, 1)
+
         self._date_from_label = QLabel()
         self._date_to_label = QLabel()
         self._date_from = QDateEdit()
@@ -306,23 +316,31 @@ class HistoryWindow(QDialog):
         self._date_from.setSpecialValueText(tr("history.date_any"))
         self._date_from.setMinimumDate(QDate(2000, 1, 1))
         self._date_from.setDate(self._date_from.minimumDate())
+        self._date_from.setMaximumWidth(_DATE_FILTER_WIDTH)
         self._date_from.dateChanged.connect(self.refresh)
         self._date_to = QDateEdit()
         self._date_to.setCalendarPopup(True)
         self._date_to.setSpecialValueText(tr("history.date_any"))
         self._date_to.setMinimumDate(QDate(2000, 1, 1))
         self._date_to.setDate(self._date_to.minimumDate())
+        self._date_to.setMaximumWidth(_DATE_FILTER_WIDTH)
         self._date_to.dateChanged.connect(self.refresh)
         self._starred_only = QPushButton()
         self._starred_only.setObjectName("btnStarredToggle")
         self._starred_only.setCheckable(True)
         self._starred_only.toggled.connect(self.refresh)
+
+        date_row = QHBoxLayout()
+        date_row.setContentsMargins(0, 0, 0, 0)
+        date_row.setSpacing(8)
         date_row.addWidget(self._date_from_label)
         date_row.addWidget(self._date_from)
         date_row.addWidget(self._date_to_label)
         date_row.addWidget(self._date_to)
         date_row.addWidget(self._starred_only)
         date_row.addStretch()
+
+        filter_layout.addLayout(filter_grid)
         filter_layout.addLayout(date_row)
         layout.addWidget(self._filter_card)
 
@@ -336,6 +354,7 @@ class HistoryWindow(QDialog):
         self._table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(_TABLE_ROW_HEIGHT)
         self._table.setShowGrid(False)
         self._table.setAlternatingRowColors(False)
         header = self._table.horizontalHeader()
@@ -366,19 +385,12 @@ class HistoryWindow(QDialog):
         preview_layout.setContentsMargins(14, 14, 14, 14)
         preview_layout.setSpacing(10)
 
-        preview_header = QHBoxLayout()
-        preview_header.setSpacing(8)
         self._detail_label = QLabel()
         self._detail_label.setObjectName("previewTitle")
-        self._reopen_btn = QPushButton()
-        self._reopen_btn.setObjectName("btnSecondary")
-        self._reopen_btn.clicked.connect(self._reopen_selected)
-        preview_header.addWidget(self._detail_label)
-        preview_header.addStretch()
-        preview_header.addWidget(self._reopen_btn)
-        preview_layout.addLayout(preview_header)
+        preview_layout.addWidget(self._detail_label)
 
         self._detail_field = QTextBrowser()
+        self._detail_field.setObjectName("detailField")
         self._detail_field.setOpenExternalLinks(False)
         self._detail_field.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._detail_field.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
@@ -403,7 +415,6 @@ class HistoryWindow(QDialog):
         self._starred_only.setText(tr("history.starred_only"))
         self._date_from_label.setText(tr("history.date_from"))
         self._date_to_label.setText(tr("history.date_to"))
-        self._reopen_btn.setText(tr("history.reopen"))
         self._table.setHorizontalHeaderLabels(
             [
                 tr("history.col_date").upper(),
@@ -425,10 +436,16 @@ class HistoryWindow(QDialog):
     def _apply_action_column_widths(self) -> None:
         header = self._table.horizontalHeader()
         header.blockSignals(True)
+        for col in (_COL_STAR, _COL_DELETE):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.resizeColumnToContents(_COL_STAR)
+        self._table.resizeColumnToContents(_COL_DELETE)
+        star_width = max(self._table.columnWidth(_COL_STAR), _STAR_COL_WIDTH)
+        delete_width = max(self._table.columnWidth(_COL_DELETE), _DELETE_COL_WIDTH)
         header.setSectionResizeMode(_COL_STAR, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(_COL_DELETE, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(_COL_STAR, _STAR_COL_WIDTH)
-        self._table.setColumnWidth(_COL_DELETE, _DELETE_COL_WIDTH)
+        self._table.setColumnWidth(_COL_STAR, star_width)
+        self._table.setColumnWidth(_COL_DELETE, delete_width)
         header.blockSignals(False)
 
     def _on_header_section_resized(self, logical_index: int, _old: int, _new: int) -> None:
@@ -699,14 +716,6 @@ class HistoryWindow(QDialog):
             content = export_transcript_markdown(self._records, gap_minutes=gap)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(content)
-
-    def _reopen_selected(self) -> None:
-        record = self._selected_record()
-        if record is None:
-            return
-        profile_id = record.profile_id or "detailed"
-        self.reopen_requested.emit(record.source_text, record.direction, profile_id)
-        self.accept()
 
     def _selected_record(self) -> history.TranslationRecord | None:
         rows = self._table.selectionModel().selectedRows()

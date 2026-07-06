@@ -1047,8 +1047,6 @@ class MainWindow(QMainWindow):
             self._history_window = HistoryWindow(self)
 
             self._history_window.finished.connect(self._on_history_closed)
-
-            self._history_window.reopen_requested.connect(self._reopen_from_history)
             self._history_window.create_deck_from_tag_requested.connect(
                 self._create_deck_from_history_tag
             )
@@ -1214,33 +1212,6 @@ class MainWindow(QMainWindow):
         self._tag_label.setVisible(show)
 
         self._tag_combo.setVisible(show)
-
-
-
-    def _reopen_from_history(
-
-        self, source_text: str, direction: str, profile_id: str
-
-    ) -> None:
-
-        if self._direction_control is not None:
-            self._direction_control.set_current_id(direction)
-
-        self._refresh_profile_combo()
-
-        index = self._profile_combo.findData(profile_id)
-
-        if index >= 0:
-
-            self._profile_combo.setCurrentIndex(index)
-
-        self._input_field.set_input_text(source_text)
-
-        self.raise_()
-
-        self.activateWindow()
-
-        self._input_field.setFocus()
 
 
 

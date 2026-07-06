@@ -12,13 +12,13 @@ def _input_extras(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
         form,
         "input.global_hotkey.translate_selection",
         "combo",
-        "settings.features.hotkey_combo",
+        "settings.features.hotkey_combo_selection",
     )
     editor._add_combo_field(
         form,
         "input.global_hotkey.translate_clipboard",
         "combo",
-        "settings.features.hotkey_combo",
+        "settings.features.hotkey_combo_clipboard",
     )
     editor._add_combo_field(
         form,

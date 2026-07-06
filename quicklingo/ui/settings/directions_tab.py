@@ -1,13 +1,16 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -18,6 +21,7 @@ from quicklingo.config.store import delete_direction, save_direction
 from quicklingo.config.validation import ValidationError
 from quicklingo.i18n import tr
 from quicklingo.ui.settings.base_tab import SettingsTab
+from quicklingo.ui.settings_theme import configure_directions_tab_widgets, configure_settings_group_box
 
 
 class DirectionsTab(SettingsTab):
@@ -27,16 +31,20 @@ class DirectionsTab(SettingsTab):
         self._is_new = False
 
         root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
         splitter = QSplitter()
         root.addWidget(splitter)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
         self._list = QListWidget()
         self._list.currentRowChanged.connect(self._on_select)
         left_layout.addWidget(self._list)
 
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
         self._add_btn = QPushButton()
         self._add_btn.clicked.connect(self._add_new)
         self._dup_btn = QPushButton()
@@ -50,7 +58,19 @@ class DirectionsTab(SettingsTab):
         splitter.addWidget(left)
 
         right = QWidget()
-        self._form = QFormLayout(right)
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
+        self._form_group = QGroupBox()
+        self._form = QFormLayout(self._form_group)
+        self._form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self._form.setLabelAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._form.setHorizontalSpacing(12)
+        self._form.setVerticalSpacing(10)
+
         self._id_edit = QLineEdit()
         self._id_edit.textChanged.connect(self.mark_dirty)
         self._label_edit = QLineEdit()
@@ -64,6 +84,15 @@ class DirectionsTab(SettingsTab):
         self._enabled = QCheckBox()
         self._enabled.stateChanged.connect(lambda _: self.mark_dirty())
 
+        for field in (
+            self._id_edit,
+            self._label_edit,
+            self._source_edit,
+            self._target_edit,
+            self._default_profile,
+        ):
+            field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
         self._id_label = QLabel()
         self._label_label = QLabel()
         self._source_label = QLabel()
@@ -75,12 +104,31 @@ class DirectionsTab(SettingsTab):
         self._form.addRow(self._source_label, self._source_edit)
         self._form.addRow(self._target_label, self._target_edit)
         self._form.addRow(self._default_label, self._default_profile)
-        self._form.addRow("", self._enabled)
+        self._form.addRow(self._enabled)
 
         self._save_btn = QPushButton()
         self._save_btn.clicked.connect(self._save_current)
-        self._form.addRow("", self._save_btn)
+        save_row = QHBoxLayout()
+        save_row.setContentsMargins(0, 8, 0, 0)
+        save_row.addStretch()
+        save_row.addWidget(self._save_btn)
+        save_wrap = QWidget()
+        save_wrap.setLayout(save_row)
+        self._form.addRow(save_wrap)
+
+        configure_settings_group_box(self._form_group)
+        configure_directions_tab_widgets(
+            list_widget=self._list,
+            add_btn=self._add_btn,
+            duplicate_btn=self._dup_btn,
+            delete_btn=self._del_btn,
+            save_btn=self._save_btn,
+            form_group=self._form_group,
+        )
+        right_layout.addWidget(self._form_group)
+        right_layout.addStretch()
         splitter.addWidget(right)
+        splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
 
         self.retranslate_ui()
@@ -90,6 +138,7 @@ class DirectionsTab(SettingsTab):
         self._add_btn.setText(tr("common.add"))
         self._dup_btn.setText(tr("common.duplicate"))
         self._del_btn.setText(tr("common.delete"))
+        self._form_group.setTitle(tr("settings.directions.group"))
         self._id_label.setText(tr("common.id"))
         self._label_label.setText(tr("settings.directions.label"))
         self._source_label.setText(tr("settings.directions.source_lang"))

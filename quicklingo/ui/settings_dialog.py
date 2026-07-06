@@ -18,6 +18,13 @@ from quicklingo.ui.settings.learning_features_tab import LearningFeaturesTab
 from quicklingo.ui.settings.interface_tab import InterfaceTab
 from quicklingo.ui.settings.models_tab import ModelsTab
 from quicklingo.ui.settings.profiles_tab import ProfilesTab
+from quicklingo.ui.settings_theme import (
+    DIALOG_MARGINS,
+    apply_settings_dialog_style,
+    apply_settings_tab_margins,
+    configure_settings_dialog_buttons,
+    configure_settings_tabs,
+)
 from quicklingo.ui.window_state import restore_window_geometry, save_window_geometry
 
 
@@ -27,10 +34,14 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        apply_settings_dialog_style(self)
         restore_window_geometry(self, "settings", default_width=860, default_height=680)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(*DIALOG_MARGINS)
+        layout.setSpacing(10)
         self._tabs = QTabWidget()
+        configure_settings_tabs(self._tabs)
 
         self._interface_tab = InterfaceTab()
         self._api_keys_tab = ApiKeysTab()
@@ -49,6 +60,8 @@ class SettingsDialog(QDialog):
             self._directions_tab,
             self._profiles_tab,
         )
+        for tab in self._tab_widgets:
+            apply_settings_tab_margins(tab)
 
         layout.addWidget(self._tabs)
 
@@ -58,11 +71,13 @@ class SettingsDialog(QDialog):
         self._api_keys_tab.api_keys_saved.connect(self.api_keys_changed.emit)
 
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
         self._apply_btn = QPushButton()
         self._apply_btn.clicked.connect(self._apply)
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        configure_settings_dialog_buttons(self._apply_btn, self._buttons)
         self._buttons.accepted.connect(self._accept)
         self._buttons.rejected.connect(self._reject)
         btn_row.addWidget(self._apply_btn)

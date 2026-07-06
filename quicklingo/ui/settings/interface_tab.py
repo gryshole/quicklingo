@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QComboBox, QFormLayout, QGroupBox, QLabel, QVBoxLa
 from quicklingo import settings
 from quicklingo.i18n import get_language, set_language, tr
 from quicklingo.ui.settings.base_tab import SettingsTab
+from quicklingo.ui.settings_theme import configure_settings_group_box
 
 
 class InterfaceTab(SettingsTab):
@@ -26,6 +27,7 @@ class InterfaceTab(SettingsTab):
 
         self._form.addRow(self._language_label, self._language_combo)
         self._form.addRow("", self._note)
+        configure_settings_group_box(self._group)
         layout.addWidget(self._group)
         layout.addStretch()
         self.retranslate_ui()
