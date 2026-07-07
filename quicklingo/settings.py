@@ -421,3 +421,197 @@ def get_learning_flow_cycle_completed() -> bool:
 
 def set_learning_flow_cycle_completed(completed: bool) -> None:
     _store.update({"learning_flow_cycle_completed": completed})
+
+
+def get_sync_device_id() -> str:
+    import uuid
+
+    data = _load()
+    device_id = data.get("sync_device_id", "")
+    if not isinstance(device_id, str) or not device_id.strip():
+        device_id = str(uuid.uuid4())
+        data["sync_device_id"] = device_id
+        _save(data)
+    return device_id
+
+
+def get_sync_transport() -> str:
+    data = _load()
+    value = data.get("sync_transport", "")
+    if value == "local":
+        return ""
+    allowed = {"", "webdav", "google_drive", "dropbox", "onedrive"}
+    return value if value in allowed else ""
+
+
+def save_sync_transport(value: str) -> None:
+    allowed = {"", "webdav", "google_drive", "dropbox", "onedrive"}
+    _store.update({"sync_transport": value if value in allowed else ""})
+
+
+def _sync_oauth_settings_key(provider: str) -> str:
+    mapping = {
+        "google_drive": "sync_oauth_google",
+        "dropbox": "sync_oauth_dropbox",
+        "onedrive": "sync_oauth_onedrive",
+    }
+    if provider not in mapping:
+        raise ValueError(f"Unsupported OAuth provider: {provider}")
+    return mapping[provider]
+
+
+def get_sync_oauth_tokens(provider: str):
+    from quicklingo.sync.oauth.tokens import OAuthTokens
+
+    data = _load()
+    raw = data.get(_sync_oauth_settings_key(provider), {})
+    if not isinstance(raw, dict):
+        return OAuthTokens(access_token="", refresh_token="")
+    stored: dict[str, object] = dict(raw)
+    for field in ("refresh_token", "access_token"):
+        value = stored.get(field)
+        if isinstance(value, str) and value:
+            stored[field] = _decode_api_key_value(value)
+    return OAuthTokens.from_dict(stored)
+
+
+def save_sync_oauth_tokens(provider: str, tokens) -> None:
+    payload = tokens.to_dict()
+    for field in ("refresh_token", "access_token"):
+        value = payload.get(field)
+        if isinstance(value, str) and value:
+            payload[field] = _encode_api_key_value(value)
+    _store.update({_sync_oauth_settings_key(provider): payload})
+
+
+def clear_sync_oauth_tokens(provider: str) -> None:
+    _store.update({_sync_oauth_settings_key(provider): {}})
+
+
+def get_sync_oauth_account(provider: str) -> str:
+    return get_sync_oauth_tokens(provider).account_label
+
+
+def get_sync_google_client_id() -> str:
+    data = _load()
+    value = data.get("sync_google_client_id", "")
+    return value if isinstance(value, str) else ""
+
+
+def save_sync_google_client_id(value: str) -> None:
+    _store.update({"sync_google_client_id": value.strip()})
+
+
+def get_sync_google_client_secret() -> str:
+    data = _load()
+    value = data.get("sync_google_client_secret", "")
+    if not isinstance(value, str):
+        return ""
+    return _decode_api_key_value(value.strip())
+
+
+def save_sync_google_client_secret(value: str) -> None:
+    data = _load()
+    data["sync_google_client_secret"] = _encode_api_key_value(value.strip())
+    _save(data)
+
+
+def get_sync_dropbox_app_key() -> str:
+    data = _load()
+    value = data.get("sync_dropbox_app_key", "")
+    return value if isinstance(value, str) else ""
+
+
+def save_sync_dropbox_app_key(value: str) -> None:
+    _store.update({"sync_dropbox_app_key": value.strip()})
+
+
+def get_sync_dropbox_app_secret() -> str:
+    data = _load()
+    value = data.get("sync_dropbox_app_secret", "")
+    if not isinstance(value, str):
+        return ""
+    return _decode_api_key_value(value.strip())
+
+
+def save_sync_dropbox_app_secret(value: str) -> None:
+    data = _load()
+    data["sync_dropbox_app_secret"] = _encode_api_key_value(value.strip())
+    _save(data)
+
+
+def get_sync_onedrive_client_id() -> str:
+    data = _load()
+    value = data.get("sync_onedrive_client_id", "")
+    return value if isinstance(value, str) else ""
+
+
+def save_sync_onedrive_client_id(value: str) -> None:
+    _store.update({"sync_onedrive_client_id": value.strip()})
+
+
+def get_sync_webdav_url() -> str:
+    data = _load()
+    value = data.get("sync_webdav_url", "")
+    return value if isinstance(value, str) else ""
+
+
+def save_sync_webdav_url(url: str) -> None:
+    _store.update({"sync_webdav_url": url.strip()})
+
+
+def get_sync_webdav_username() -> str:
+    data = _load()
+    value = data.get("sync_webdav_username", "")
+    return value if isinstance(value, str) else ""
+
+
+def save_sync_webdav_username(username: str) -> None:
+    _store.update({"sync_webdav_username": username.strip()})
+
+
+def get_sync_webdav_password() -> str:
+    data = _load()
+    value = data.get("sync_webdav_password", "")
+    if not isinstance(value, str):
+        return ""
+    return _decode_api_key_value(value.strip())
+
+
+def save_sync_webdav_password(password: str) -> None:
+    data = _load()
+    data["sync_webdav_password"] = _encode_api_key_value(password.strip())
+    _save(data)
+
+
+def get_sync_last_sync_at() -> str:
+    data = _load()
+    value = data.get("sync_last_sync_at", "")
+    return value if isinstance(value, str) else ""
+
+
+def get_sync_last_sync_status() -> str:
+    data = _load()
+    value = data.get("sync_last_sync_status", "")
+    return value if isinstance(value, str) else ""
+
+
+def save_sync_status(*, last_sync_at: str, last_sync_status: str) -> None:
+    _store.update(
+        {
+            "sync_last_sync_at": last_sync_at,
+            "sync_last_sync_status": last_sync_status,
+        }
+    )
+
+
+def get_sync_manifest_seq() -> int:
+    data = _load()
+    try:
+        return int(data.get("sync_manifest_seq", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def save_sync_manifest_seq(seq: int) -> None:
+    _store.update({"sync_manifest_seq": int(seq)})

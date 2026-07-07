@@ -65,6 +65,7 @@ from quicklingo.input.tutor_capture_log import log_debug
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.providers.setup_info import PROVIDER_HINT_KEYS, provider_needs_api_key
 
+from quicklingo.ui.controllers.sync_controller import SyncController
 from quicklingo.ui.controllers.translation_controller import TranslationController
 from quicklingo.ui.controllers.tutor_input import append_character, backspace as tutor_backspace
 from quicklingo.ui.controllers.update_controller import UpdateController
@@ -112,6 +113,7 @@ class MainWindow(QMainWindow):
 
         self._translation = TranslationController(self)
         self._updates = UpdateController(self)
+        self._sync = SyncController(self)
 
         self._force_quit = False
         self._tray_manager = None
@@ -140,6 +142,8 @@ class MainWindow(QMainWindow):
 
         self._tools_menu = None
 
+        self._study_menu = None
+
         self._history_action = None
 
         self._learning_action = None
@@ -147,6 +151,7 @@ class MainWindow(QMainWindow):
         self._quiz_questions_action = None
 
         self._settings_action = None
+        self._sync_action = None
 
         self._help_menu = None
 
@@ -163,6 +168,7 @@ class MainWindow(QMainWindow):
         self._help_history_action = None
 
         self._help_learning_action = None
+        self._help_sync_google_drive_action = None
         self._help_onboarding_action = None
 
         self._create_menu_bar()
@@ -428,6 +434,10 @@ class MainWindow(QMainWindow):
 
         self._retry_btn.setText(tr("main.retry"))
 
+        if self._study_menu:
+
+            self._study_menu.setTitle(tr("main.menu_study"))
+
         if self._tools_menu:
 
             self._tools_menu.setTitle(tr("main.menu_tools"))
@@ -448,6 +458,10 @@ class MainWindow(QMainWindow):
         if self._settings_action:
 
             self._settings_action.setText(tr("main.menu_settings"))
+
+        if self._sync_action:
+
+            self._sync_action.setText(tr("main.menu_sync"))
 
         if self._help_menu:
 
@@ -482,6 +496,12 @@ class MainWindow(QMainWindow):
         if self._help_learning_action:
 
             self._help_learning_action.setText(tr("main.menu_help_learning"))
+
+        if self._help_sync_google_drive_action:
+
+            self._help_sync_google_drive_action.setText(
+                tr("main.menu_help_sync_google_drive")
+            )
 
         if self._help_onboarding_action:
 
@@ -817,13 +837,7 @@ class MainWindow(QMainWindow):
         if want_on_top == has_on_top:
             return
 
-        flags = self.windowFlags()
-        if want_on_top:
-            flags |= Qt.WindowType.WindowStaysOnTopHint
-        else:
-            flags &= ~Qt.WindowType.WindowStaysOnTopHint
-
-        self.setWindowFlags(flags)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, want_on_top)
         self.show()
 
 
@@ -968,19 +982,24 @@ class MainWindow(QMainWindow):
 
         )
 
+        self._study_menu = menu_bar.addMenu("")
+
+        self._learning_action = self._study_menu.addAction("")
+
+        self._learning_action.triggered.connect(self._open_learning)
+
         self._tools_menu = menu_bar.addMenu("")
 
         self._settings_action = self._tools_menu.addAction("")
 
         self._settings_action.triggered.connect(self._open_settings)
 
+        self._sync_action = self._tools_menu.addAction("")
+        self._sync_action.triggered.connect(self._run_sync)
+
         self._history_action = self._tools_menu.addAction("")
 
         self._history_action.triggered.connect(self._open_history)
-
-        self._learning_action = self._tools_menu.addAction("")
-
-        self._learning_action.triggered.connect(self._open_learning)
 
         self._quiz_questions_action = self._tools_menu.addAction("")
         self._quiz_questions_action.triggered.connect(self._open_quiz_questions)
@@ -1024,6 +1043,12 @@ class MainWindow(QMainWindow):
 
         self._help_learning_action.triggered.connect(
             lambda: self._open_help_topic("learning")
+        )
+
+        self._help_sync_google_drive_action = self._help_menu.addAction("")
+
+        self._help_sync_google_drive_action.triggered.connect(
+            lambda: self._open_help_topic("sync_google_drive")
         )
 
         self._help_onboarding_action = self._help_menu.addAction("")
@@ -1126,6 +1151,9 @@ class MainWindow(QMainWindow):
         self._check_api_key()
 
 
+
+    def _run_sync(self) -> None:
+        self._sync.start_sync()
 
     def _reload_model_combo(self) -> None:
         current = self._model_combo.currentData() if self._model_combo.count() else None

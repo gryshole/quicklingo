@@ -33,12 +33,60 @@ from quicklingo.learning.ai_deck.topics import (
     topic_label,
 )
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
+from quicklingo.ui.app_theme import apply_combo_style
 from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
 from quicklingo.workers.ai_deck_generator_worker import AiDeckGeneratorWorker
 
 _PAGE_FORM = 0
 _PAGE_LOADING = 1
 _PAGE_ERROR = 2
+
+_DIALOG_STYLE = """
+    QDialog#aiDeckGeneratorDialog {
+        background-color: #f8fafc;
+    }
+    QDialog#aiDeckGeneratorDialog #aiDeckFormPage,
+    QDialog#aiDeckGeneratorDialog #aiDeckLoadingPage,
+    QDialog#aiDeckGeneratorDialog #aiDeckErrorPage,
+    QDialog#aiDeckGeneratorDialog QStackedWidget {
+        background-color: #f8fafc;
+    }
+    QDialog#aiDeckGeneratorDialog #aiDeckCountWrap {
+        background: transparent;
+    }
+    QDialog#aiDeckGeneratorDialog QLabel {
+        color: #334155;
+        background: transparent;
+    }
+    QDialog#aiDeckGeneratorDialog QLineEdit {
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 5px 8px;
+        background-color: #ffffff;
+        color: #0f172a;
+        min-height: 28px;
+    }
+    QDialog#aiDeckGeneratorDialog QLineEdit:hover {
+        border-color: #94a3b8;
+    }
+    QDialog#aiDeckGeneratorDialog QLineEdit:focus {
+        border-color: #2563eb;
+    }
+    QDialog#aiDeckGeneratorDialog QSpinBox {
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background-color: #ffffff;
+        color: #0f172a;
+        min-height: 28px;
+        padding: 4px 8px;
+    }
+    QDialog#aiDeckGeneratorDialog QSpinBox:hover {
+        border-color: #94a3b8;
+    }
+    QDialog#aiDeckGeneratorDialog QSpinBox:focus {
+        border-color: #2563eb;
+    }
+"""
 
 _PRIMARY_BTN = """
     QPushButton {
@@ -65,10 +113,14 @@ class AiDeckGeneratorDialog(QDialog):
         self._initial_model_id = initial_model_id
         self._worker: AiDeckGeneratorWorker | None = None
         self._result: tuple[int, str] | None = None
+        self.setObjectName("aiDeckGeneratorDialog")
         self.setMinimumWidth(480)
         self.setModal(True)
+        self.setStyleSheet(_DIALOG_STYLE)
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(0)
         self._stack = QStackedWidget()
         root.addWidget(self._stack)
 
@@ -85,16 +137,16 @@ class AiDeckGeneratorDialog(QDialog):
 
     def retranslate_ui(self) -> None:
         self.setWindowTitle(tr("learning.ai_deck.dialog_title"))
-        self._tag_label.setText(tr("learning.ai_deck.tag"))
+        self._tag_label.setText(self._form_label("learning.ai_deck.tag"))
         self._tag_field.setPlaceholderText(tr("learning.ai_deck.tag_placeholder"))
-        self._level_label.setText(tr("learning.ai_deck.level"))
-        self._model_label.setText(tr("learning.model"))
-        self._topic_label.setText(tr("learning.ai_deck.topic"))
-        self._custom_topic_label.setText(tr("learning.ai_deck.custom_topic"))
+        self._level_label.setText(self._form_label("learning.ai_deck.level"))
+        self._model_label.setText(self._form_label("learning.model"))
+        self._topic_label.setText(self._form_label("learning.ai_deck.topic"))
+        self._custom_topic_label.setText(self._form_label("learning.ai_deck.custom_topic"))
         self._custom_topic_field.setPlaceholderText(tr("learning.ai_deck.custom_topic_placeholder"))
-        self._lexicon_label.setText(tr("learning.ai_deck.lexicon"))
-        self._count_label.setText(tr("learning.ai_deck.word_count"))
-        self._direction_label.setText(tr("learning.ai_deck.direction"))
+        self._lexicon_label.setText(self._form_label("learning.ai_deck.lexicon"))
+        self._count_label.setText(self._form_label("learning.ai_deck.word_count"))
+        self._direction_label.setText(self._form_label("learning.ai_deck.direction"))
         self._generate_btn.setText(tr("learning.ai_deck.generate"))
         self._cancel_btn.setText(tr("common.cancel"))
         self._loading_title.setText(tr("learning.ai_deck.generating"))
@@ -103,6 +155,11 @@ class AiDeckGeneratorDialog(QDialog):
         self._reload_topic_combo()
         self._reload_lexicon_combo()
         self._reload_model_combo()
+
+    @staticmethod
+    def _form_label(key: str) -> str:
+        text = tr(key)
+        return text if text.endswith(":") else f"{text}:"
 
     def _reload_model_combo(self) -> None:
         current = self._model_combo.currentData() if self._model_combo.count() else None
@@ -116,17 +173,29 @@ class AiDeckGeneratorDialog(QDialog):
         if self._model_combo.count() and self._model_combo.currentIndex() < 0:
             self._model_combo.setCurrentIndex(0)
 
+    def _style_combo(self, combo: QComboBox) -> None:
+        configure_single_line_combo(combo)
+        apply_combo_style(combo)
+
     def _build_form_page(self) -> QWidget:
         page = QWidget()
+        page.setObjectName("aiDeckFormPage")
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self._tag_field = QLineEdit()
         self._tag_label = QLabel()
         form.addRow(self._tag_label, self._tag_field)
 
         self._level_combo = QComboBox()
-        configure_single_line_combo(self._level_combo)
+        self._style_combo(self._level_combo)
         for level in CEFR_LEVELS:
             self._level_combo.addItem(level, level)
         self._level_combo.setCurrentIndex(2)
@@ -134,12 +203,12 @@ class AiDeckGeneratorDialog(QDialog):
         form.addRow(self._level_label, self._level_combo)
 
         self._model_combo = QComboBox()
-        configure_single_line_combo(self._model_combo)
+        self._style_combo(self._model_combo)
         self._model_label = QLabel()
         form.addRow(self._model_label, self._model_combo)
 
         self._topic_combo = QComboBox()
-        configure_single_line_combo(self._topic_combo)
+        self._style_combo(self._topic_combo)
         self._topic_combo.currentIndexChanged.connect(self._update_custom_topic_visibility)
         self._topic_label = QLabel()
         form.addRow(self._topic_label, self._topic_combo)
@@ -149,26 +218,38 @@ class AiDeckGeneratorDialog(QDialog):
         form.addRow(self._custom_topic_label, self._custom_topic_field)
 
         self._lexicon_combo = QComboBox()
-        configure_single_line_combo(self._lexicon_combo)
+        self._style_combo(self._lexicon_combo)
         self._lexicon_label = QLabel()
         form.addRow(self._lexicon_label, self._lexicon_combo)
 
         self._count_spin = QSpinBox()
         self._count_spin.setRange(10, 30)
         self._count_spin.setValue(15)
+        self._count_spin.setButtonSymbols(QSpinBox.ButtonSymbols.UpDownArrows)
+        self._count_spin.setFixedWidth(96)
+        count_wrap = QWidget()
+        count_wrap.setObjectName("aiDeckCountWrap")
+        count_row = QHBoxLayout(count_wrap)
+        count_row.setContentsMargins(0, 0, 0, 0)
+        count_row.setSpacing(0)
+        count_row.addWidget(self._count_spin)
+        count_row.addStretch(1)
         self._count_label = QLabel()
-        form.addRow(self._count_label, self._count_spin)
+        form.addRow(self._count_label, count_wrap)
 
         self._direction_combo = QComboBox()
-        configure_single_line_combo(self._direction_combo)
+        self._style_combo(self._direction_combo)
         for direction in get_directions():
             self._direction_combo.addItem(direction.label, direction.id)
         self._direction_label = QLabel()
         form.addRow(self._direction_label, self._direction_combo)
 
         layout.addLayout(form)
+        layout.addSpacing(15)
 
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(10)
         buttons.addStretch()
         self._cancel_btn = QPushButton()
         self._cancel_btn.clicked.connect(self.reject)
@@ -183,6 +264,7 @@ class AiDeckGeneratorDialog(QDialog):
 
     def _build_loading_page(self) -> QWidget:
         page = QWidget()
+        page.setObjectName("aiDeckLoadingPage")
         layout = QVBoxLayout(page)
         layout.addStretch()
         self._loading_title = QLabel()
@@ -203,6 +285,7 @@ class AiDeckGeneratorDialog(QDialog):
 
     def _build_error_page(self) -> QWidget:
         page = QWidget()
+        page.setObjectName("aiDeckErrorPage")
         layout = QVBoxLayout(page)
         layout.addStretch()
         self._error_label = QLabel()

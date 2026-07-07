@@ -4,6 +4,9 @@ import csv
 import io
 
 from quicklingo.db.connection import connection, get_connection
+from quicklingo.db.sync_schema import touch_translation_updated_at
+from quicklingo.db.tombstones import record_all_translations_deleted, record_translation_delete
+from quicklingo import settings as app_settings
 from quicklingo.db.history_analytics import _direction_filter_clause
 from quicklingo.db.history_models import (
     TranslationRecord,
@@ -42,8 +45,8 @@ def save_translation(
         cursor = conn.execute(
             """
             INSERT INTO translations
-                (direction, source_text, result_text, model, profile_id, content_hash)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (direction, source_text, result_text, model, profile_id, content_hash, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
             """,
             (direction, source_text, result_text, model, profile_id, content_hash),
         )
@@ -205,11 +208,24 @@ def get_recent_for_context(
 
 def clear_all() -> None:
     with connection() as conn:
+        record_all_translations_deleted(device_id=app_settings.get_sync_device_id(), conn=conn)
         conn.execute("DELETE FROM translations")
 
 
 def delete_by_id(record_id: int) -> bool:
     with connection() as conn:
+        row = conn.execute(
+            "SELECT content_hash, direction, profile_id FROM translations WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if row:
+            record_translation_delete(
+                content_hash=str(row["content_hash"] or ""),
+                direction=str(row["direction"] or ""),
+                profile_id=str(row["profile_id"] or ""),
+                device_id=app_settings.get_sync_device_id(),
+                conn=conn,
+            )
         cursor = conn.execute("DELETE FROM translations WHERE id = ?", (record_id,))
     return cursor.rowcount > 0
 
@@ -228,7 +244,7 @@ def get_source_text(record_id: int) -> str:
 def set_starred(record_id: int, starred: bool) -> bool:
     with connection() as conn:
         cursor = conn.execute(
-            "UPDATE translations SET is_starred = ? WHERE id = ?",
+            "UPDATE translations SET is_starred = ?, updated_at = datetime('now') WHERE id = ?",
             (1 if starred else 0, record_id),
         )
     return cursor.rowcount > 0
@@ -243,6 +259,7 @@ def set_tags(record_id: int, tags: list[str]) -> bool:
         if row is None:
             return False
         set_translation_tags(conn, record_id, tags)
+        touch_translation_updated_at(conn, record_id)
     return True
 
 
@@ -281,6 +298,7 @@ def bulk_apply_tags(
             if before == new_tags:
                 continue
             set_translation_tags(conn, record_id, new_tags)
+            touch_translation_updated_at(conn, record_id)
             updated += 1
     return updated
 

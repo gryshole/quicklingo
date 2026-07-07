@@ -21,6 +21,9 @@ def init_db() -> None:
     from quicklingo.db.learning import init_learning_tables
 
     init_learning_tables()
+    from quicklingo.db.sync_schema import init_sync_schema
+
+    init_sync_schema()
 
 
 def _create_table(conn: sqlite3.Connection) -> None:

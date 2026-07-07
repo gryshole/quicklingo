@@ -6,6 +6,13 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from quicklingo.db.connection import connection, get_connection
+from quicklingo.db.sync_schema import (
+    new_card_sync_id,
+    touch_card_content_updated_at,
+    touch_card_srs_updated_at,
+)
+from quicklingo.db.tombstones import record_card_delete, record_deck_delete
+from quicklingo import settings as app_settings
 
 QUIZ_QUESTION_TYPES = ("fill_blank", "definition_match", "translation_recall")
 
@@ -351,7 +358,7 @@ def create_deck(
 def update_deck_summary(deck_id: int, summary: str) -> None:
     with connection() as conn:
         conn.execute(
-            "UPDATE learning_decks SET analysis_summary = ? WHERE id = ?",
+            "UPDATE learning_decks SET analysis_summary = ?, updated_at = datetime('now') WHERE id = ?",
             (summary, deck_id),
         )
 
@@ -536,20 +543,23 @@ def upsert_card(
             conn.execute(
                 """
                 UPDATE learning_cards
-                SET back = ?, context = ?, hint = ?, notes = ?, priority = ?, source_record_id = ?
+                SET back = ?, context = ?, hint = ?, notes = ?, priority = ?, source_record_id = ?,
+                    content_updated_at = datetime('now')
                 WHERE id = ?
                 """,
                 (back, context, hint, notes, priority, source_record_id, existing["id"]),
             )
             return int(existing["id"])
         today = date.today().isoformat()
+        sync_id = new_card_sync_id()
         cursor = conn.execute(
             """
             INSERT INTO learning_cards
-                (deck_id, front, back, context, hint, notes, priority, source_record_id, next_review_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (deck_id, front, back, context, hint, notes, priority, source_record_id,
+                 next_review_date, sync_id, content_updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             """,
-            (deck_id, front.strip(), back.strip(), context, hint, notes, priority, source_record_id, today),
+            (deck_id, front.strip(), back.strip(), context, hint, notes, priority, source_record_id, today, sync_id),
         )
         return cursor.lastrowid or 0
 
@@ -610,7 +620,8 @@ def batch_upsert_cards(
                     """
                     UPDATE learning_cards
                     SET back = ?, context = ?, hint = ?, notes = ?, image_prompt = ?,
-                        quiz_distractors = ?, priority = ?, source_record_id = ?
+                        quiz_distractors = ?, priority = ?, source_record_id = ?,
+                        content_updated_at = datetime('now')
                     WHERE id = ?
                     """,
                     (
@@ -626,12 +637,14 @@ def batch_upsert_cards(
                     ),
                 )
             else:
+                sync_id = new_card_sync_id()
                 cursor = conn.execute(
                     """
                     INSERT INTO learning_cards
                         (deck_id, front, back, context, hint, notes, image_prompt,
-                         quiz_distractors, priority, source_record_id, next_review_date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         quiz_distractors, priority, source_record_id, next_review_date,
+                         sync_id, content_updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
                     (
                         deck_id,
@@ -645,6 +658,7 @@ def batch_upsert_cards(
                         priority,
                         source_record_id,
                         today,
+                        sync_id,
                     ),
                 )
                 card_id = int(cursor.lastrowid or 0)
@@ -713,8 +727,6 @@ def update_card(
     audio_path: str | None = None,
     quiz_distractors: str | None = None,
 ) -> bool:
-    fields: list[str] = []
-    params: list[object] = []
     updates = {
         "front": front,
         "back": back,
@@ -728,15 +740,26 @@ def update_card(
         "audio_path": audio_path,
         "quiz_distractors": quiz_distractors,
     }
+    content_fields = {
+        "front", "back", "context", "hint", "notes", "priority",
+        "phonetic", "image_prompt", "quiz_distractors",
+    }
+    fields: list[str] = []
+    params: list[object] = []
+    touches_content = False
     for column, value in updates.items():
         if value is None:
             continue
         if column in ("front", "back"):
             value = str(value).strip()
+        if column in content_fields:
+            touches_content = True
         fields.append(f"{column} = ?")
         params.append(value)
     if not fields:
         return False
+    if touches_content:
+        fields.append("content_updated_at = datetime('now')")
     params.append(card_id)
     with connection() as conn:
         cursor = conn.execute(
@@ -748,6 +771,7 @@ def update_card(
 
 def delete_card(card_id: int) -> bool:
     with connection() as conn:
+        record_card_delete(card_id, device_id=app_settings.get_sync_device_id(), conn=conn)
         cursor = conn.execute("DELETE FROM learning_cards WHERE id = ?", (card_id,))
         return cursor.rowcount > 0
 
@@ -762,6 +786,7 @@ def count_cards(deck_id: int) -> int:
 
 def delete_deck(deck_id: int) -> bool:
     with connection() as conn:
+        record_deck_delete(deck_id, device_id=app_settings.get_sync_device_id(), conn=conn)
         cursor = conn.execute("DELETE FROM learning_decks WHERE id = ?", (deck_id,))
         return cursor.rowcount > 0
 
@@ -1230,7 +1255,8 @@ def _record_review_lite(card_id: int, *, again: bool) -> None:
         conn.execute(
             """
             UPDATE learning_cards
-            SET interval_days = ?, next_review_date = ?, last_reviewed = ?
+            SET interval_days = ?, next_review_date = ?, last_reviewed = ?,
+                srs_updated_at = datetime('now')
             WHERE id = ?
             """,
             (new_interval, next_review, today_str, card_id),

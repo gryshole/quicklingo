@@ -18,6 +18,7 @@ from quicklingo.ui.settings.learning_features_tab import LearningFeaturesTab
 from quicklingo.ui.settings.interface_tab import InterfaceTab
 from quicklingo.ui.settings.models_tab import ModelsTab
 from quicklingo.ui.settings.profiles_tab import ProfilesTab
+from quicklingo.ui.settings.sync_tab import SyncTab
 from quicklingo.ui.settings_theme import (
     DIALOG_MARGINS,
     apply_settings_dialog_style,
@@ -48,6 +49,7 @@ class SettingsDialog(QDialog):
         self._models_tab = ModelsTab()
         self._features_tab = FeaturesTab()
         self._learning_features_tab = LearningFeaturesTab()
+        self._sync_tab = SyncTab()
         self._directions_tab = DirectionsTab()
         self._profiles_tab = ProfilesTab()
 
@@ -57,6 +59,7 @@ class SettingsDialog(QDialog):
             self._models_tab,
             self._features_tab,
             self._learning_features_tab,
+            self._sync_tab,
             self._directions_tab,
             self._profiles_tab,
         )
@@ -97,6 +100,7 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(self._models_tab, tr("settings.tab_models"))
         self._tabs.addTab(self._features_tab, tr("settings.tab_features"))
         self._tabs.addTab(self._learning_features_tab, tr("settings.tab_learning"))
+        self._tabs.addTab(self._sync_tab, tr("settings.tab_sync"))
         self._tabs.addTab(self._directions_tab, tr("settings.tab_directions"))
         self._tabs.addTab(self._profiles_tab, tr("settings.tab_profiles"))
         self._apply_btn.setText(tr("settings.apply"))

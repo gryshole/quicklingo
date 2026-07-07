@@ -81,6 +81,28 @@ Keys are saved in `%APPDATA%/QuickLingo/settings.json`.
 
 Your settings, history, decks, and config live in `%APPDATA%/QuickLingo/` and are **not** removed when you update the app folder.
 
+### Sync between PCs (work / home)
+
+QuickLingo can sync **only** `history.db` (translations, decks, cards, quiz data) between computers. Settings, API keys, card images, and audio stay local on each machine.
+
+1. Open **Tools → Settings → Synchronization**.
+2. Choose a transport:
+   - **Google Drive**, **Dropbox**, or **OneDrive** — register your own OAuth app (client ID / app key), enter credentials in Settings, click **Connect…**, then sign in in the browser.
+   - **WebDAV** — URL + username + password (no desktop sync client required).
+3. On each PC, use **Tools → Sync database…** after you translate or study. The app merges remote changes, then uploads an updated snapshot.
+
+**OAuth setup (one-time per provider):**
+
+| Provider | Where to register | Redirect URI |
+|----------|-------------------|--------------|
+| Google Drive | [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → OAuth client (Desktop) | `http://127.0.0.1` |
+| Dropbox | [Dropbox App Console](https://www.dropbox.com/developers/apps) — scoped access `files.content.read/write` | `http://127.0.0.1` |
+| OneDrive | [Microsoft Entra](https://entra.microsoft.com/) → App registrations → Public client/native | `http://127.0.0.1` |
+
+Enable **Drive API** (Google) and scope **Files.ReadWrite.AppFolder** (Microsoft). Files are stored in each provider's app-specific area (`appDataFolder` / app folder), not in your visible Drive root.
+
+Deletes are preserved via tombstones so removed cards or translations do not reappear from the cloud. Conflicting edits use last-write-wins based on timestamps.
+
 ### In-app update (0.1.0+)
 
 **Help → Check for updates → Update now** — downloads the latest release, replaces the app files, and restarts QuickLingo. You can also open the release page in the browser and unzip manually.
@@ -108,8 +130,9 @@ Use **Tools → Settings** to manage API keys, models, features, learning option
 | Menu | Description |
 |------|-------------|
 | **Tools → Settings** | Full configuration dialog |
+| **Tools → Sync database…** | Merge and upload history to a sync folder or WebDAV |
 | **Tools → Request history** | Browse, search, and export past translations |
-| **Tools → Learning** | Decks, review, quiz, stats |
+| **Study → Learning** | Decks, review, quiz, stats |
 | **Tools → Quiz questions** | Manage AI-generated quiz questions |
 | **Help** | About, updates, and in-app documentation |
 
@@ -130,6 +153,7 @@ On first run, QuickLingo copies the distribution `config_data/` into `%APPDATA%/
 | **Models** | Enable/disable models in the main window dropdown |
 | **Features** | Always on top, hotkeys, tray, cache, history, encrypted keys |
 | **Learning** | SRS limits, quiz settings, AI prompts for cards and quizzes |
+| **Synchronization** | WebDAV or cloud API (Google Drive, Dropbox, OneDrive) for `history.db` |
 | **Directions** | Add, edit, delete, enable/disable translation directions |
 | **Profiles** | Edit prompts and formatters per direction; add/delete profiles |
 

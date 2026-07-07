@@ -17,6 +17,7 @@ HELP_TOPICS = (
     "features",
     "history",
     "learning",
+    "sync_google_drive",
 )
 
 

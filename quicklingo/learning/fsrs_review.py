@@ -72,7 +72,8 @@ def _save_fsrs_state(card_id: int, fsrs_card: FsrsCard) -> None:
         conn.execute(
             """
             UPDATE learning_cards
-            SET fsrs_state = ?, next_review_date = ?, last_reviewed = ?, interval_days = ?
+            SET fsrs_state = ?, next_review_date = ?, last_reviewed = ?, interval_days = ?,
+                srs_updated_at = datetime('now')
             WHERE id = ?
             """,
             (payload, due_date, last_reviewed, interval_days, card_id),

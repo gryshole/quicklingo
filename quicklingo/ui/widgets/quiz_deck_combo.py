@@ -1,71 +1,93 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, Signal, QModelIndex, QRect, QSize
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QStandardItem, QStandardItemModel
+import shiboken6
+
+from PySide6.QtCore import QEvent, QModelIndex, QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QFontMetrics,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QPixmap,
+    QStandardItem,
+    QStandardItemModel,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
-    QLineEdit,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QListView,
+    QSizePolicy,
     QStyle,
     QStyleOptionViewItem,
     QStyledItemDelegate,
+    QVBoxLayout,
 )
 
 from quicklingo.db import learning
 from quicklingo.i18n import tr
 from quicklingo.learning.quiz.aggregator import list_quiz_eligible_decks
 from quicklingo.learning.quiz.deck_selection_prefs import load_play_deck_ids, save_play_deck_ids
+from quicklingo.ui.app_theme import (
+    BORDER_HOVER,
+    CARD_BG,
+    INPUT_BORDER,
+    PRIMARY,
+    RADIUS_CONTROL,
+    TEXT_PRIMARY,
+    _ensure_chevron_png,
+    ensure_valid_point_font,
+    settings_ui_font,
+)
 
 _ALL_ITEM_ID = -1
 _DECK_ID_ROLE = Qt.ItemDataRole.UserRole
 _INDICATOR_SIZE = 18
 _ROW_HEIGHT = 36
 _HPAD = 12
+_LABEL_COLOR = "#0f172a"
 
-_COMBO_STYLE = """
-    QComboBox {
-        border: 1px solid #d1d5db;
-        border-radius: 8px;
-        padding: 8px 12px;
-        background-color: white;
-        color: #1f2937;
-    }
-    QComboBox:hover {
-        border: 1px solid #3b82f6;
-    }
-    QComboBox::drop-down {
-        border: none;
-        width: 30px;
-    }
-    QComboBox QLineEdit {
+_FIELD_STYLE = f"""
+    QFrame#deckMultiSelectField {{
+        background: {CARD_BG};
+        border: 1px solid {INPUT_BORDER};
+        border-radius: {RADIUS_CONTROL};
+        min-height: 36px;
+    }}
+    QFrame#deckMultiSelectField:hover:!disabled {{
+        border: 1px solid {BORDER_HOVER};
+    }}
+    QFrame#deckMultiSelectField[popupOpen="true"] {{
+        border: 1px solid {PRIMARY};
+    }}
+    QFrame#deckMultiSelectField:disabled {{
+        background: #f1f5f9;
+        border-color: #e2e8f0;
+    }}
+"""
+
+_POPUP_STYLE = f"""
+    QFrame#deckMultiSelectPopup {{
+        background: {CARD_BG};
+        border: 1px solid {INPUT_BORDER};
+        border-radius: {RADIUS_CONTROL};
+    }}
+    QFrame#deckMultiSelectPopup QListView {{
         border: none;
         background: transparent;
-        padding: 0;
-        color: #1f2937;
-    }
-"""
-
-_LIST_VIEW_STYLE = """
-    QListView {
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        background-color: white;
         outline: none;
         padding: 4px;
-    }
+        color: {TEXT_PRIMARY};
+    }}
 """
 
 
-def _ensure_font(widget) -> QFont:
-    font = QFont(widget.font())
-    if font.pointSize() <= 0:
-        if font.pixelSize() > 0:
-            font.setPointSize(max(1, round(font.pixelSize() * 0.75)))
-        else:
-            font.setPointSize(10)
-        widget.setFont(font)
-    return font
+def _label_style(*, disabled: bool) -> str:
+    color = "#94a3b8" if disabled else _LABEL_COLOR
+    return f"color: {color}; background: transparent; border: none; padding: 0;"
 
 
 class _CheckableListDelegate(QStyledItemDelegate):
@@ -125,8 +147,8 @@ class _CheckableListDelegate(QStyledItemDelegate):
         return QSize(option.rect.width() if option.rect.width() > 0 else 340, _ROW_HEIGHT)
 
 
-class CheckableComboBox(QComboBox):
-    """Multi-select dropdown with checkable model items; popup stays open on click."""
+class CheckableComboBox(QFrame):
+    """Multi-select deck picker with a popup list; avoids QComboBox toggle quirks."""
 
     selection_changed = Signal(object)
 
@@ -135,44 +157,87 @@ class CheckableComboBox(QComboBox):
         self._all_mode = True
         self._selected_ids: set[int] = set()
         self._updating = False
-        self._skip_hide_popup = False
+        self._display_text = ""
+        self._suppress_open_on_release = False
 
-        _ensure_font(self)
+        self.setObjectName("deckMultiSelectField")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMinimumHeight(36)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFont(settings_ui_font())
+        ensure_valid_point_font(self)
 
-        self.setEditable(True)
-        self.lineEdit = QLineEdit(self)
-        self.lineEdit.setReadOnly(True)
-        self.lineEdit.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.lineEdit.setCursor(Qt.CursorShape.ArrowCursor)
-        _ensure_font(self.lineEdit)
-        self.setLineEdit(self.lineEdit)
-        self.lineEdit.installEventFilter(self)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 8, 0)
+        layout.setSpacing(4)
 
-        model = QStandardItemModel(self)
-        self.setModel(model)
+        self._label = QLabel()
+        self._label.setObjectName("deckMultiSelectLabel")
+        self._label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._label.setFont(settings_ui_font())
+        ensure_valid_point_font(self._label)
+        layout.addWidget(self._label)
 
-        list_view = QListView(self)
-        list_view.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        list_view.setMinimumWidth(340)
-        list_view.setUniformItemSizes(True)
-        _ensure_font(list_view)
-        list_view.setItemDelegate(_CheckableListDelegate(list_view))
-        self.setView(list_view)
-        list_view.viewport().installEventFilter(self)
+        self._arrow = QLabel()
+        self._arrow.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._arrow.setPixmap(QPixmap(str(_ensure_chevron_png())))
+        self._arrow.setFixedSize(20, 20)
+        self._arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._arrow.setStyleSheet("background: transparent; border: none;")
+        layout.addWidget(self._arrow)
 
-        self.setStyleSheet(_COMBO_STYLE)
-        list_view.setStyleSheet(_LIST_VIEW_STYLE)
-        self.setMaxVisibleItems(12)
+        self.setStyleSheet(_FIELD_STYLE)
+        self.setProperty("popupOpen", "false")
+
+        self._popup = QFrame(
+            None,
+            Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint,
+        )
+        self._popup.setObjectName("deckMultiSelectPopup")
+        self._popup.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        popup_layout = QVBoxLayout(self._popup)
+        popup_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._list_view = QListView(self._popup)
+        self._list_view.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self._list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list_view.setMinimumWidth(340)
+        self._list_view.setUniformItemSizes(True)
+        self._list_view.setFont(settings_ui_font())
+        ensure_valid_point_font(self._list_view)
+        self._list_view.setItemDelegate(_CheckableListDelegate(self._list_view))
+        popup_layout.addWidget(self._list_view)
+
+        self._popup.setStyleSheet(_POPUP_STYLE)
+
+        self._model = QStandardItemModel(self)
+        self._list_view.setModel(self._model)
+
+        self._popup.installEventFilter(self)
+        self._list_viewport = self._list_view.viewport()
+        self._list_viewport.installEventFilter(self)
 
         self._restore_selection()
         self.reload_decks()
 
-    def showPopup(self) -> None:
-        view = self.view()
-        if view is not None:
-            _ensure_font(view)
-        super().showPopup()
+    def _qt_alive(self, obj) -> bool:
+        return obj is not None and shiboken6.isValid(obj)
+
+    def _detach_event_filters(self) -> None:
+        popup = getattr(self, "_popup", None)
+        viewport = getattr(self, "_list_viewport", None)
+        if self._qt_alive(popup):
+            popup.removeEventFilter(self)
+            popup.hide()
+        if self._qt_alive(viewport):
+            viewport.removeEventFilter(self)
+
+    def closeEvent(self, event) -> None:
+        self._detach_event_filters()
+        super().closeEvent(event)
 
     def selected_deck_ids(self) -> frozenset[int] | None:
         if self._all_mode:
@@ -196,38 +261,114 @@ class CheckableComboBox(QComboBox):
         self._rebuild_items(list_quiz_eligible_decks())
         self.update_display_text()
 
-    def hidePopup(self) -> None:
-        if self._skip_hide_popup:
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh_label_elide()
+
+    def _set_popup_open(self, open_state: bool) -> None:
+        self.setProperty("popupOpen", "true" if open_state else "false")
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
+        self.update()
+
+    def _cursor_over_field(self) -> bool:
+        return self.rect().contains(self.mapFromGlobal(QCursor.pos()))
+
+    def _arm_close_on_release(self) -> None:
+        self._suppress_open_on_release = True
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.property("popupOpen") == "true" or (
+                self._qt_alive(self._popup) and self._popup.isVisible()
+            ):
+                self._arm_close_on_release()
+            event.accept()
             return
-        super().hidePopup()
-        self.update_display_text()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._suppress_open_on_release:
+                self._suppress_open_on_release = False
+                self._close_popup()
+            elif self._qt_alive(self._popup) and not self._popup.isVisible():
+                self._show_popup()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def eventFilter(self, watched, event) -> bool:
-        if watched is self.lineEdit:
-            if event.type() in (
-                QEvent.Type.MouseButtonPress,
-                QEvent.Type.MouseButtonRelease,
-            ):
-                if event.type() == QEvent.Type.MouseButtonPress:
-                    self.showPopup()
-                return True
+        try:
+            popup = getattr(self, "_popup", None)
+            list_view = getattr(self, "_list_view", None)
+            viewport = getattr(self, "_list_viewport", None)
 
-        view = self.view()
-        if view is not None and watched is view.viewport():
-            if event.type() == QEvent.Type.MouseButtonPress:
-                self._skip_hide_popup = True
-            elif event.type() == QEvent.Type.MouseButtonRelease:
-                pos = (
-                    event.position().toPoint()
-                    if hasattr(event, "position")
-                    else event.pos()
-                )
-                index = view.indexAt(pos)
-                if index.isValid():
-                    self._handle_item_click(index)
-                self._skip_hide_popup = False
-                return True
+            if self._qt_alive(popup) and watched is popup and event.type() == QEvent.Type.Hide:
+                if self._cursor_over_field():
+                    self._arm_close_on_release()
+                self._set_popup_open(False)
+
+            if (
+                self._qt_alive(list_view)
+                and self._qt_alive(viewport)
+                and watched is viewport
+            ):
+                if event.type() == QEvent.Type.MouseButtonRelease:
+                    if event.button() != Qt.MouseButton.LeftButton:
+                        return False
+                    pos = (
+                        event.position().toPoint()
+                        if hasattr(event, "position")
+                        else event.pos()
+                    )
+                    index = list_view.indexAt(pos)
+                    if index.isValid():
+                        self._handle_item_click(index)
+                    return True
+        except RuntimeError:
+            return False
         return super().eventFilter(watched, event)
+
+    def _close_popup(self) -> None:
+        if not self._qt_alive(self._popup):
+            return
+        if self._popup.isVisible():
+            self._popup.hide()
+        self._set_popup_open(False)
+        self.update_display_text()
+
+    def _show_popup(self) -> None:
+        row_count = max(1, self._model.rowCount())
+        visible_rows = min(row_count, 12)
+        popup_height = visible_rows * _ROW_HEIGHT + 12
+        popup_width = max(self.width(), 340)
+        self._popup.setFixedSize(popup_width, popup_height)
+        anchor = self.mapToGlobal(QPoint(0, self.height() + 4))
+        self._popup.move(anchor)
+        self._set_popup_open(True)
+        self._popup.show()
+        self._list_view.setFocus()
+
+    def _refresh_label_elide(self) -> None:
+        if not self._display_text:
+            return
+        width = self._label.width()
+        if width <= 0:
+            self._label.setText(self._display_text)
+            return
+        metrics = QFontMetrics(self._label.font())
+        self._label.setText(
+            metrics.elidedText(self._display_text, Qt.TextElideMode.ElideRight, width)
+        )
+
+    def _apply_label_style(self) -> None:
+        self._label.setStyleSheet(_label_style(disabled=not self.isEnabled()))
+
+    def setEnabled(self, enabled: bool) -> None:
+        super().setEnabled(enabled)
+        self._apply_label_style()
 
     def update_display_text(self) -> None:
         deck_ids = self.selected_deck_ids()
@@ -247,12 +388,10 @@ class CheckableComboBox(QComboBox):
         else:
             text = tr("learning.quiz_decks_selected_count", count=len(deck_ids))
 
-        self.lineEdit.setText(text)
-
-    def _model(self) -> QStandardItemModel:
-        model = self.model()
-        assert isinstance(model, QStandardItemModel)
-        return model
+        self._display_text = text
+        self._label.setToolTip(text)
+        self._apply_label_style()
+        self._refresh_label_elide()
 
     def _restore_selection(self) -> None:
         stored = load_play_deck_ids()
@@ -274,10 +413,9 @@ class CheckableComboBox(QComboBox):
 
     def _rebuild_items(self, decks: list[learning.LearningDeck]) -> None:
         self._updating = True
-        model = self._model()
-        model.clear()
+        self._model.clear()
 
-        model.appendRow(self._make_checkable_item(tr("learning.quiz_decks_all"), _ALL_ITEM_ID))
+        self._model.appendRow(self._make_checkable_item(tr("learning.quiz_decks_all"), _ALL_ITEM_ID))
 
         for deck in decks:
             stats = learning.get_quiz_coverage(deck.id)
@@ -287,32 +425,31 @@ class CheckableComboBox(QComboBox):
                 ready=stats.ready,
                 eligible=stats.eligible,
             )
-            model.appendRow(self._make_checkable_item(text, deck.id))
+            self._model.appendRow(self._make_checkable_item(text, deck.id))
 
         self._apply_check_states_to_model()
         self._updating = False
 
     def _apply_check_states_to_model(self) -> None:
-        model = self._model()
-        deck_total = model.rowCount() - 1
+        deck_total = self._model.rowCount() - 1
 
-        for row in range(1, model.rowCount()):
-            item = model.item(row)
+        for row in range(1, self._model.rowCount()):
+            item = self._model.item(row)
             if item is None:
                 continue
             deck_id = item.data(_DECK_ID_ROLE)
             checked = isinstance(deck_id, int) and deck_id in self._selected_ids
             item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
 
-        all_item = model.item(0)
+        all_item = self._model.item(0)
         if all_item is None:
             return
 
         checked_count = sum(
             1
-            for row in range(1, model.rowCount())
-            if model.item(row) is not None
-            and model.item(row).checkState() == Qt.CheckState.Checked
+            for row in range(1, self._model.rowCount())
+            if self._model.item(row) is not None
+            and self._model.item(row).checkState() == Qt.CheckState.Checked
         )
         if deck_total > 0 and checked_count == deck_total:
             all_item.setCheckState(Qt.CheckState.Checked)
@@ -320,25 +457,23 @@ class CheckableComboBox(QComboBox):
             all_item.setCheckState(Qt.CheckState.Unchecked)
 
     def _set_all_items_check_state(self, state: Qt.CheckState) -> None:
-        model = self._model()
-        for row in range(model.rowCount()):
-            item = model.item(row)
+        for row in range(self._model.rowCount()):
+            item = self._model.item(row)
             if item is not None:
                 item.setCheckState(state)
 
     def _handle_item_click(self, index: QModelIndex) -> None:
         if self._updating or not index.isValid():
             return
-        item = self._model().itemFromIndex(index)
+        item = self._model.itemFromIndex(index)
         if item is None:
             return
 
         self._updating = True
         deck_id = item.data(_DECK_ID_ROLE)
-        model = self._model()
 
         if deck_id == _ALL_ITEM_ID:
-            deck_total = model.rowCount() - 1
+            deck_total = self._model.rowCount() - 1
             all_selected = self._all_mode or (
                 deck_total > 0 and len(self._selected_ids) == deck_total
             )
@@ -346,9 +481,9 @@ class CheckableComboBox(QComboBox):
             if select_all:
                 self._all_mode = True
                 self._selected_ids = {
-                    model.item(row).data(_DECK_ID_ROLE)
-                    for row in range(1, model.rowCount())
-                    if model.item(row) is not None
+                    self._model.item(row).data(_DECK_ID_ROLE)
+                    for row in range(1, self._model.rowCount())
+                    if self._model.item(row) is not None
                 }
                 self._set_all_items_check_state(Qt.CheckState.Checked)
             else:
@@ -366,14 +501,13 @@ class CheckableComboBox(QComboBox):
                 self._selected_ids.add(deck_id)
                 item.setCheckState(Qt.CheckState.Checked)
 
-            deck_total = model.rowCount() - 1
+            deck_total = self._model.rowCount() - 1
             self._all_mode = deck_total > 0 and len(self._selected_ids) == deck_total
             self._apply_check_states_to_model()
 
         self._updating = False
-        view = self.view()
-        if view is not None:
-            view.viewport().update()
+        if self._qt_alive(self._list_viewport):
+            self._list_viewport.update()
         self.update_display_text()
         self._emit_selection()
 
