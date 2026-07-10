@@ -19,7 +19,8 @@ class QuickLingoLearningApp:
         self._window = window
 
     def prepare_quit_for_update(self) -> None:
-        QApplication.quit()
+        """No extra cleanup; UpdateController quits after launching the updater."""
+        pass
 
 
 def run() -> int:

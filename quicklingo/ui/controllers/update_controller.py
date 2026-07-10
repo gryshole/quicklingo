@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QUrl
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QMessageBox, QProgressDialog
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 
 import os
 import sys
@@ -144,6 +144,9 @@ class UpdateController:
         try:
             app_instance.prepare_quit_for_update()
             launch_update(Path(zip_path), pid=os.getpid())
+            # Updater waits for this PID, then installs and restarts the app.
+            self._window.close()
+            QApplication.quit()
         except Exception as exc:
             QMessageBox.warning(
                 self._window,

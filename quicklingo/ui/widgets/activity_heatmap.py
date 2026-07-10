@@ -2,35 +2,50 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from PySide6.QtCore import Qt, QRectF
+from PySide6.QtCore import Qt, QRectF, QSize
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from quicklingo.learning.analytics.models import DailyActivityDto
 
-_CELL = 11
-_CELL_GAP = 3
+_CELL = 12
+_CELL_GAP = 4
 _WEEKS = 26
 _DAYS = 7
-_EMPTY = QColor("#f1f5f9")
+_EMPTY = QColor("#D3D7DC")
 _LEVELS = (
-    QColor("#dbeafe"),
-    QColor("#93c5fd"),
-    QColor("#3b82f6"),
-    QColor("#2563eb"),
+    QColor("#BBDEFB"),  # low
+    QColor("#64B5F6"),  # medium-low
+    QColor("#2196F3"),  # medium
+    QColor("#0D47A1"),  # high
 )
+
+
+def _grid_size() -> tuple[int, int]:
+    width = _WEEKS * (_CELL + _CELL_GAP) - _CELL_GAP
+    height = _DAYS * (_CELL + _CELL_GAP) - _CELL_GAP
+    return width, height
 
 
 class ActivityHeatmapWidget(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._counts: dict[date, int] = {}
-        self.setMinimumHeight(_DAYS * (_CELL + _CELL_GAP) + 24)
+        grid_w, grid_h = _grid_size()
+        self.setMinimumHeight(grid_h + 16)
+        self.setMinimumWidth(grid_w + 8)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMouseTracking(True)
+        self._counts: dict[date, int] = {}
 
     def set_activity(self, activity: list[DailyActivityDto]) -> None:
         self._counts = {item.day: item.count for item in activity}
         self.update()
+
+    def _origin(self) -> tuple[int, int]:
+        grid_w, grid_h = _grid_size()
+        origin_x = max(0, (self.width() - grid_w) // 2)
+        origin_y = max(0, (self.height() - grid_h) // 2)
+        return origin_x, origin_y
 
     def _color_for(self, count: int, *, max_count: int) -> QColor:
         if count <= 0:
@@ -52,8 +67,8 @@ class ActivityHeatmapWidget(QWidget):
         today = date.today()
         start = today - timedelta(days=_WEEKS * _DAYS - 1)
         max_count = max(self._counts.values(), default=0)
-        origin_x = 4
-        origin_y = 4
+        origin_x, origin_y = self._origin()
+        step = _CELL + _CELL_GAP
         for week in range(_WEEKS):
             for weekday in range(_DAYS):
                 day = start + timedelta(days=week * _DAYS + weekday)
@@ -61,8 +76,8 @@ class ActivityHeatmapWidget(QWidget):
                     continue
                 count = self._counts.get(day, 0)
                 color = self._color_for(count, max_count=max_count)
-                x = origin_x + week * (_CELL + _CELL_GAP)
-                y = origin_y + weekday * (_CELL + _CELL_GAP)
+                x = origin_x + week * step
+                y = origin_y + weekday * step
                 rect = QRectF(x, y, _CELL, _CELL)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(color)
@@ -87,8 +102,7 @@ class ActivityHeatmapWidget(QWidget):
         super().leaveEvent(_event)
 
     def _cell_at(self, x: float, y: float) -> tuple[date, int] | None:
-        origin_x = 4
-        origin_y = 4
+        origin_x, origin_y = self._origin()
         step = _CELL + _CELL_GAP
         week = int((x - origin_x) // step)
         weekday = int((y - origin_y) // step)
@@ -103,9 +117,6 @@ class ActivityHeatmapWidget(QWidget):
             return None
         return day, self._counts.get(day, 0)
 
-    def sizeHint(self):
-        from PySide6.QtCore import QSize
-
-        width = _WEEKS * (_CELL + _CELL_GAP) + 8
-        height = _DAYS * (_CELL + _CELL_GAP) + 8
-        return QSize(width, height)
+    def sizeHint(self) -> QSize:
+        grid_w, grid_h = _grid_size()
+        return QSize(grid_w + 8, grid_h + 8)

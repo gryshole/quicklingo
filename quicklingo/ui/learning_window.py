@@ -59,6 +59,43 @@ _TAB_STATS = 4
 _LEARNING_CARDS_TABLE_WIDTHS = [120, 120, 80, 120, 72, 88, 72, 56, 52]
 _LEARNING_CARDS_PRIORITY_WIDTH = 52
 
+_LEARNING_TABS_STYLE = """
+QTabWidget::pane {
+    border: none;
+    background: #f1f5f9;
+    top: 0px;
+    margin: 0px;
+    padding: 0px;
+}
+QTabBar {
+    background: transparent;
+    border: none;
+}
+QTabBar::tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 16px;
+    margin-right: 4px;
+    color: #64748b;
+    font-size: 13px;
+}
+QTabBar::tab:selected {
+    background: #ffffff;
+    color: #0f172a;
+    font-weight: bold;
+    border-bottom: 2px solid #0078D7;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+QTabBar::tab:hover:!selected {
+    color: #334155;
+    background: rgba(255, 255, 255, 0.55);
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+"""
+
 _CARDS_TAB_STYLE = """
 CardsTabWidget {
     background-color: transparent;
@@ -260,6 +297,11 @@ class LearningWindow(QMainWindow):
         self._pending_nav: dict | None = None
 
         self._tabs = QTabWidget()
+        self._tabs.setObjectName("learningTabs")
+        self._tabs.setDocumentMode(True)
+        self._tabs.setStyleSheet(_LEARNING_TABS_STYLE)
+        self._tabs.tabBar().setExpanding(False)
+        self._tabs.tabBar().setDrawBase(False)
 
         self._create_deck_tab = CreateDeckTabWidget(standalone=standalone)
         self._create_deck_tab.deck_created.connect(self._on_deck_created)

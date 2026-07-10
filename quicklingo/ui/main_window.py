@@ -166,8 +166,10 @@ class MainWindow(QMainWindow):
         self._help_features_action = None
 
         self._help_history_action = None
+        self._help_quiz_questions_action = None
 
         self._help_learning_action = None
+        self._help_sync_action = None
         self._help_sync_google_drive_action = None
         self._help_onboarding_action = None
 
@@ -493,9 +495,17 @@ class MainWindow(QMainWindow):
 
             self._help_history_action.setText(tr("main.menu_help_history"))
 
+        if self._help_quiz_questions_action:
+
+            self._help_quiz_questions_action.setText(tr("main.menu_help_quiz_questions"))
+
         if self._help_learning_action:
 
             self._help_learning_action.setText(tr("main.menu_help_learning"))
+
+        if self._help_sync_action:
+
+            self._help_sync_action.setText(tr("main.menu_help_sync"))
 
         if self._help_sync_google_drive_action:
 
@@ -994,9 +1004,6 @@ class MainWindow(QMainWindow):
 
         self._settings_action.triggered.connect(self._open_settings)
 
-        self._sync_action = self._tools_menu.addAction("")
-        self._sync_action.triggered.connect(self._run_sync)
-
         self._history_action = self._tools_menu.addAction("")
 
         self._history_action.triggered.connect(self._open_history)
@@ -1004,6 +1011,9 @@ class MainWindow(QMainWindow):
         self._quiz_questions_action = self._tools_menu.addAction("")
         self._quiz_questions_action.triggered.connect(self._open_quiz_questions)
         self._quiz_questions_action.setVisible(is_enabled("learning.quiz"))
+
+        self._sync_action = self._tools_menu.addAction("")
+        self._sync_action.triggered.connect(self._run_sync)
 
         self._help_menu = menu_bar.addMenu("")
 
@@ -1027,6 +1037,12 @@ class MainWindow(QMainWindow):
             lambda: self._open_help_topic("directions_profiles")
         )
 
+        self._help_learning_action = self._help_menu.addAction("")
+
+        self._help_learning_action.triggered.connect(
+            lambda: self._open_help_topic("learning")
+        )
+
         self._help_features_action = self._help_menu.addAction("")
 
         self._help_features_action.triggered.connect(
@@ -1039,11 +1055,14 @@ class MainWindow(QMainWindow):
             lambda: self._open_help_topic("history")
         )
 
-        self._help_learning_action = self._help_menu.addAction("")
-
-        self._help_learning_action.triggered.connect(
-            lambda: self._open_help_topic("learning")
+        self._help_quiz_questions_action = self._help_menu.addAction("")
+        self._help_quiz_questions_action.triggered.connect(
+            lambda: self._open_help_topic("quiz_questions")
         )
+
+        self._help_sync_action = self._help_menu.addAction("")
+
+        self._help_sync_action.triggered.connect(lambda: self._open_help_topic("sync"))
 
         self._help_sync_google_drive_action = self._help_menu.addAction("")
 
