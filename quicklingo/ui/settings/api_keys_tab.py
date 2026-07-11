@@ -100,6 +100,20 @@ class ApiKeysTab(SettingsTab):
         self._form.addRow(self._ollama_key_label, self._ollama_key_field)
         self._form.addRow(self._ollama_key_hint)
 
+        self._pixabay_label = QLabel()
+        configure_api_key_label(self._pixabay_label, spaced=True)
+        self._pixabay_field = QLineEdit()
+        configure_password_field(self._pixabay_field)
+        self._pixabay_field.textChanged.connect(self.mark_dirty)
+        self._pixabay_hint = QLabel()
+        configure_api_key_hint(self._pixabay_hint)
+        self._pixabay_field.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self._labels.append(self._pixabay_label)
+        self._form.addRow(self._pixabay_label, self._pixabay_field)
+        self._form.addRow(self._pixabay_hint)
+
         self._note = QLabel()
         self._note.setWordWrap(True)
         self._note.setObjectName("apiKeyNote")
@@ -134,6 +148,11 @@ class ApiKeysTab(SettingsTab):
         self._ollama_key_hint.setText(
             style_api_key_hint_text(tr("settings.api_keys.hint_ollama_key"))
         )
+        self._pixabay_label.setText(tr("settings.api_keys.pixabay"))
+        self._pixabay_field.setPlaceholderText(tr("settings.api_keys.placeholder_pixabay"))
+        self._pixabay_hint.setText(
+            style_api_key_hint_text(tr("settings.api_keys.hint_pixabay"))
+        )
         self._note.setText(tr("settings.api_keys.note"))
         align_form_labels(self._labels)
 
@@ -150,6 +169,9 @@ class ApiKeysTab(SettingsTab):
         self._ollama_key_field.blockSignals(True)
         self._ollama_key_field.setText(keys.get("ollama", ""))
         self._ollama_key_field.blockSignals(False)
+        self._pixabay_field.blockSignals(True)
+        self._pixabay_field.setText(keys.get("pixabay", ""))
+        self._pixabay_field.blockSignals(False)
         self.retranslate_ui()
         self.mark_clean()
 
@@ -163,6 +185,7 @@ class ApiKeysTab(SettingsTab):
             deepseek=self._fields["deepseek"].text(),
             openai=self._fields["openai"].text(),
             anthropic=self._fields["anthropic"].text(),
+            pixabay=self._pixabay_field.text(),
         )
         settings.save_ollama_base_url(self._ollama_url_field.text())
         self.mark_clean()

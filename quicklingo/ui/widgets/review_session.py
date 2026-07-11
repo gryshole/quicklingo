@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import html
-
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent, QPixmap
+from PySide6.QtGui import QFont, QKeyEvent, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -33,15 +32,21 @@ from quicklingo.learning.image_resolver import resolve_image_path
 from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch import collect_review_card_tts_texts, collect_review_tts_texts
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
-from quicklingo.workers.card_image_worker import CardImageFetchWorker
+from quicklingo.workers.card_image_worker import CardImageFetchWorker, CardImagePrefetchWorker
 from quicklingo.learning.cram_queue import cram_hard_cards, cram_train_cards
 from quicklingo.learning.fsrs_review import preview_fsrs_intervals
 from quicklingo.learning.review_queue import count_due_cards
 from quicklingo.ui.controllers.review_session_controller import ReviewSessionController, SessionStats
 
-_HINT_STYLE = "color: #64748b; font-size: 11pt; margin-top: 4px;"
-_PHONETIC_STYLE = "color: #64748b; font-size: 12pt; font-style: italic;"
-_ANSWER_PHONETIC_STYLE = _PHONETIC_STYLE + " margin-bottom: 10px;"
+_PHONETIC_STYLE = "color: #64748b;"
+_ANSWER_PHONETIC_STYLE = _PHONETIC_STYLE
+_CARD_MIN_WIDTH = 800
+_CARD_MAX_WIDTH = 1200
+_CONTENT_MIN_WIDTH = 600
+_CONTENT_MAX_WIDTH = 750
+_IMAGE_SIZE = 240
+_IMAGE_RADIUS = 12
+_MAX_WIDGET = 16777215
 
 _REVIEW_STYLE = """
 ReviewSessionWidget QLabel#reviewMetaLabel {
@@ -152,6 +157,68 @@ QFrame#reviewCardFrame {
     background-color: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 12px;
+    min-width: 800px;
+    max-width: 1200px;
+}
+QWidget#reviewImageColumn {
+    background: transparent;
+}
+QFrame#reviewImageFrame {
+    background: transparent;
+    border: none;
+}
+QLabel#reviewImageLabel {
+    background: transparent;
+    border: none;
+}
+QWidget#reviewFrontColumn {
+    background: transparent;
+}
+QPushButton#reviewSpeakerBtn {
+    border: none;
+    background: transparent;
+    font-family: "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+    font-size: 16px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+}
+QPushButton#reviewSpeakerBtn:hover {
+    background-color: #F1F5F9;
+    border-radius: 14px;
+}
+QWidget#reviewMainContent {
+    background: transparent;
+    min-width: 600px;
+    max-width: 750px;
+}
+QWidget#reviewBackSection {
+    background: transparent;
+}
+QWidget#reviewExampleRow {
+    background: transparent;
+}
+QFrame#reviewExampleQuote {
+    background: transparent;
+    border: none;
+    border-left: 4px solid #CBD5E1;
+}
+QLabel#reviewDefinitionLabel {
+    background: transparent;
+}
+QLabel#reviewHintLabel {
+    color: #64748b;
+    background: transparent;
+}
+QLabel#reviewTermLabel {
+    color: #1e293b;
+    background: transparent;
+}
+QLabel#reviewAnswerLabel {
+    color: #1d4ed8;
+    background: transparent;
 }
 ReviewSessionWidget QProgressBar#reviewProgressBar {
     border: none;
@@ -178,123 +245,54 @@ QProgressBar::chunk {
 """
 
 
-def _html_speaker_link(target: str) -> str:
-    return (
-        f'<a href="qlspeak:{target}" '
-        'style="text-decoration:none;color:#64748b;font-size:16pt;'
-        'line-height:1;">&#128266;</a>'
+def get_rounded_pixmap(
+    pixmap: QPixmap,
+    *,
+    size: int = _IMAGE_SIZE,
+    radius: int = _IMAGE_RADIUS,
+) -> QPixmap:
+    """Scale-to-fill square crop, then clip to rounded corners (QSS cannot do this)."""
+    if pixmap.isNull():
+        return pixmap
+    scaled = pixmap.scaled(
+        size,
+        size,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
     )
-
-
-def _html_full_width(inner: str, *, align: str = "left", top_padding: str = "0") -> str:
-    return (
-        '<table width="100%" cellpadding="0" cellspacing="0" border="0" '
-        'style="margin:0;border:none;">'
-        f'<tr><td align="{align}" style="text-align:{align};padding-top:{top_padding};">'
-        f"{inner}</td></tr></table>"
-    )
-
-
-def _html_center_block(inner: str) -> str:
-    return _html_full_width(inner, align="center")
-
-
-def _html_front_term(text: str, *, tts_enabled: bool) -> str:
-    escaped = html.escape(text)
-    speaker = f" {_html_speaker_link('term')}" if tts_enabled else ""
-    inner = (
-        f'<span style="font-size:24pt;font-weight:bold;color:#1e293b;">{escaped}</span>'
-        f"{speaker}"
-    )
-    return _html_center_block(
-        f'<div style="padding:8px 12px 4px 12px;">{inner}</div>'
-    )
-
-
-def _html_back_term(text: str) -> str:
-    escaped = html.escape(text)
-    inner = (
-        f'<span style="font-size:20pt;font-weight:bold;color:#2563eb;">{escaped}</span>'
-    )
-    return _html_center_block(
-        f'<div style="padding:12px 12px 4px 12px;">{inner}</div>'
-    )
+    x = max(0, (scaled.width() - size) // 2)
+    y = max(0, (scaled.height() - size) // 2)
+    cropped = scaled.copy(x, y, size, size)
+    target = QPixmap(cropped.size())
+    target.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(target)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    path = QPainterPath()
+    path.addRoundedRect(0, 0, cropped.width(), cropped.height(), radius, radius)
+    painter.setClipPath(path)
+    painter.drawPixmap(0, 0, cropped)
+    painter.end()
+    return target
 
 
 def _html_definition_block(body_html: str) -> str:
-    inner = (
-        '<div style="background-color:#f8fafc;border:1px solid #e2e8f0;'
-        'border-radius:8px;padding:12px 14px;text-align:left;margin-bottom:25px;">'
-        '<span style="color:#64748b;font-size:13pt;font-weight:600;">'
-        "Definition: </span>"
-        f'<span style="color:#64748b;font-size:13pt;font-style:italic;line-height:1.6;">'
-        f"{body_html}</span>"
-        "</div>"
-    )
-    return _html_full_width(inner, align="left")
-
-
-def _html_example_item(
-    highlighted_html: str,
-    *,
-    index: int,
-    tts_enabled: bool,
-    is_first: bool,
-    is_last: bool,
-) -> str:
-    margin_top = "25px" if is_first else "0"
-    margin_bottom = "0" if is_last else "15px"
-    audio_cell = (
-        f'<td valign="middle" align="right" width="30">'
-        f"{_html_speaker_link(f'example/{index}')}</td>"
-        if tts_enabled
-        else '<td valign="middle" align="right" width="30"></td>'
-    )
     return (
-        f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="margin-top:{margin_top};margin-bottom:{margin_bottom};border:none;">'
+        '<table cellspacing="0" cellpadding="0" border="0" '
+        'style="margin:0;border-collapse:separate;">'
         "<tr>"
-        '<td width="4" style="background-color:#cbd5e1;">&nbsp;</td>'
-        '<td width="12">&nbsp;</td>'
-        f'<td valign="middle" style="text-align:left;font-size:14pt;color:#334155;'
-        f'line-height:1.6;">{highlighted_html}</td>'
-        f"{audio_cell}"
-        "</tr></table>"
+        '<td style="background-color:#F8FAFC;border:1px solid #E2E8F0;'
+        "border-radius:8px;padding:10px 14px;color:#475569;font-size:15px;"
+        'white-space:normal;word-wrap:break-word;">'
+        f"<b>Definition:</b> <i>{body_html}</i>"
+        "</td></tr></table>"
     )
 
 
-def _build_revealed_details_html(
-    *,
-    notes: str,
-    examples: list[str],
-    term: str,
-    highlight: str,
-    tts_enabled: bool,
-) -> str:
-    parts: list[str] = []
-    plain = notes.strip()
+def _definition_body_from_notes(notes: str) -> str:
+    plain = (notes or "").strip()
     if plain.lower().startswith("definition:"):
         plain = plain.split(":", 1)[1].strip()
-    has_definition = False
-    if plain:
-        body = highlight_term_styled(plain, highlight)
-        parts.append(_html_definition_block(body))
-        has_definition = True
-    if examples:
-        for index, sentence in enumerate(examples):
-            highlighted = highlight_term_in_context(sentence, term)
-            parts.append(
-                _html_example_item(
-                    highlighted,
-                    index=index,
-                    tts_enabled=tts_enabled,
-                    is_first=index == 0 and has_definition,
-                    is_last=index == len(examples) - 1,
-                )
-            )
-    if not parts:
-        return ""
-    return _html_full_width("".join(parts), align="left", top_padding="24px")
+    return plain
 
 
 class ReviewSessionWidget(QWidget):
@@ -305,11 +303,13 @@ class ReviewSessionWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("ReviewSessionWidget")
         self.setStyleSheet(_REVIEW_STYLE)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._controller = ReviewSessionController()
         self._deck_id: int | None = None
         self._direction = "ua-en"
         self._example_sentences: list[str] = []
         self._image_worker: CardImageFetchWorker | None = None
+        self._image_prefetch: CardImagePrefetchWorker | None = None
         self._image_fetch_card_id: int | None = None
 
         self._audio = AudioService(self)
@@ -354,8 +354,14 @@ class ReviewSessionWidget(QWidget):
         self._card_frame = QFrame()
         self._card_frame.setObjectName("reviewCardFrame")
         self._card_frame.setFrameShape(QFrame.Shape.NoFrame)
+        self._card_frame.setMinimumWidth(_CARD_MIN_WIDTH)
+        self._card_frame.setMaximumWidth(_CARD_MAX_WIDTH)
+        self._card_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         card_outer = QVBoxLayout(self._card_frame)
-        card_outer.setContentsMargins(20, 20, 20, 20)
+        card_outer.setContentsMargins(24, 24, 24, 24)
 
         self._card_stack = QStackedWidget()
 
@@ -412,64 +418,158 @@ class ReviewSessionWidget(QWidget):
         idle_layout.addWidget(self._idle_stack)
 
         active_page = QWidget()
-        card_layout = QVBoxLayout(active_page)
-        card_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        card_layout.setSpacing(14)
+        active_outer = QHBoxLayout(active_page)
+        active_outer.setContentsMargins(0, 0, 0, 0)
+        active_outer.setSpacing(0)
+        active_outer.addStretch(1)
+
+        self._main_column = QWidget()
+        self._main_column.setObjectName("reviewMainContent")
+        self._main_column.setMinimumWidth(_CONTENT_MIN_WIDTH)
+        self._main_column.setMaximumWidth(_CONTENT_MAX_WIDTH)
+        self._main_column.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+        main_layout = QVBoxLayout(self._main_column)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        front_row = QWidget()
+        self._top_layout = QHBoxLayout(front_row)
+        self._top_layout.setContentsMargins(0, 0, 0, 0)
+        self._top_layout.setSpacing(0)
+        self._top_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self._image_column = QWidget()
+        self._image_column.setObjectName("reviewImageColumn")
+        self._image_column.setFixedWidth(_IMAGE_SIZE)
+        self._image_column.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
+        image_col_layout = QVBoxLayout(self._image_column)
+        image_col_layout.setContentsMargins(0, 0, 0, 0)
+        image_col_layout.setSpacing(0)
 
         self._image_label = QLabel()
+        self._image_label.setObjectName("reviewImageLabel")
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._image_label.setMaximumHeight(180)
+        self._image_label.setFixedSize(_IMAGE_SIZE, _IMAGE_SIZE)
+        self._image_label.setScaledContents(False)
         self._image_label.setVisible(False)
-        self._term_label = QLabel()
-        self._term_label.setAlignment(
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        image_col_layout.addWidget(self._image_label)
+        self._image_column.setVisible(False)
+
+        self._front_column = QWidget()
+        self._front_column.setObjectName("reviewFrontColumn")
+        self._front_column.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
         )
-        self._term_label.setTextFormat(Qt.TextFormat.RichText)
+        self._front_layout = QVBoxLayout(self._front_column)
+        self._front_layout.setContentsMargins(0, 0, 0, 0)
+        self._front_layout.setSpacing(10)
+        self._front_layout.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+
+        self._term_row = QWidget()
+        self._term_row.setObjectName("reviewTermRow")
+        self._term_row_layout = QHBoxLayout(self._term_row)
+        self._term_row_layout.setContentsMargins(0, 0, 0, 0)
+        self._term_row_layout.setSpacing(10)
+        self._term_label = QLabel()
+        self._term_label.setObjectName("reviewTermLabel")
+        self._term_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._term_label.setTextFormat(Qt.TextFormat.PlainText)
         self._term_label.setWordWrap(True)
         self._term_label.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
         )
-        self._configure_rich_label_links(self._term_label)
+        self._term_play_btn = self._make_speaker_button()
+        self._term_play_btn.clicked.connect(self._play_audio)
+        self._term_row_layout.addWidget(self._term_label, stretch=1)
+        self._term_row_layout.addWidget(
+            self._term_play_btn, alignment=Qt.AlignmentFlag.AlignVCenter
+        )
 
         self._front_phonetic_widget = QWidget()
-        front_phonetic_layout = QHBoxLayout(self._front_phonetic_widget)
-        front_phonetic_layout.setContentsMargins(0, 0, 0, 0)
+        self._front_phonetic_layout = QHBoxLayout(self._front_phonetic_widget)
+        self._front_phonetic_layout.setContentsMargins(0, 0, 0, 0)
+        self._front_phonetic_layout.setSpacing(10)
         self._front_phonetic_label = QLabel()
-        self._front_phonetic_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._front_phonetic_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         self._front_phonetic_label.setStyleSheet(_PHONETIC_STYLE)
-        self._front_play_btn = QPushButton("▶")
-        self._front_play_btn.setFixedSize(28, 28)
+        self._front_phonetic_label.setWordWrap(True)
+        self._front_phonetic_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        self._front_play_btn = self._make_speaker_button()
         self._front_play_btn.clicked.connect(self._play_audio)
-        front_phonetic_layout.addStretch()
-        front_phonetic_layout.addWidget(self._front_phonetic_label)
-        front_phonetic_layout.addWidget(self._front_play_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
-        front_phonetic_layout.addStretch()
-        front_phonetic_layout.setAlignment(
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+        self._front_phonetic_layout.addWidget(self._front_phonetic_label, stretch=1)
+        self._front_phonetic_layout.addWidget(
+            self._front_play_btn, alignment=Qt.AlignmentFlag.AlignVCenter
         )
         self._front_phonetic_widget.setVisible(False)
 
         self._hint_label = QLabel()
-        self._hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._hint_label.setObjectName("reviewHintLabel")
+        self._hint_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self._hint_label.setWordWrap(True)
-        self._hint_label.setStyleSheet(_HINT_STYLE)
+        self._hint_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
 
         self._typing_input = QLineEdit()
+        self._typing_input.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self._typing_input.returnPressed.connect(self._submit_typing)
         self._typing_feedback = QLabel()
-        self._typing_feedback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._typing_feedback.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self._enable_wrapping_label(self._typing_feedback)
+
+        self._front_content: list[QWidget] = [
+            self._term_row,
+            self._front_phonetic_widget,
+            self._hint_label,
+            self._typing_input,
+            self._typing_feedback,
+        ]
+        for widget in self._front_content:
+            self._front_layout.addWidget(widget)
+
+        self._front_has_image: bool | None = None
+
+        self._back_section = QWidget()
+        self._back_section.setObjectName("reviewBackSection")
+        self._back_section.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        back_layout = QVBoxLayout(self._back_section)
+        back_layout.setContentsMargins(0, 0, 0, 0)
+        back_layout.setSpacing(12)
 
         self._answer_block = QWidget()
+        self._answer_block.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         answer_layout = QVBoxLayout(self._answer_block)
-        answer_layout.setContentsMargins(0, 8, 0, 0)
+        answer_layout.setContentsMargins(0, 0, 0, 0)
         answer_layout.setSpacing(8)
         self._answer_label = QLabel()
-        self._answer_label.setAlignment(
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
-        )
+        self._answer_label.setObjectName("reviewAnswerLabel")
+        self._answer_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._answer_label.setTextFormat(Qt.TextFormat.PlainText)
         self._answer_label.setWordWrap(True)
-        self._answer_label.setTextFormat(Qt.TextFormat.RichText)
         self._answer_label.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
@@ -477,48 +577,79 @@ class ReviewSessionWidget(QWidget):
         self._answer_phonetic_widget = QWidget()
         answer_phonetic_layout = QHBoxLayout(self._answer_phonetic_widget)
         answer_phonetic_layout.setContentsMargins(0, 0, 0, 0)
+        answer_phonetic_layout.setSpacing(10)
         self._answer_phonetic_label = QLabel()
-        self._answer_phonetic_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._answer_phonetic_label.setStyleSheet(_ANSWER_PHONETIC_STYLE)
-        self._answer_play_btn = QPushButton("▶")
-        self._answer_play_btn.setFixedSize(28, 28)
-        self._answer_play_btn.clicked.connect(self._play_audio)
-        answer_phonetic_layout.addStretch()
-        answer_phonetic_layout.addWidget(self._answer_phonetic_label)
-        answer_phonetic_layout.addWidget(self._answer_play_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
-        answer_phonetic_layout.addStretch()
-        answer_phonetic_layout.setAlignment(
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+        self._answer_phonetic_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
+        self._answer_phonetic_label.setStyleSheet(_ANSWER_PHONETIC_STYLE)
+        self._answer_phonetic_label.setWordWrap(True)
+        self._answer_phonetic_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Preferred,
+        )
+        self._answer_play_btn = self._make_speaker_button()
+        self._answer_play_btn.clicked.connect(self._play_audio)
+        answer_phonetic_layout.addStretch(1)
+        answer_phonetic_layout.addWidget(self._answer_phonetic_label)
+        answer_phonetic_layout.addWidget(
+            self._answer_play_btn, alignment=Qt.AlignmentFlag.AlignVCenter
+        )
+        answer_phonetic_layout.addStretch(1)
+        # Full-width add — AlignHCenter on the item squeezes wrapping labels.
         answer_layout.addWidget(self._answer_label)
         answer_layout.addWidget(self._answer_phonetic_widget)
         self._answer_block.setVisible(False)
 
-        self._details_label = QLabel()
-        self._details_label.setWordWrap(True)
-        self._details_label.setTextFormat(Qt.TextFormat.RichText)
-        self._details_label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
-        )
-        self._details_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
+        self._definition_label = QLabel()
+        self._definition_label.setObjectName("reviewDefinitionLabel")
+        self._definition_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self._definition_label.setTextFormat(Qt.TextFormat.RichText)
+        self._definition_label.setWordWrap(True)
+        self._definition_label.setMinimumWidth(500)
+        self._definition_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Preferred,
         )
-        self._details_label.setVisible(False)
-        self._configure_rich_label_links(self._details_label)
+        self._definition_label.setVisible(False)
+
+        self._definition_row = QWidget()
+        definition_row_layout = QHBoxLayout(self._definition_row)
+        definition_row_layout.setContentsMargins(0, 0, 0, 0)
+        definition_row_layout.setSpacing(0)
+        definition_row_layout.addWidget(self._definition_label)
+        definition_row_layout.addStretch(1)
+        self._definition_row.setVisible(False)
+
+        self._examples_host = QWidget()
+        self._examples_layout = QVBoxLayout(self._examples_host)
+        self._examples_layout.setContentsMargins(0, 0, 0, 0)
+        self._examples_layout.setSpacing(0)
+        self._examples_host.setVisible(False)
+
+        back_layout.addWidget(self._answer_block)
+        back_layout.addWidget(self._definition_row)
+        back_layout.addWidget(self._examples_host)
+        self._back_section.setVisible(False)
 
         self._card_content: list[QWidget] = [
-            self._image_label,
-            self._term_label,
-            self._front_phonetic_widget,
-            self._hint_label,
-            self._typing_input,
-            self._typing_feedback,
+            *self._front_content,
             self._answer_block,
-            self._details_label,
+            self._definition_row,
+            self._examples_host,
+            self._back_section,
         ]
-        for widget in self._card_content:
-            card_layout.addWidget(widget, alignment=Qt.AlignmentFlag.AlignTop)
+
+        self._apply_card_fonts()
+        self._apply_front_layout(has_image=False, force=True)
+
+        main_layout.addWidget(front_row, stretch=0)
+        main_layout.addSpacing(10)
+        main_layout.addWidget(self._back_section, stretch=0)
+        main_layout.addStretch(1)
+
+        active_outer.addWidget(self._main_column, stretch=0)
+        active_outer.addStretch(1)
 
         self._card_stack.addWidget(idle_page)
         self._card_stack.addWidget(active_page)
@@ -535,7 +666,19 @@ class ReviewSessionWidget(QWidget):
 
         self._stack.addWidget(self._card_frame)
         self._stack.addWidget(summary_wrap)
-        layout.addWidget(self._stack, stretch=1)
+        self._stack.setMinimumWidth(_CARD_MIN_WIDTH)
+        self._stack.setMaximumWidth(_CARD_MAX_WIDTH)
+        self._stack.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+
+        card_row = QHBoxLayout()
+        card_row.setContentsMargins(0, 0, 0, 0)
+        card_row.addStretch(1)
+        card_row.addWidget(self._stack, stretch=1)
+        card_row.addStretch(1)
+        layout.addLayout(card_row, stretch=1)
 
         self._progress_widget = QWidget()
         progress_layout = QVBoxLayout(self._progress_widget)
@@ -578,34 +721,340 @@ class ReviewSessionWidget(QWidget):
         grade_row.addStretch()
         layout.addWidget(self._grade_widget)
 
+        self._setup_review_hotkeys()
         self.retranslate_ui()
         self._show_idle_ui()
 
-    def _configure_rich_label_links(self, label: QLabel) -> None:
-        label.setOpenExternalLinks(False)
-        label.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
-        label.linkActivated.connect(self._on_review_link)
+    def _setup_review_hotkeys(self) -> None:
+        """Hotkeys only while this widget (or a child) has focus — not other tabs."""
+        context = Qt.ShortcutContext.WidgetWithChildrenShortcut
+        for seq, slot in (
+            ("Space", self._hotkey_space),
+            ("Return", self._hotkey_enter),
+            ("Enter", self._hotkey_enter),
+            ("1", lambda: self._hotkey_grade(1)),
+            ("2", lambda: self._hotkey_grade(2)),
+            ("3", lambda: self._hotkey_grade(3)),
+            ("4", lambda: self._hotkey_grade(4)),
+        ):
+            shortcut = QShortcut(QKeySequence(seq), self)
+            shortcut.setContext(context)
+            shortcut.activated.connect(slot)
+
+    def _review_hotkeys_context_ok(self) -> bool:
+        if not self.isVisible() or not self._controller.session_active:
+            return False
+        focus = QApplication.focusWidget()
+        if focus is None:
+            return True
+        # Another top-level dialog / different tab owns focus.
+        if not (focus is self or self.isAncestorOf(focus)):
+            return False
+        return True
+
+    def _focus_in_typing_input(self) -> bool:
+        focus = QApplication.focusWidget()
+        return focus is self._typing_input
+
+    def _hotkey_space(self) -> None:
+        if not self._review_hotkeys_context_ok():
+            return
+        if self._controller.revealed:
+            self._hotkey_grade(3)
+            return
+        # QShortcut consumes Space; re-insert so typing mode still works.
+        if self._focus_in_typing_input():
+            self._typing_input.insert(" ")
+            return
+        if self._show_answer_btn.isVisible() and self._show_answer_btn.isEnabled():
+            self._reveal_or_flip()
+
+    def _hotkey_enter(self) -> None:
+        if not self._review_hotkeys_context_ok():
+            return
+        if self._controller.revealed:
+            self._hotkey_grade(3)
+            return
+        # QShortcut consumes Enter; keep typing submit wired to returnPressed.
+        if self._focus_in_typing_input():
+            self._submit_typing()
+            return
+        if self._show_answer_btn.isVisible() and self._show_answer_btn.isEnabled():
+            self._reveal_or_flip()
+
+    def _hotkey_space_or_enter(self) -> None:
+        """Shared path for keyPressEvent (Space and Enter behave the same here)."""
+        if not self._review_hotkeys_context_ok():
+            return
+        if self._controller.revealed:
+            self._hotkey_grade(3)
+            return
+        if self._focus_in_typing_input():
+            return
+        if self._show_answer_btn.isVisible() and self._show_answer_btn.isEnabled():
+            self._reveal_or_flip()
+
+    def _hotkey_grade(self, rating: int) -> None:
+        if not self._review_hotkeys_context_ok():
+            return
+        if not self._controller.revealed:
+            # Digits are stolen by QShortcut; restore them for typing answers.
+            if self._focus_in_typing_input():
+                self._typing_input.insert(str(rating))
+            return
+        grade_buttons = {
+            1: self._again_btn,
+            2: self._hard_btn,
+            3: self._good_btn,
+            4: self._easy_btn,
+        }
+        btn = grade_buttons.get(rating)
+        if btn is None or not btn.isVisible() or not btn.isEnabled():
+            return
+        self._submit_grade(rating)
+
+    def _ensure_review_focus(self) -> None:
+        # Keep the typing field focused until the answer is checked; after reveal
+        # pull focus back so Space / 1–4 are not trapped in the line edit.
+        if (
+            not self._controller.revealed
+            and self._controller.mode == "typing"
+            and self._typing_input.isVisible()
+        ):
+            return
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _make_speaker_button(self) -> QPushButton:
+        btn = QPushButton("🔊")
+        btn.setObjectName("reviewSpeakerBtn")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setFlat(True)
+        btn.setFixedSize(28, 28)
+        btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        return btn
+
+    def _apply_card_fonts(self) -> None:
+        """Fonts via QFont so sizeHint matches painted glyphs (QSS font-size does not)."""
+        term_font = QFont(self._term_label.font())
+        term_font.setPointSize(24)
+        term_font.setBold(True)
+        self._term_label.setFont(term_font)
+
+        answer_font = QFont(self._answer_label.font())
+        answer_font.setPixelSize(28)
+        answer_font.setWeight(QFont.Weight.ExtraBold)
+        self._answer_label.setFont(answer_font)
+
+        phonetic_font = QFont(self._front_phonetic_label.font())
+        phonetic_font.setPointSize(12)
+        phonetic_font.setItalic(True)
+        self._front_phonetic_label.setFont(phonetic_font)
+        self._answer_phonetic_label.setFont(phonetic_font)
+
+        hint_font = QFont(self._hint_label.font())
+        hint_font.setPointSize(11)
+        self._hint_label.setFont(hint_font)
+
+    def _clear_height_constraints(self) -> None:
+        for widget in (
+            self._term_row,
+            self._term_label,
+            self._front_phonetic_widget,
+            self._front_phonetic_label,
+            self._hint_label,
+            self._front_column,
+            self._answer_label,
+            self._answer_block,
+            self._back_section,
+        ):
+            widget.setMinimumHeight(0)
+            widget.setMaximumHeight(_MAX_WIDGET)
+
+    def _sync_label_heights(self) -> None:
+        """Ensure painted font fits; clears stale max-heights left after image cards."""
+        self._clear_height_constraints()
+        for label in (
+            self._term_label,
+            self._front_phonetic_label,
+            self._hint_label,
+            self._answer_label,
+            self._answer_phonetic_label,
+        ):
+            self._fit_label_height(label)
+        self._term_row.updateGeometry()
+        self._front_column.updateGeometry()
+        self._answer_block.updateGeometry()
+        self._back_section.updateGeometry()
+        if self._main_column.layout() is not None:
+            self._main_column.layout().activate()
+
+    def _fit_label_height(self, label: QLabel) -> None:
+        metrics = label.fontMetrics()
+        line = metrics.height() + 4
+        if not label.wordWrap() or not label.text():
+            label.setMinimumHeight(line)
+            return
+        width = label.width()
+        if width < 40:
+            parent = label.parentWidget()
+            if parent is not None and parent.width() >= 40:
+                width = parent.width()
+            else:
+                width = _CONTENT_MIN_WIDTH
+        wrapped = label.heightForWidth(width)
+        label.setMinimumHeight(max(line, wrapped))
+
+    def _apply_front_layout(self, *, has_image: bool, force: bool = False) -> None:
+        """Image beside text, or full-width text when there is no picture."""
+        if not force and self._front_has_image is has_image:
+            return
+        self._front_has_image = has_image
+        self._clear_height_constraints()
+
+        while self._top_layout.count():
+            self._top_layout.takeAt(0)
+
+        self._front_column.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+
+        if has_image:
+            self._top_layout.addWidget(self._image_column, stretch=0)
+            self._top_layout.addSpacing(30)
+            self._top_layout.addWidget(
+                self._front_column,
+                stretch=1,
+                alignment=Qt.AlignmentFlag.AlignTop,
+            )
+            text_align = Qt.AlignmentFlag.AlignLeft
+        else:
+            self._top_layout.addWidget(self._front_column, stretch=1)
+            text_align = Qt.AlignmentFlag.AlignHCenter
+
+        self._front_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._term_label.setAlignment(text_align | Qt.AlignmentFlag.AlignVCenter)
+        self._front_phonetic_label.setAlignment(
+            text_align | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._hint_label.setAlignment(text_align)
+        self._typing_input.setAlignment(text_align)
+        self._typing_feedback.setAlignment(text_align)
+
+        self._rebuild_inline_row(
+            self._term_row_layout,
+            self._term_label,
+            self._term_play_btn,
+        )
+        self._rebuild_inline_row(
+            self._front_phonetic_layout,
+            self._front_phonetic_label,
+            self._front_play_btn,
+        )
+        self._sync_label_heights()
+
+    @staticmethod
+    def _rebuild_inline_row(
+        layout: QHBoxLayout,
+        label: QLabel,
+        button: QPushButton,
+    ) -> None:
+        while layout.count():
+            layout.takeAt(0)
+        # Label expands; text alignment (left/center) handles deck-switch stability.
+        layout.addWidget(label, stretch=1)
+        layout.addWidget(button, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+    def _set_front_term(self, text: str) -> None:
+        self._term_label.setText(text)
+        self._term_play_btn.setVisible(self._tts_enabled())
+        self._sync_label_heights()
+
+    def _enable_wrapping_label(self, label: QLabel) -> None:
+        label.setWordWrap(True)
+        label.setMinimumWidth(0)
+        policy = label.sizePolicy()
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        policy.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        # heightForWidth + stale sizeHints after image→text layout switches clips glyphs.
+        policy.setHeightForWidth(False)
+        label.setSizePolicy(policy)
+
+    def _card_has_resolved_image(self, card: learning.LearningCard) -> bool:
+        if not is_enabled("learning.card_images"):
+            return False
+        if not card.image_path:
+            return False
+        return resolve_image_path(card.image_path) is not None
+
+    def _reset_card_presentation(self) -> None:
+        """Drop layout state left over from the previous deck/card (esp. image cards)."""
+        self._front_has_image = None
+        self._image_label.clear()
+        self._image_label.clearMask()
+        self._image_label.setFixedSize(_IMAGE_SIZE, _IMAGE_SIZE)
+        self._image_label.setVisible(False)
+        self._image_column.setVisible(False)
+        self._apply_front_layout(has_image=False, force=True)
 
     def _tts_enabled(self) -> bool:
         return is_enabled("learning.tts_enabled")
-
-    def _on_review_link(self, url: str) -> None:
-        if url == "qlspeak:term":
-            self._play_audio()
-            return
-        prefix = "qlspeak:example/"
-        if url.startswith(prefix):
-            try:
-                index = int(url[len(prefix) :])
-                self._play_example_sentence(self._example_sentences[index])
-            except (ValueError, IndexError):
-                return
 
     def _play_example_sentence(self, sentence: str) -> None:
         if not self._tts_enabled():
             return
         self._audio.speak_sentence(sentence)
         self._set_play_button_active(True)
+
+    def _clear_example_rows(self) -> None:
+        while self._examples_layout.count():
+            item = self._examples_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _populate_example_rows(self, examples: list[str], term: str) -> None:
+        self._clear_example_rows()
+        self._example_sentences = list(examples)
+        tts_enabled = self._tts_enabled()
+        for sentence in examples:
+            row = QWidget()
+            row.setObjectName("reviewExampleRow")
+            sentence_layout = QHBoxLayout(row)
+            sentence_layout.setContentsMargins(0, 0, 0, 8)
+            sentence_layout.setSpacing(8)
+
+            text_label = QLabel()
+            text_label.setTextFormat(Qt.TextFormat.RichText)
+            text_label.setWordWrap(True)
+            text_label.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            text_label.setText(highlight_term_in_context(sentence, term))
+            text_label.setStyleSheet(
+                "color:#334155;font-size:16px;line-height:1.4;"
+            )
+            text_label.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Preferred,
+            )
+
+            quote = QFrame()
+            quote.setObjectName("reviewExampleQuote")
+            quote_layout = QHBoxLayout(quote)
+            quote_layout.setContentsMargins(14, 4, 0, 4)
+            quote_layout.setSpacing(0)
+            quote_layout.addWidget(text_label)
+
+            # Text/quote expands; speaker docks to the right edge.
+            sentence_layout.addWidget(quote, 1)
+            if tts_enabled:
+                audio_btn = self._make_speaker_button()
+                audio_btn.clicked.connect(
+                    lambda _checked=False, s=sentence: self._play_example_sentence(s)
+                )
+                sentence_layout.addWidget(audio_btn)
+            self._examples_layout.addWidget(row)
 
     def retranslate_ui(self) -> None:
         self._mode_flip_btn.setText(tr("learning.mode_flip"))
@@ -627,9 +1076,11 @@ class ReviewSessionWidget(QWidget):
 
     def set_deck(self, deck_id: int | None, *, direction: str = "ua-en") -> None:
         self._cancel_image_fetch()
+        self._cancel_image_prefetch()
         self._deck_id = deck_id
         self._direction = direction
         self._controller.reset()
+        self._reset_card_presentation()
         self._stack.setCurrentIndex(0)
         self._update_due_label()
         self._show_idle_ui()
@@ -650,6 +1101,8 @@ class ReviewSessionWidget(QWidget):
         self._stack.setCurrentIndex(0)
         self._progress_widget.setVisible(True)
         self._grade_widget.setVisible(True)
+        self._prefetch_session_tts()
+        self._prefetch_session_images()
         self._render_current_card()
 
     def update_streak(self) -> None:
@@ -701,6 +1154,7 @@ class ReviewSessionWidget(QWidget):
 
     def _show_idle_ui(self) -> None:
         self._card_stack.setCurrentIndex(0)
+        self._clear_image()
         for widget in self._card_content:
             widget.setVisible(False)
         self._progress_widget.setVisible(False)
@@ -720,6 +1174,7 @@ class ReviewSessionWidget(QWidget):
         self._card_stack.setCurrentIndex(1)
         self._progress_widget.setVisible(True)
         self._grade_widget.setVisible(True)
+        self._ensure_review_focus()
 
     def _start_session(self) -> None:
         if self._deck_id is None:
@@ -735,6 +1190,7 @@ class ReviewSessionWidget(QWidget):
         self._stack.setCurrentIndex(0)
         self._show_session_ui()
         self._prefetch_session_tts()
+        self._prefetch_session_images()
         self._render_current_card()
 
     def _prefetch_session_tts(self) -> None:
@@ -767,6 +1223,7 @@ class ReviewSessionWidget(QWidget):
         self._stack.setCurrentIndex(0)
         self._show_session_ui()
         self._prefetch_session_tts()
+        self._prefetch_session_images()
         self._render_current_card()
 
     def _start_cram_hard(self) -> None:
@@ -790,13 +1247,14 @@ class ReviewSessionWidget(QWidget):
             self._show_summary()
             return
         self._show_session_ui()
-        self._term_label.setVisible(True)
-        self._term_label.setText(
-            _html_front_term(
-                display_term(card.front),
-                tts_enabled=self._tts_enabled(),
-            )
+        # Apply target layout BEFORE filling text so image→text deck switches
+        # do not keep the previous card's clipped sizeHints.
+        self._apply_front_layout(
+            has_image=self._card_has_resolved_image(card),
+            force=True,
         )
+        self._term_row.setVisible(True)
+        self._set_front_term(display_term(card.front))
         self._hint_label.setText(card.hint or "")
         self._hint_label.setVisible(bool(card.hint))
         self._hide_revealed_content()
@@ -807,6 +1265,7 @@ class ReviewSessionWidget(QWidget):
         self._set_phonetic_text(card.phonetic or "")
         self._update_phonetic_visibility(card, revealed=self._controller.revealed)
         self._render_image(card)
+        self._sync_label_heights()
         total = self._controller.stats.total
         current = min(self._controller.queue_position + 1, total)
         self._progress_label.setText(tr("learning.review_progress", current=current, total=total))
@@ -844,21 +1303,33 @@ class ReviewSessionWidget(QWidget):
 
     def _clear_image(self) -> None:
         self._image_label.clear()
+        self._image_label.clearMask()
+        self._image_label.setFixedSize(_IMAGE_SIZE, _IMAGE_SIZE)
         self._image_label.setVisible(False)
+        self._image_column.setVisible(False)
+        self._apply_front_layout(has_image=False, force=True)
 
     def _show_image_path(self, path) -> None:
         pixmap = QPixmap(str(path))
         if pixmap.isNull():
             self._clear_image()
             return
-        scaled = pixmap.scaled(
-            320,
-            180,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+        rounded = get_rounded_pixmap(
+            pixmap,
+            size=_IMAGE_SIZE,
+            radius=_IMAGE_RADIUS,
         )
-        self._image_label.setPixmap(scaled)
+        self._image_label.setPixmap(rounded)
+        self._image_label.setFixedSize(rounded.size())
+        mask = rounded.mask()
+        if not mask.isNull():
+            self._image_label.setMask(mask)
+        else:
+            self._image_label.clearMask()
         self._image_label.setVisible(True)
+        self._image_column.setVisible(True)
+        self._apply_front_layout(has_image=True, force=True)
+        self._sync_label_heights()
 
     def _cancel_image_fetch(self) -> None:
         if self._image_worker is not None and self._image_worker.isRunning():
@@ -866,6 +1337,35 @@ class ReviewSessionWidget(QWidget):
             self._image_worker.wait(200)
         self._image_worker = None
         self._image_fetch_card_id = None
+
+    def _cancel_image_prefetch(self) -> None:
+        if self._image_prefetch is not None and self._image_prefetch.isRunning():
+            self._image_prefetch.requestInterruption()
+            self._image_prefetch.wait(200)
+        self._image_prefetch = None
+
+    def _prefetch_session_images(self) -> None:
+        self._cancel_image_prefetch()
+        if not is_enabled("learning.card_images") or self._deck_id is None:
+            return
+        current = self._controller.current_card()
+        current_id = current.id if current is not None else None
+        pending: list[learning.LearningCard] = []
+        for card in self._controller.session_cards():
+            if card.id == current_id:
+                continue
+            if not (card.image_prompt or "").strip():
+                continue
+            if card.image_path and resolve_image_path(card.image_path):
+                continue
+            pending.append(card)
+        if not pending:
+            return
+        self._image_prefetch = CardImagePrefetchWorker(
+            self._deck_id, pending, parent=self
+        )
+        self._image_prefetch.card_ready.connect(self._on_image_fetched)
+        self._image_prefetch.start()
 
     def _request_card_image(self, card: learning.LearningCard) -> None:
         if self._deck_id is None:
@@ -913,8 +1413,12 @@ class ReviewSessionWidget(QWidget):
     def _hide_revealed_content(self) -> None:
         self._answer_block.setVisible(False)
         self._answer_label.clear()
-        self._details_label.clear()
-        self._details_label.setVisible(False)
+        self._definition_label.clear()
+        self._definition_label.setVisible(False)
+        self._definition_row.setVisible(False)
+        self._clear_example_rows()
+        self._examples_host.setVisible(False)
+        self._back_section.setVisible(False)
         self._example_sentences = []
 
     def _set_phonetic_text(self, phonetic: str) -> None:
@@ -940,27 +1444,35 @@ class ReviewSessionWidget(QWidget):
             return display_term(card.front)
         return card.back
 
-    def _revealed_details_html(self, card: learning.LearningCard) -> str:
+    def _show_revealed_content(self, card: learning.LearningCard) -> None:
+        self._answer_label.setText(card.back)
+        self._answer_block.setVisible(True)
+        self._sync_label_heights()
+
         kind = self._learning_kind()
         examples = parse_context(card.context, direction=self._direction)
-        self._example_sentences = list(examples)
         term = card.back if kind == "ua-en" else display_term(card.front)
-        return _build_revealed_details_html(
-            notes=card.notes or "",
-            examples=examples,
-            term=term,
-            highlight=self._notes_highlight_term(card),
-            tts_enabled=self._tts_enabled(),
-        )
+        definition = _definition_body_from_notes(card.notes or "")
+        if definition:
+            body = highlight_term_styled(definition, self._notes_highlight_term(card))
+            self._definition_label.setText(_html_definition_block(body))
+            self._definition_label.setVisible(True)
+            self._definition_row.setVisible(True)
+        else:
+            self._definition_label.clear()
+            self._definition_label.setVisible(False)
+            self._definition_row.setVisible(False)
 
-    def _show_revealed_content(self, card: learning.LearningCard) -> None:
-        self._answer_label.setText(_html_back_term(card.back))
-        self._answer_block.setVisible(True)
-        details_html = self._revealed_details_html(card)
-        if details_html:
-            self._details_label.setText(details_html)
-            self._details_label.setVisible(True)
+        if examples:
+            self._populate_example_rows(examples, term)
+            self._examples_host.setVisible(True)
+        else:
+            self._clear_example_rows()
+            self._examples_host.setVisible(False)
+
+        self._back_section.setVisible(True)
         self._update_phonetic_visibility(card, revealed=True)
+        self._sync_label_heights()
 
     def _has_pronunciation_media(self, card: learning.LearningCard) -> bool:
         from quicklingo.learning.pronunciation import resolve_audio_path
@@ -1041,6 +1553,7 @@ class ReviewSessionWidget(QWidget):
                 self.retranslate_ui()
         else:
             self.retranslate_ui()
+        self._ensure_review_focus()
 
     @staticmethod
     def _grade_button_label(base: str, days: int | None) -> str:
@@ -1071,6 +1584,8 @@ class ReviewSessionWidget(QWidget):
             self._show_summary()
 
     def _show_summary(self) -> None:
+        self._cancel_image_fetch()
+        self._cancel_image_prefetch()
         stats: SessionStats = self._controller.stats
         answered = stats.answered or stats.total
         if self._controller.is_cram:
@@ -1113,44 +1628,40 @@ class ReviewSessionWidget(QWidget):
             self._set_play_button_active(True)
 
     def _set_play_button_active(self, active: bool) -> None:
-        icon = "🔊" if active and self._audio.is_speaking() else "▶"
-        self._front_play_btn.setText(icon)
-        self._answer_play_btn.setText(icon)
+        _ = active
+        self._term_play_btn.setText("🔊")
+        self._front_play_btn.setText("🔊")
+        self._answer_play_btn.setText("🔊")
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if not self._controller.session_active:
             super().keyPressEvent(event)
             return
         key = event.key()
-        if key == Qt.Key.Key_Space and self._controller.mode == "flip":
-            if not self._controller.revealed:
-                self._reveal_answer()
+        if key in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            # Typing field owns Enter via returnPressed; Space should type a space.
+            if self._focus_in_typing_input() and not self._controller.revealed:
+                super().keyPressEvent(event)
+                return
+            self._hotkey_space_or_enter()
             event.accept()
             return
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            if self._controller.mode == "typing" and not self._controller.revealed:
-                self._submit_typing()
-                event.accept()
-                return
-        if key == Qt.Key.Key_P:
+        if key == Qt.Key.Key_P and not self._focus_in_typing_input():
             self._play_audio()
             event.accept()
             return
-        if self._controller.revealed:
-            if key == Qt.Key.Key_1:
-                self._submit_grade(1)
-                event.accept()
-                return
-            if key == Qt.Key.Key_2 and is_enabled("learning.srs_review"):
-                self._submit_grade(2)
-                event.accept()
-                return
-            if key == Qt.Key.Key_3:
-                self._submit_grade(3)
-                event.accept()
-                return
-            if key == Qt.Key.Key_4 and is_enabled("learning.srs_review"):
-                self._submit_grade(4)
-                event.accept()
-                return
+        grade_keys = {
+            Qt.Key.Key_1: 1,
+            Qt.Key.Key_2: 2,
+            Qt.Key.Key_3: 3,
+            Qt.Key.Key_4: 4,
+            Qt.Key.Key_Keypad1: 1,
+            Qt.Key.Key_Keypad2: 2,
+            Qt.Key.Key_Keypad3: 3,
+            Qt.Key.Key_Keypad4: 4,
+        }
+        if key in grade_keys and self._controller.revealed:
+            self._hotkey_grade(grade_keys[key])
+            event.accept()
+            return
         super().keyPressEvent(event)

@@ -1,9 +1,12 @@
 import sys
 
+import quicklingo.qt_env  # noqa: F401 — before QtMultimedia
+
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from quicklingo.app_icon import configure_windows_app_id, load_app_icon
+from quicklingo.qt_env import apply_qt_logging_filters
 from quicklingo.db import history
 from quicklingo.features import feature_changed, is_enabled, save_features
 from quicklingo.i18n import init_language, language_changed
@@ -146,6 +149,7 @@ def run() -> int:
     init_language()
 
     app = QApplication(sys.argv)
+    apply_qt_logging_filters()
     disable_combo_popup_animation(app)
     app.setApplicationName("QuickLingo")
     icon = load_app_icon()

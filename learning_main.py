@@ -1,3 +1,4 @@
+import quicklingo.qt_env  # noqa: F401 — before QtMultimedia / QApplication
 from quicklingo.learning_app import run
 
 

@@ -15,6 +15,7 @@ API_KEY_FIELDS: dict[str, str] = {
     "deepseek": "deepseek_api_key",
     "openai": "openai_api_key",
     "anthropic": "anthropic_api_key",
+    "pixabay": "pixabay_api_key",
 }
 
 API_PROVIDERS: tuple[str, ...] = (
@@ -263,6 +264,7 @@ def save_api_keys(
     deepseek: str = "",
     openai: str = "",
     anthropic: str = "",
+    pixabay: str = "",
 ) -> None:
     data = _load()
     for provider, value in (
@@ -274,6 +276,7 @@ def save_api_keys(
         ("deepseek", deepseek),
         ("openai", openai),
         ("anthropic", anthropic),
+        ("pixabay", pixabay),
     ):
         data[API_KEY_FIELDS[provider]] = _encode_api_key_value(value.strip())
     _save(data)

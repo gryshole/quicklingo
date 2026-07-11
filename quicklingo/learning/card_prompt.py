@@ -134,10 +134,15 @@ Example good cards (ua-en):
 {{"front":"витривалість","back":"endurance","hint":"іменник · властивість · formal · e… n…","context":["She showed great endurance on the final lap.","Marathon training builds endurance.","His endurance surprised everyone."],"notes":"Definition: ability to keep going despite difficulty","quizDistractors":["speed","strength","height","courage"],"priority":3,"source_record_id":126,"imageable":false,"image_prompt":""}}
 {{"front":"банк","back":"bank","hint":"іменник · фінанси · formal · b… k…","context":["She opened a bank account yesterday.","The bank approved the loan.","He works at a local bank."],"notes":"Definition: a business that holds money for customers","quizDistractors":["treasury","credit union","fund","vault"],"priority":3,"source_record_id":128,"imageable":false,"image_prompt":""}}
 {{"front":"дефіцит","back":"shortage","hint":"іменник · нестача · formal · s… h…","context":["The shortage of food caused a crisis.","The company faced a shortage of skilled workers.","The shortage of water affected the crops."],"notes":"Definition: not enough of something that is needed","quizDistractors":["deficit","scarcity","gap","limit"],"priority":3,"source_record_id":127,"imageable":false,"image_prompt":""}}
+{{"front":"яблуко","back":"apple","hint":"іменник · їжа · neutral · a…","context":["He picked an apple from the tree.","She baked an apple pie.","An apple a day keeps the doctor away."],"notes":"Definition: a round fruit with red, green, or yellow skin","quizDistractors":["orange","banana","pear","grape"],"priority":2,"source_record_id":129,"imageable":true,"image_prompt":"red apple fruit"}}
 
-imageable / image_prompt:
-- imageable: true only when a simple visual helps memory; else false.
-- image_prompt: English scene description for image search (concrete nouns / visual metaphors).
+imageable / image_prompt (Pixabay photo search — NOT AI image generation):
+- imageable: true ONLY for concrete, photographable things: fruit, animal, object, place, tool, or a simple visible action (person ripping paper).
+- imageable: false for abstractions, emotions, business jargon, grammar words, and anything that needs allegory (biased, worsen, inevitable, merger, maze = path…). Then image_prompt MUST be "".
+- image_prompt: 2–5 ENGLISH stock-photo keywords only. Short and literal.
+  - Good: "red apple fruit", "plumbing pipes house", "person ripping paper", "car blind spot mirror"
+  - Bad: full sentences; "symbolizing…"; "logos merging"; "money flowing into a plant"; "on a white background"; metaphors; brand names.
+- Prefer the English lemma learners see (usually back for ua-en) plus 1–2 disambiguators (fruit, animal, tool). Max ~40 characters.
 
 Quality:
 - Keep front and back under 80 characters. Escape double quotes inside strings as \\".
@@ -161,6 +166,8 @@ Review UX — what the learner sees:
 
 Card field rules (each field has a DISTINCT role — never duplicate the same idea):
 - front: short English term/phrase (from source=). No full sentence.
+  If examples use a fixed multi-word unit containing the lemma (e.g. "staple food",
+  "take place"), put that FULL phrase in front — not only the headword.
 - back: Ukrainian translation (from result=) — the ANSWER to recall.
 - hint: meta-clue toward Ukrainian back — shown BEFORE the answer. Must NOT define or paraphrase front.
 - notes: ONE short English A2–B2 definition of front (max 1 sentence). MUST start with "Definition:". Shown AFTER the answer in a gray pill.
@@ -208,10 +215,15 @@ Example good cards (en-ua):
 {{"front":"flaw","back":"хиба","hint":"іменник · недолік · formal · х…","context":["The report revealed a serious flaw.","This flaw could affect the whole system.","They fixed the flaw before launch."],"notes":"Definition: a fault or weakness in something","quizDistractors":["advantage","feature","benefit","strength"],"priority":3,"source_record_id":124,"imageable":false,"image_prompt":""}}
 {{"front":"exacerbate","back":"загострювати","hint":"дієслово · процес · formal · з…","context":["The new policy will exacerbate the problem.","Stress can exacerbate existing symptoms.","Delays may exacerbate the backlog."],"notes":"Definition: to make a problem or bad situation worse","quizDistractors":["improve","stabilize","reduce","prevent"],"priority":3,"source_record_id":125,"imageable":false,"image_prompt":""}}
 {{"front":"bank","back":"банк","hint":"іменник · фінанси · formal · б…","context":["She opened a bank account yesterday.","The bank approved the loan.","He works at a local bank."],"notes":"Definition: a business that holds money for customers","quizDistractors":["treasury","credit union","fund","vault"],"priority":3,"source_record_id":126,"imageable":false,"image_prompt":""}}
+{{"front":"apple","back":"яблуко","hint":"іменник · їжа · neutral · я…","context":["He picked an apple from the tree.","She baked an apple pie.","An apple a day keeps the doctor away."],"notes":"Definition: a round fruit with red, green, or yellow skin","quizDistractors":["orange","banana","pear","grape"],"priority":2,"source_record_id":127,"imageable":true,"image_prompt":"red apple fruit"}}
 
-imageable / image_prompt:
-- imageable: true only when a simple visual helps memory; else false.
-- image_prompt: English scene description for image search (concrete nouns / visual metaphors).
+imageable / image_prompt (Pixabay photo search — NOT AI image generation):
+- imageable: true ONLY for concrete, photographable things: fruit, animal, object, place, tool, or a simple visible action (person ripping paper).
+- imageable: false for abstractions, emotions, business jargon, grammar words, and anything that needs allegory (biased, worsen, inevitable, merger, maze = path…). Then image_prompt MUST be "".
+- image_prompt: 2–5 ENGLISH stock-photo keywords only. Short and literal.
+  - Good: "red apple fruit", "plumbing pipes house", "person ripping paper", "car blind spot mirror"
+  - Bad: full sentences; "symbolizing…"; "logos merging"; "money flowing into a plant"; "on a white background"; metaphors; brand names.
+- Prefer the English front lemma plus 1–2 disambiguators (fruit, animal, tool). Max ~40 characters.
 
 Quality:
 - Keep front and back under 80 characters. Escape double quotes inside strings as \\".
