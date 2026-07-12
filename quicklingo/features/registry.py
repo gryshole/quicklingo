@@ -17,7 +17,6 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
     "history.tags": {"enabled": True},
     "history.meeting_transcript": {"enabled": True, "session_gap_min": 15},
     "learning.ai_corpus_analysis": {
-        "enabled": True,
         "max_candidates": 120,
         "batch_size": 40,
         "card_prompt_template": "",
@@ -33,7 +32,6 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "learning.card_images": {"enabled": False, "max_images_per_batch": 25},
     "learning.quiz": {
-        "enabled": True,
         "question_count": 15,
         "feedback_delay_ms": 1800,
         "choices_pool_size": 6,
@@ -48,9 +46,9 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
         "last_deck_ids": [],
         "last_generation_deck_id": "",
     },
-    "learning.tts_enabled": {"enabled": True},
+    "learning.tts_enabled": {},
     "learning.tts_auto_play": {"enabled": False},
-    "learning.ai_deck_generator": {"enabled": True, "batch_size": 10, "max_words": 30},
+    "learning.ai_deck_generator": {"batch_size": 10, "max_words": 30},
     "translation.response_cache": {"enabled": True, "ttl_days": 30},
     "translation.context_window": {"enabled": False, "last_n": 3},
     "input.global_hotkey.translate_selection": {
@@ -109,6 +107,16 @@ def get_feature(key: str) -> dict[str, Any]:
 
 
 def is_enabled(key: str) -> bool:
+    # Always-on capabilities; only limits/prompts (where applicable) stay configurable.
+    if key in {
+        "history.auto_save",
+        "history.tags",
+        "learning.ai_corpus_analysis",
+        "learning.quiz",
+        "learning.ai_deck_generator",
+        "learning.tts_enabled",
+    }:
+        return True
     feature = get_feature(key)
     if not feature:
         return False

@@ -74,7 +74,9 @@ class HotkeyManager(QObject):
             elif feature_key == "ui.system_tray":
                 if not is_enabled(feature_key):
                     continue
-                combo = str(get_feature(feature_key).get(field, defaults[feature_key]))
+                combo = str(get_feature(feature_key).get(field, defaults[feature_key])).strip()
+                if not combo:
+                    continue
             elif not is_enabled(feature_key):
                 continue
             else:

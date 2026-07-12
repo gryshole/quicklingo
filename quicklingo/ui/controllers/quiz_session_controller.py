@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 
-from quicklingo.features import get_feature, is_enabled
+from quicklingo.features import get_feature
 from quicklingo.learning.quiz.aggregator import build_quiz_pool
 from quicklingo.learning.quiz.generator import get_quiz_generator
 from quicklingo.learning.quiz.models import QuizAnswer, QuizQuestion, QuizResult, QuizSessionState, QuizWordDto
@@ -20,8 +20,6 @@ class QuizSessionController:
         return self._active
 
     def start_session(self, deck_ids: frozenset[int] | None = None) -> bool:
-        if not is_enabled("learning.quiz"):
-            return False
         if deck_ids is not None and len(deck_ids) == 0:
             return False
         limit = int(get_feature("learning.quiz").get("question_count", 15))

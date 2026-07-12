@@ -29,9 +29,8 @@ from PySide6.QtWidgets import (
 
 from quicklingo.config.loader import get_direction_label, get_directions
 from quicklingo.db import history
-from quicklingo.features import get_feature, is_enabled
+from quicklingo.features import is_enabled
 from quicklingo.history.corpus_export import export_json, export_markdown
-from quicklingo.history.meeting_export import export_transcript_markdown, export_transcript_text
 from quicklingo.i18n import tr
 from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
 from quicklingo.ui.tag_wizard_dialog import TagWizardDialog
@@ -239,9 +238,6 @@ class HistoryWindow(QDialog):
         self._export_btn = QPushButton()
         self._export_btn.setObjectName("btnSecondary")
         self._export_btn.clicked.connect(self._export_history)
-        self._transcript_btn = QPushButton()
-        self._transcript_btn.setObjectName("btnSecondary")
-        self._transcript_btn.clicked.connect(self._export_transcript)
         self._edit_tags_btn = QPushButton()
         self._edit_tags_btn.setObjectName("btnSecondary")
         self._edit_tags_btn.clicked.connect(self._edit_selected_tags)
@@ -257,7 +253,7 @@ class HistoryWindow(QDialog):
 
         main_actions = QHBoxLayout()
         main_actions.setSpacing(8)
-        for btn in (self._refresh_btn, self._export_btn, self._transcript_btn):
+        for btn in (self._refresh_btn, self._export_btn):
             main_actions.addWidget(btn)
 
         tag_actions = QHBoxLayout()
@@ -406,7 +402,6 @@ class HistoryWindow(QDialog):
         self._refresh_btn.setText(tr("history.refresh"))
         self._clear_btn.setText(tr("history.clear"))
         self._export_btn.setText(tr("history.export"))
-        self._transcript_btn.setText(tr("history.export_transcript"))
         self._edit_tags_btn.setText(tr("history.edit_tags"))
         self._tag_wizard_btn.setText(tr("history.tag_wizard"))
         self._create_deck_btn.setText(tr("history.create_deck_from_tag"))
@@ -493,7 +488,6 @@ class HistoryWindow(QDialog):
         show_tags = is_enabled("history.tags")
         show_export = True
         show_phrasebook = True
-        show_transcript = True
         self._filter_card.setVisible(show_search or show_filters)
         self._search_label.setVisible(show_search)
         self._search_field.setVisible(show_search)
@@ -506,7 +500,6 @@ class HistoryWindow(QDialog):
         self._date_to.setVisible(show_filters)
         self._starred_only.setVisible(show_filters and show_phrasebook)
         self._export_btn.setVisible(show_export)
-        self._transcript_btn.setVisible(show_transcript)
         self._edit_tags_btn.setVisible(show_tags)
         self._tag_wizard_btn.setVisible(show_tags)
         self._table.setColumnHidden(5, not show_tags)
@@ -698,23 +691,6 @@ class HistoryWindow(QDialog):
             content = history.export_csv(records)
             newline = ""
         with open(path, "w", encoding="utf-8", newline=newline) as handle:
-            handle.write(content)
-
-    def _export_transcript(self) -> None:
-        path, selected_filter = QFileDialog.getSaveFileName(
-            self,
-            tr("history.export_transcript_title"),
-            "quicklingo-transcript.md",
-            "Markdown (*.md);;Text (*.txt)",
-        )
-        if not path:
-            return
-        gap = int(get_feature("history.meeting_transcript").get("session_gap_min", 15))
-        if selected_filter.startswith("Text") or path.endswith(".txt"):
-            content = export_transcript_text(self._records, gap_minutes=gap)
-        else:
-            content = export_transcript_markdown(self._records, gap_minutes=gap)
-        with open(path, "w", encoding="utf-8") as handle:
             handle.write(content)
 
     def _selected_record(self) -> history.TranslationRecord | None:

@@ -100,8 +100,7 @@ class ReviewSessionController:
 
     def start_session(self, deck_id: int, *, direction: str, mode: str = "flip") -> bool:
         srs = get_feature("learning.srs_review")
-        daily = get_feature("learning.daily_review")
-        limit = int(srs.get("daily_limit") or daily.get("daily_limit", 20))
+        limit = int(srs.get("daily_limit", 20))
         new_limit = int(srs.get("new_cards_per_day", 10))
         queue = build_session_queue(deck_id, limit=limit, new_limit=new_limit)
         if not queue.cards:

@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from quicklingo.config.loader import get_directions
 from quicklingo.db import learning
-from quicklingo.features import get_feature, is_enabled
+from quicklingo.features import get_feature
 from quicklingo.i18n import tr
 from quicklingo.learning.ai_deck.models import CEFR_LEVELS, AiDeckParams, TAG_PATTERN
 from quicklingo.learning.ai_deck.topics import (
@@ -357,8 +357,6 @@ class AiDeckGeneratorDialog(QDialog):
         return True
 
     def _start_generation(self) -> None:
-        if not is_enabled("learning.ai_deck_generator"):
-            return
         params = self._collect_params(merge_existing=False)
         if not self._validate(params):
             return

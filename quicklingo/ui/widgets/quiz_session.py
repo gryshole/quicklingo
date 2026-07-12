@@ -609,12 +609,6 @@ class QuizSessionWidget(QWidget):
         self._progress_header.setVisible(visible)
 
     def _refresh_idle(self) -> None:
-        if not is_enabled("learning.quiz"):
-            self._idle_stats.setText(tr("learning.quiz_disabled"))
-            self._start_btn.setEnabled(False)
-            self._refresh_btn.setEnabled(False)
-            self._deck_combo.setEnabled(False)
-            return
         self._deck_combo.setEnabled(True)
         stats = get_quiz_pool_stats(deck_ids=self._deck_ids)
         ready = stats.ready_with_questions

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -22,7 +23,7 @@ from quicklingo.config.loader import get_directions, resolve_learning_direction
 from quicklingo.db import history
 from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
-from quicklingo.learning.corpus_analysis import select_candidates
+from quicklingo.learning.corpus_analysis import CorpusCandidate, select_candidates
 from quicklingo.learning.corpus_tags import UNTAGGED_SENTINEL
 from quicklingo.learning.deck_corpus import pending_corpus_records
 from quicklingo.learning.difficult_words import compute_difficult_words
@@ -35,6 +36,11 @@ from quicklingo.workers.corpus_analysis_worker import CorpusAnalysisWorker
 _PREVIEW_ROW_LIMIT = 20
 _FORM_ACTION_INSET = 12
 _PREVIEW_BODY_INSET = 6
+_COL_WORD = 0
+_COL_TRANSLATION = 1
+_COL_WHY = 2
+_COL_DELETE = 3
+_DELETE_COL_WIDTH = 44
 
 _CREATE_DECK_TAB_STYLE = f"""
 CreateDeckTabWidget {{
@@ -186,6 +192,19 @@ def _reason_label(reason: str) -> str:
     return translated if translated != key else reason
 
 
+def _make_delete_item() -> QTableWidgetItem:
+    item = QTableWidgetItem("\u2715")
+    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+    item.setToolTip(tr("history.delete_tooltip"))
+    font = QFont()
+    font.setPointSize(13)
+    font.setBold(True)
+    item.setFont(font)
+    item.setForeground(QBrush(QColor("#64748b")))
+    item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+    return item
+
+
 class CreateDeckTabWidget(QWidget):
     deck_created = Signal(int, str)
     open_main_window = Signal()
@@ -196,6 +215,7 @@ class CreateDeckTabWidget(QWidget):
         self.setStyleSheet(_CREATE_DECK_TAB_STYLE)
         self._standalone = standalone
         self._worker: CorpusAnalysisWorker | None = None
+        self._preview_candidates: list[CorpusCandidate] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 4, 0, 0)
@@ -273,17 +293,20 @@ class CreateDeckTabWidget(QWidget):
         self._starred_only = QCheckBox()
         preview_body.addWidget(self._starred_only)
 
-        self._preview_table = QTableWidget(0, 3)
+        self._preview_table = QTableWidget(0, 4)
         self._preview_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._preview_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._preview_table.verticalHeader().setVisible(False)
         self._preview_table.setShowGrid(False)
         self._preview_table.setAlternatingRowColors(False)
+        self._preview_table.cellClicked.connect(self._on_preview_cell_clicked)
         header = self._preview_table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(_COL_WORD, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(_COL_TRANSLATION, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(_COL_WHY, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(_COL_DELETE, QHeaderView.ResizeMode.Fixed)
+        self._preview_table.setColumnWidth(_COL_DELETE, _DELETE_COL_WIDTH)
         preview_body.addWidget(self._preview_table, stretch=1)
         preview_layout.addLayout(preview_body, stretch=1)
         form_layout.addWidget(preview_card, stretch=1)
@@ -456,6 +479,7 @@ class CreateDeckTabWidget(QWidget):
                 tr("learning.create_deck_col_word").upper(),
                 tr("learning.create_deck_col_translation").upper(),
                 tr("learning.create_deck_col_why").upper(),
+                "",
             ]
         )
         self._refresh_state()
@@ -610,6 +634,7 @@ class CreateDeckTabWidget(QWidget):
             self._refresh_preview()
             return
 
+        self._preview_candidates = []
         self._preview_table.setRowCount(0)
         self._stats_badge.setText("")
 
@@ -662,6 +687,7 @@ class CreateDeckTabWidget(QWidget):
         records = self._corpus_records()
         pending = self._pending_corpus_records()
         if not pending:
+            self._preview_candidates = []
             self._preview_table.setRowCount(0)
             self._stats_badge.setText("")
             return
@@ -682,6 +708,7 @@ class CreateDeckTabWidget(QWidget):
             )
         )
         preview = candidates[:_PREVIEW_ROW_LIMIT]
+        self._preview_candidates = list(preview)
         self._preview_table.setRowCount(len(preview))
         for row, candidate in enumerate(preview):
             for col, text in enumerate(
@@ -695,6 +722,20 @@ class CreateDeckTabWidget(QWidget):
                 if col < 2 and text:
                     item.setToolTip(text)
                 self._preview_table.setItem(row, col, item)
+            self._preview_table.setItem(row, _COL_DELETE, _make_delete_item())
+        self._preview_table.setColumnWidth(_COL_DELETE, _DELETE_COL_WIDTH)
+
+    def _on_preview_cell_clicked(self, row: int, column: int) -> None:
+        if column != _COL_DELETE:
+            return
+        if row < 0 or row >= len(self._preview_candidates):
+            return
+        record_id = self._preview_candidates[row].record_id
+        if record_id <= 0:
+            return
+        if not history.delete_by_id(record_id):
+            return
+        self._reload_tags()
 
     def current_model_id(self) -> str | None:
         if self._model_combo.count() == 0:
@@ -715,13 +756,6 @@ class CreateDeckTabWidget(QWidget):
         self._progress_bar.setValue(0)
 
     def _run_create_deck(self) -> None:
-        if not is_enabled("learning.ai_corpus_analysis"):
-            QMessageBox.information(
-                self,
-                tr("learning.window_title"),
-                tr("learning.analysis_disabled"),
-            )
-            return
         if self._analysis_running():
             return
         pending = self._pending_corpus_records()

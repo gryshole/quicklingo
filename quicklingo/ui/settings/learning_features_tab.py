@@ -126,13 +126,9 @@ _LEARNING_GROUP_SPECS: GroupSpecs = {
     "learning_modules": (
         "settings.features.group_learning_modules",
         [
-            "learning.ai_corpus_analysis",
             "learning.anki_export",
             "learning.srs_review",
             "learning.card_images",
-            "learning.quiz",
-            "learning.ai_deck_generator",
-            "learning.tts_enabled",
             "learning.tts_auto_play",
         ],
     ),

@@ -23,6 +23,7 @@ from quicklingo.features import feature_keys, get_all_features, is_enabled, save
 from quicklingo.i18n import tr
 from quicklingo.ui.settings.base_tab import SettingsTab
 from quicklingo.ui.settings.feature_help import attach_feature_help
+from quicklingo.ui.settings.hotkey_capture import HotkeyCaptureRow
 from quicklingo.ui.settings_theme import configure_prompt_reset_button, configure_settings_group_box
 
 FEATURE_I18N: dict[str, tuple[str, str | None]] = {
@@ -32,25 +33,10 @@ FEATURE_I18N: dict[str, tuple[str, str | None]] = {
     "ui.system_tray": ("settings.features.ui_system_tray", "settings.features.ui_system_tray_note"),
     "ui.autostart": ("settings.features.ui_autostart", "settings.features.ui_autostart_note"),
     "history.auto_save": ("settings.features.history_auto_save", None),
-    "history.tags": ("settings.features.history_tags", None),
-    "history.meeting_transcript": (
-        "settings.features.history_meeting_transcript",
-        None,
-    ),
-    "learning.ai_corpus_analysis": (
-        "settings.features.learning_ai_corpus_analysis",
-        "settings.features.learning_ai_corpus_analysis_note",
-    ),
     "learning.anki_export": ("settings.features.learning_anki_export", None),
     "learning.srs_review": ("settings.features.learning_srs_review", None),
     "learning.card_images": ("settings.features.learning_card_images", None),
-    "learning.quiz": ("settings.features.learning_quiz", None),
-    "learning.tts_enabled": ("settings.features.learning_tts_enabled", None),
     "learning.tts_auto_play": ("settings.features.learning_tts_auto_play", None),
-    "learning.ai_deck_generator": (
-        "settings.features.learning_ai_deck_generator",
-        "settings.features.learning_ai_deck_generator_note",
-    ),
     "translation.response_cache": (
         "settings.features.translation_response_cache",
         "settings.features.translation_response_cache_note",
@@ -114,6 +100,7 @@ class FeatureSettingsEditor(SettingsTab):
         self._spinboxes: dict[tuple[str, str], QSpinBox] = {}
         self._line_edits: dict[tuple[str, str], QLineEdit] = {}
         self._text_edits: dict[tuple[str, str], QPlainTextEdit] = {}
+        self._hotkey_rows: list[HotkeyCaptureRow] = []
         self._build_groups()
         self._body_layout.addSpacing(30)
         self.reload()
@@ -161,11 +148,32 @@ class FeatureSettingsEditor(SettingsTab):
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         form.addRow(label, spin)
 
-    def _add_combo_field(self, form: QFormLayout, key: str, field: str, label_key: str) -> None:
-        edit = QLineEdit()
-        edit.textChanged.connect(self.mark_dirty)
-        self._line_edits[(key, field)] = edit
-        form.addRow(tr(label_key), edit)
+    def _add_hotkey_row(
+        self,
+        form: QFormLayout,
+        *,
+        feature_key: str,
+        field: str,
+        title_key: str,
+        uses_enabled_flag: bool,
+    ) -> None:
+        row = HotkeyCaptureRow(
+            feature_key=feature_key,
+            field=field,
+            title_key=title_key,
+            uses_enabled_flag=uses_enabled_flag,
+        )
+        row.changed.connect(self.mark_dirty)
+        self._hotkey_rows.append(row)
+        form.addRow(row)
+        self._sync_hotkey_label_widths()
+
+    def _sync_hotkey_label_widths(self) -> None:
+        if not self._hotkey_rows:
+            return
+        width = max(row.label_preferred_width() for row in self._hotkey_rows)
+        for row in self._hotkey_rows:
+            row.set_label_width(width)
 
     def _add_text_area(
         self,
@@ -271,6 +279,9 @@ class FeatureSettingsEditor(SettingsTab):
             checkbox.setText(tr(title_key))
             if note_key:
                 checkbox.setToolTip(tr(note_key))
+        for row in self._hotkey_rows:
+            row.retranslate_ui()
+        self._sync_hotkey_label_widths()
 
     def reload(self) -> None:
         features = get_all_features()
@@ -293,6 +304,11 @@ class FeatureSettingsEditor(SettingsTab):
             edit.blockSignals(True)
             edit.setPlainText(value)
             edit.blockSignals(False)
+        for row in self._hotkey_rows:
+            data = features.get(row.feature_key, {})
+            combo = str(data.get(row.field, ""))
+            enabled = bool(data.get("enabled", False)) if row.uses_enabled_flag else bool(combo)
+            row.set_state(combo=combo, enabled=enabled)
         self.retranslate_ui()
         self.mark_clean()
 
@@ -306,6 +322,11 @@ class FeatureSettingsEditor(SettingsTab):
             patch.setdefault(key, {})[field] = edit.text().strip()
         for (key, field), edit in self._text_edits.items():
             patch.setdefault(key, {})[field] = edit.toPlainText().strip()
+        for row in self._hotkey_rows:
+            entry = patch.setdefault(row.feature_key, {})
+            entry[row.field] = row.binding_combo()
+            if row.uses_enabled_flag:
+                entry["enabled"] = row.binding_enabled()
         save_features(patch)
         self.mark_clean()
         return True

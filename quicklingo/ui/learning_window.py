@@ -551,11 +551,12 @@ class LearningWindow(QMainWindow):
         self._deck_label.setText(tr("learning.deck"))
         self._deck_summary_title.setText(tr("learning.analysis_summary").upper())
         self._export_btn.setText(tr("learning.export_anki"))
+        self._export_btn.setVisible(is_enabled("learning.anki_export"))
         self._edit_card_btn.setText(tr("learning.edit_card"))
         self._delete_card_btn.setText(tr("learning.delete_card"))
         self._delete_deck_btn.setText(tr("learning.delete_deck"))
         self._generate_ai_deck_btn.setText(tr("learning.ai_deck.generate_button"))
-        self._generate_ai_deck_btn.setVisible(is_enabled("learning.ai_deck_generator"))
+        self._generate_ai_deck_btn.setVisible(True)
         self._cards_table.setHorizontalHeaderLabels(
             [
                 tr("learning.card_front").upper(),
@@ -846,8 +847,6 @@ class LearningWindow(QMainWindow):
         self._load_cards()
 
     def _open_ai_deck_dialog(self) -> None:
-        if not is_enabled("learning.ai_deck_generator"):
-            return
         dialog = AiDeckGeneratorDialog(
             self,
             initial_model_id=self._create_deck_tab.current_model_id(),

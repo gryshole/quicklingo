@@ -455,7 +455,7 @@ class MainWindow(QMainWindow):
         if self._quiz_questions_action:
 
             self._quiz_questions_action.setText(tr("main.menu_quiz_questions"))
-            self._quiz_questions_action.setVisible(is_enabled("learning.quiz"))
+            self._quiz_questions_action.setVisible(True)
 
         if self._settings_action:
 
@@ -1010,7 +1010,7 @@ class MainWindow(QMainWindow):
 
         self._quiz_questions_action = self._tools_menu.addAction("")
         self._quiz_questions_action.triggered.connect(self._open_quiz_questions)
-        self._quiz_questions_action.setVisible(is_enabled("learning.quiz"))
+        self._quiz_questions_action.setVisible(True)
 
         self._sync_action = self._tools_menu.addAction("")
         self._sync_action.triggered.connect(self._run_sync)

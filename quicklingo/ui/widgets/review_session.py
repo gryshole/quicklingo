@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QKeyEvent, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,8 +40,6 @@ from quicklingo.ui.controllers.review_session_controller import ReviewSessionCon
 
 _PHONETIC_STYLE = "color: #64748b;"
 _ANSWER_PHONETIC_STYLE = _PHONETIC_STYLE
-_CARD_MIN_WIDTH = 800
-_CARD_MAX_WIDTH = 1200
 _CONTENT_MIN_WIDTH = 600
 _CONTENT_MAX_WIDTH = 750
 _IMAGE_SIZE = 240
@@ -157,8 +155,6 @@ QFrame#reviewCardFrame {
     background-color: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 12px;
-    min-width: 800px;
-    max-width: 1200px;
 }
 QWidget#reviewImageColumn {
     background: transparent;
@@ -311,6 +307,7 @@ class ReviewSessionWidget(QWidget):
         self._image_worker: CardImageFetchWorker | None = None
         self._image_prefetch: CardImagePrefetchWorker | None = None
         self._image_fetch_card_id: int | None = None
+        self._height_sync_token = 0
 
         self._audio = AudioService(self)
         tts_prefetch_service().term_ready.connect(self._on_term_audio_ready)
@@ -354,8 +351,6 @@ class ReviewSessionWidget(QWidget):
         self._card_frame = QFrame()
         self._card_frame.setObjectName("reviewCardFrame")
         self._card_frame.setFrameShape(QFrame.Shape.NoFrame)
-        self._card_frame.setMinimumWidth(_CARD_MIN_WIDTH)
-        self._card_frame.setMaximumWidth(_CARD_MAX_WIDTH)
         self._card_frame.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
@@ -488,7 +483,7 @@ class ReviewSessionWidget(QWidget):
         self._term_label.setWordWrap(True)
         self._term_label.setSizePolicy(
             QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Minimum,
         )
         self._term_play_btn = self._make_speaker_button()
         self._term_play_btn.clicked.connect(self._play_audio)
@@ -666,19 +661,12 @@ class ReviewSessionWidget(QWidget):
 
         self._stack.addWidget(self._card_frame)
         self._stack.addWidget(summary_wrap)
-        self._stack.setMinimumWidth(_CARD_MIN_WIDTH)
-        self._stack.setMaximumWidth(_CARD_MAX_WIDTH)
         self._stack.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
         )
 
-        card_row = QHBoxLayout()
-        card_row.setContentsMargins(0, 0, 0, 0)
-        card_row.addStretch(1)
-        card_row.addWidget(self._stack, stretch=1)
-        card_row.addStretch(1)
-        layout.addLayout(card_row, stretch=1)
+        layout.addWidget(self._stack, stretch=1)
 
         self._progress_widget = QWidget()
         progress_layout = QVBoxLayout(self._progress_widget)
@@ -867,7 +855,6 @@ class ReviewSessionWidget(QWidget):
             self._answer_block,
             self._back_section,
         ):
-            widget.setMinimumHeight(0)
             widget.setMaximumHeight(_MAX_WIDGET)
 
     def _sync_label_heights(self) -> None:
@@ -887,11 +874,29 @@ class ReviewSessionWidget(QWidget):
         self._back_section.updateGeometry()
         if self._main_column.layout() is not None:
             self._main_column.layout().activate()
+        self._main_column.updateGeometry()
+        if self._card_frame.layout() is not None:
+            self._card_frame.layout().activate()
+
+    def _schedule_height_sync(self) -> None:
+        self._height_sync_token += 1
+        token = self._height_sync_token
+        QTimer.singleShot(0, lambda t=token: self._run_scheduled_height_sync(t))
+
+    def _run_scheduled_height_sync(self, token: int) -> None:
+        if token != self._height_sync_token:
+            return
+        self._sync_label_heights()
 
     def _fit_label_height(self, label: QLabel) -> None:
         metrics = label.fontMetrics()
-        line = metrics.height() + 4
-        if not label.wordWrap() or not label.text():
+        # Ascents/descents for bold display fonts need more than raw height().
+        line = metrics.boundingRect("Åy").height() + metrics.leading() + 8
+        line = max(line, metrics.height() + 8)
+        if not label.text():
+            label.setMinimumHeight(0)
+            return
+        if not label.wordWrap():
             label.setMinimumHeight(line)
             return
         width = label.width()
@@ -899,17 +904,19 @@ class ReviewSessionWidget(QWidget):
             parent = label.parentWidget()
             if parent is not None and parent.width() >= 40:
                 width = parent.width()
+            elif self._front_column.width() >= 40:
+                width = max(40, self._front_column.width() - 40)
             else:
                 width = _CONTENT_MIN_WIDTH
         wrapped = label.heightForWidth(width)
         label.setMinimumHeight(max(line, wrapped))
+        label.updateGeometry()
 
     def _apply_front_layout(self, *, has_image: bool, force: bool = False) -> None:
         """Image beside text, or full-width text when there is no picture."""
         if not force and self._front_has_image is has_image:
             return
         self._front_has_image = has_image
-        self._clear_height_constraints()
 
         while self._top_layout.count():
             self._top_layout.takeAt(0)
@@ -933,11 +940,11 @@ class ReviewSessionWidget(QWidget):
             text_align = Qt.AlignmentFlag.AlignHCenter
 
         self._front_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._term_label.setAlignment(text_align | Qt.AlignmentFlag.AlignVCenter)
+        self._term_label.setAlignment(text_align | Qt.AlignmentFlag.AlignTop)
         self._front_phonetic_label.setAlignment(
-            text_align | Qt.AlignmentFlag.AlignVCenter
+            text_align | Qt.AlignmentFlag.AlignTop
         )
-        self._hint_label.setAlignment(text_align)
+        self._hint_label.setAlignment(text_align | Qt.AlignmentFlag.AlignTop)
         self._typing_input.setAlignment(text_align)
         self._typing_feedback.setAlignment(text_align)
 
@@ -952,6 +959,7 @@ class ReviewSessionWidget(QWidget):
             self._front_play_btn,
         )
         self._sync_label_heights()
+        self._schedule_height_sync()
 
     @staticmethod
     def _rebuild_inline_row(
@@ -986,6 +994,14 @@ class ReviewSessionWidget(QWidget):
         if not card.image_path:
             return False
         return resolve_image_path(card.image_path) is not None
+
+    def _card_expects_image(self, card: learning.LearningCard) -> bool:
+        """True when the card already has an image or will fetch one."""
+        if not is_enabled("learning.card_images"):
+            return False
+        if self._card_has_resolved_image(card):
+            return True
+        return bool((card.image_prompt or "").strip())
 
     def _reset_card_presentation(self) -> None:
         """Drop layout state left over from the previous deck/card (esp. image cards)."""
@@ -1247,10 +1263,11 @@ class ReviewSessionWidget(QWidget):
             self._show_summary()
             return
         self._show_session_ui()
-        # Apply target layout BEFORE filling text so image→text deck switches
-        # do not keep the previous card's clipped sizeHints.
+        self._height_sync_token += 1  # invalidate pending height syncs from prior card
+        # Reserve image column when a fetch is pending so async load does not
+        # rebuild the front row and clip the term label.
         self._apply_front_layout(
-            has_image=self._card_has_resolved_image(card),
+            has_image=self._card_expects_image(card),
             force=True,
         )
         self._term_row.setVisible(True)
@@ -1298,7 +1315,9 @@ class ReviewSessionWidget(QWidget):
         if not card.image_prompt.strip():
             self._clear_image()
             return
-        self._clear_image()
+        # Keep the image column reserved while Pixabay fetch runs — switching
+        # no-image → with-image after load was clipping the term ("Tornado").
+        self._show_image_placeholder()
         self._request_card_image(card)
 
     def _clear_image(self) -> None:
@@ -1308,6 +1327,15 @@ class ReviewSessionWidget(QWidget):
         self._image_label.setVisible(False)
         self._image_column.setVisible(False)
         self._apply_front_layout(has_image=False, force=True)
+
+    def _show_image_placeholder(self) -> None:
+        self._image_label.clear()
+        self._image_label.clearMask()
+        self._image_label.setFixedSize(_IMAGE_SIZE, _IMAGE_SIZE)
+        self._image_label.setVisible(True)
+        self._image_column.setVisible(True)
+        self._apply_front_layout(has_image=True, force=True)
+        self._sync_label_heights()
 
     def _show_image_path(self, path) -> None:
         pixmap = QPixmap(str(path))
@@ -1328,8 +1356,14 @@ class ReviewSessionWidget(QWidget):
             self._image_label.clearMask()
         self._image_label.setVisible(True)
         self._image_column.setVisible(True)
-        self._apply_front_layout(has_image=True, force=True)
-        self._sync_label_heights()
+        if self._front_has_image:
+            # Already in image layout (placeholder or previous card) — only
+            # refresh heights after pixmap size is applied.
+            self._sync_label_heights()
+        else:
+            self._apply_front_layout(has_image=True, force=True)
+            self._sync_label_heights()
+        self._schedule_height_sync()
 
     def _cancel_image_fetch(self) -> None:
         if self._image_worker is not None and self._image_worker.isRunning():
@@ -1364,7 +1398,7 @@ class ReviewSessionWidget(QWidget):
         self._image_prefetch = CardImagePrefetchWorker(
             self._deck_id, pending, parent=self
         )
-        self._image_prefetch.card_ready.connect(self._on_image_fetched)
+        # Prefetch only warms the cache — do not touch the current card UI.
         self._image_prefetch.start()
 
     def _request_card_image(self, card: learning.LearningCard) -> None:
@@ -1385,12 +1419,13 @@ class ReviewSessionWidget(QWidget):
             search_term=card.front,
             parent=self,
         )
-        self._image_worker.finished_card.connect(self._on_image_fetched)
+        self._image_worker.finished_card.connect(self._on_current_image_fetched)
         self._image_worker.start()
 
-    def _on_image_fetched(self, card_id: int, rel: str) -> None:
-        self._image_worker = None
-        self._image_fetch_card_id = None
+    def _on_current_image_fetched(self, card_id: int, rel: str) -> None:
+        if self._image_fetch_card_id == card_id:
+            self._image_worker = None
+            self._image_fetch_card_id = None
         if not rel:
             return
         current = self._controller.current_card()
