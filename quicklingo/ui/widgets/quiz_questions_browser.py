@@ -31,7 +31,7 @@ from quicklingo.ui.window_state import (
     restore_table_columns,
 )
 
-_TABLE_WIDTHS = [120, 110, 70, 220, 50, 130]
+_TABLE_WIDTHS = [150, 125, 75, 440, 50, 130]
 
 _PAGE_STYLE = """
 QuizQuestionsBrowserWidget {

@@ -9,7 +9,7 @@ from quicklingo.ui.window_state import restore_window_geometry, save_window_geom
 class QuizQuestionsWindow(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        restore_window_geometry(self, "quiz_questions", default_width=920, default_height=640)
+        restore_window_geometry(self, "quiz_questions", default_width=1015, default_height=850)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

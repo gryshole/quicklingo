@@ -4,11 +4,29 @@ import base64
 from binascii import Error as BinasciiError
 
 from PySide6.QtCore import QByteArray, QTimer
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QWidget
 
 from quicklingo import settings
+
+
 def remember_geometry_enabled() -> bool:
     return True
+
+
+def _apply_default_geometry(widget: QWidget, default_width: int, default_height: int) -> None:
+    """Size the window and center it on the available desktop area."""
+    screen = widget.screen() or QGuiApplication.primaryScreen()
+    if screen is None:
+        widget.resize(default_width, default_height)
+        return
+    available = screen.availableGeometry()
+    width = min(default_width, max(320, available.width() - 32))
+    height = min(default_height, max(240, available.height() - 32))
+    widget.resize(width, height)
+    x = available.left() + max(0, (available.width() - width) // 2)
+    y = available.top() + max(0, (available.height() - height) // 2)
+    widget.move(x, y)
 
 
 def restore_window_geometry(
@@ -19,7 +37,7 @@ def restore_window_geometry(
     default_height: int,
 ) -> None:
     if not remember_geometry_enabled():
-        widget.resize(default_width, default_height)
+        _apply_default_geometry(widget, default_width, default_height)
         return
 
     encoded = settings.get_tool_window_state(window_id).get("geometry")
@@ -31,7 +49,7 @@ def restore_window_geometry(
         except (BinasciiError, ValueError):
             pass
 
-    widget.resize(default_width, default_height)
+    _apply_default_geometry(widget, default_width, default_height)
 
 
 def save_window_geometry(widget: QWidget, window_id: str) -> None:

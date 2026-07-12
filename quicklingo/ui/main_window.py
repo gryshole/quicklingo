@@ -928,20 +928,16 @@ class MainWindow(QMainWindow):
 
 
     def _default_geometry(self) -> None:
-
         screen = QGuiApplication.primaryScreen()
-
+        width, height = 360, 1000
         if screen:
-
             available = screen.availableGeometry()
-
-            width = max(280, int(available.width() * 0.18))
-
-            height = max(400, int(available.height() * 0.70))
-
+            width = min(width, max(280, available.width() - 32))
+            height = min(height, max(400, available.height() - 32))
             self.resize(width, height)
-
-            self.move(available.right() - width - 16, available.top() + 16)
+            self.move(available.left(), available.top())
+        else:
+            self.resize(width, height)
 
 
 

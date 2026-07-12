@@ -56,7 +56,7 @@ _TAB_REVIEW = 2
 _TAB_QUIZ = 3
 _TAB_STATS = 4
 
-_LEARNING_CARDS_TABLE_WIDTHS = [120, 120, 80, 120, 72, 88, 72, 56, 52]
+_LEARNING_CARDS_TABLE_WIDTHS = [145, 145, 190, 160, 50, 150, 110, 85, 50]
 _LEARNING_CARDS_PRIORITY_WIDTH = 52
 
 _LEARNING_TABS_STYLE = """
@@ -292,7 +292,7 @@ class LearningWindow(QMainWindow):
         self._help_onboarding_action = None
         self._help_learning_action = None
         self._quit_action = None
-        restore_window_geometry(self, "learning", default_width=860, default_height=640)
+        restore_window_geometry(self, "learning", default_width=1090, default_height=880)
         self._current_deck_id: int | None = None
         self._pending_nav: dict | None = None
 

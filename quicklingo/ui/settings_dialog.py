@@ -36,7 +36,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         apply_settings_dialog_style(self)
-        restore_window_geometry(self, "settings", default_width=860, default_height=680)
+        restore_window_geometry(self, "settings", default_width=860, default_height=725)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*DIALOG_MARGINS)

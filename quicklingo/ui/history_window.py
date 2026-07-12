@@ -42,7 +42,7 @@ from quicklingo.ui.window_state import (
     save_window_geometry,
 )
 
-_HISTORY_TABLE_WIDTHS = [130, 85, 110, 100, 150, 90, 44, 44]
+_HISTORY_TABLE_WIDTHS = [130, 90, 160, 150, 470, 70, 75, 75]
 _COL_STAR = 6
 _COL_DELETE = 7
 _STAR_COL_WIDTH = 44
@@ -219,7 +219,7 @@ class HistoryWindow(QDialog):
         self.setObjectName("HistoryWindow")
         self.setStyleSheet(_PAGE_STYLE)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        restore_window_geometry(self, "history", default_width=860, default_height=620)
+        restore_window_geometry(self, "history", default_width=1200, default_height=850)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
