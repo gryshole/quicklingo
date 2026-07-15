@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -10,14 +11,19 @@ from quicklingo.sync.models import MANIFEST_FILENAME, SNAPSHOT_FILENAME
 from quicklingo.sync.oauth.tokens import OAuthTokens
 
 
+def _connected_tokens() -> OAuthTokens:
+    return OAuthTokens(
+        access_token="access-token",
+        refresh_token="refresh-token",
+        account_label="user@example.com",
+        expires_at=time.time() + 3600,
+    )
+
+
 class GoogleDriveTransportTests(unittest.TestCase):
     def test_download_returns_false_when_missing(self) -> None:
         transport = GoogleDriveTransport()
-        tokens = OAuthTokens(
-            access_token="access-token",
-            refresh_token="refresh-token",
-            account_label="user@example.com",
-        )
+        tokens = _connected_tokens()
         with (
             patch(
                 "quicklingo.sync.cloud.google_drive.settings.get_sync_oauth_tokens",
@@ -39,11 +45,7 @@ class GoogleDriveTransportTests(unittest.TestCase):
 
     def test_upload_updates_existing_file_via_upload_endpoint(self) -> None:
         transport = GoogleDriveTransport()
-        tokens = OAuthTokens(
-            access_token="access-token",
-            refresh_token="refresh-token",
-            account_label="user@example.com",
-        )
+        tokens = _connected_tokens()
         with tempfile.TemporaryDirectory() as tmp:
             snapshot = Path(tmp) / SNAPSHOT_FILENAME
             manifest = Path(tmp) / MANIFEST_FILENAME
