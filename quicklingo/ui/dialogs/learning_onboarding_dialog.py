@@ -87,34 +87,37 @@ class LearningOnboardingDialog(QDialog):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(0)
+        root.setSpacing(12)
+
+        self._title = QLabel()
+        self._title.setWordWrap(True)
+        self._title.setStyleSheet(
+            "font-size: 18px; font-weight: 600; color: #1e293b; margin: 0; padding: 0;"
+        )
 
         self._stack = QStackedWidget()
-        self._slide_titles: list[QLabel] = []
         self._slide_bodies: list[QLabel] = []
+        self._slide_titles: list[str] = []
         for _index in range(3):
             page = QWidget()
             page_layout = QVBoxLayout(page)
             page_layout.setContentsMargins(0, 0, 0, 0)
-            page_layout.setSpacing(12)
-            title = QLabel()
-            title.setWordWrap(True)
-            title.setStyleSheet(
-                "font-size: 18px; font-weight: 600; color: #1e293b; margin: 0; padding: 0;"
-            )
+            page_layout.setSpacing(0)
             body = QLabel()
             body.setWordWrap(True)
             body.setTextFormat(Qt.TextFormat.RichText)
             body.setOpenExternalLinks(False)
             body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            page_layout.addWidget(title)
+            body.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+            )
             page_layout.addWidget(body)
-            self._slide_titles.append(title)
+            page_layout.addStretch(1)
             self._slide_bodies.append(body)
             self._stack.addWidget(page)
 
-        root.addWidget(self._stack)
-        root.addStretch(1)
+        root.addWidget(self._title)
+        root.addWidget(self._stack, stretch=1)
 
         footer = QHBoxLayout()
         footer.setSpacing(12)
@@ -149,19 +152,27 @@ class LearningOnboardingDialog(QDialog):
 
     def _slide_content_height(self, index: int) -> int:
         width = self._content_width()
-        title = self._slide_titles[index]
         body = self._slide_bodies[index]
-        title_h = title.heightForWidth(width)
         body_h = body.heightForWidth(width)
-        if title_h < 0:
-            title_h = title.sizeHint().height()
         if body_h < 0:
             body_h = body.sizeHint().height()
-        return title_h + 12 + body_h
+        return body_h
 
     def _apply_uniform_height(self) -> None:
-        max_stack_h = max(self._slide_content_height(i) for i in range(self._stack.count()))
-        self._stack.setMinimumHeight(max_stack_h)
+        title_width = self._content_width()
+        max_title_h = 0
+        saved_title = self._title.text()
+        for title in self._slide_titles:
+            self._title.setText(title)
+            title_h = self._title.heightForWidth(title_width)
+            if title_h < 0:
+                title_h = self._title.sizeHint().height()
+            max_title_h = max(max_title_h, title_h)
+        self._title.setText(saved_title or self._slide_titles[self._index])
+        self._title.setMinimumHeight(max_title_h)
+
+        max_body_h = max(self._slide_content_height(i) for i in range(self._stack.count()))
+        self._stack.setMinimumHeight(max_body_h)
 
         saved_back = self._back_btn.isVisible()
         saved_next = self._next_btn.isVisible()
@@ -188,10 +199,17 @@ class LearningOnboardingDialog(QDialog):
             (tr("learning.onboarding.step2_title"), tr("learning.onboarding.step2_body")),
             (tr("learning.onboarding.step3_title"), tr("learning.onboarding.step3_body")),
         ]
+        self._slide_titles = [title for title, _body in slides]
         for index, (title, body) in enumerate(slides):
-            self._slide_titles[index].setText(title)
             self._slide_bodies[index].setText(_format_body(body))
+        self._title.setText(self._slide_titles[self._index])
         self._apply_uniform_height()
+
+    def _show_slide(self, index: int) -> None:
+        self._index = index
+        self._stack.setCurrentIndex(index)
+        self._title.setText(self._slide_titles[index])
+        self._update_nav()
 
     def _step1_body(self) -> str:
         if self._standalone:
@@ -200,15 +218,11 @@ class LearningOnboardingDialog(QDialog):
 
     def _go_back(self) -> None:
         if self._index > 0:
-            self._index -= 1
-            self._stack.setCurrentIndex(self._index)
-            self._update_nav()
+            self._show_slide(self._index - 1)
 
     def _go_next(self) -> None:
         if self._index < self._stack.count() - 1:
-            self._index += 1
-            self._stack.setCurrentIndex(self._index)
-            self._update_nav()
+            self._show_slide(self._index + 1)
 
     def _update_nav(self) -> None:
         show_back = self._index > 0

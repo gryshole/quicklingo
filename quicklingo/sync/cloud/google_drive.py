@@ -48,11 +48,6 @@ class GoogleDriveTransport(SyncTransport):
         return self._refresh().access_token
 
     def _find_file_id(self, filename: str, access_token: str) -> str | None:
-        query = (
-            f"name = '{filename}' and "
-            "trashed = false and "
-            "'appDataFolder' in parents"
-        )
         response = request_with_auth(
             "GET",
             DRIVE_API + "/files",
@@ -60,14 +55,14 @@ class GoogleDriveTransport(SyncTransport):
             params={
                 "spaces": "appDataFolder",
                 "fields": "files(id,name)",
-                "q": query,
+                "pageSize": 100,
             },
             retry_on_unauthorized=self._retry_token,
         )
-        files = response.json().get("files", [])
-        if not files:
-            return None
-        return str(files[0]["id"])
+        for item in response.json().get("files", []):
+            if str(item.get("name", "")) == filename:
+                return str(item["id"])
+        return None
 
     def download_snapshot(self, dest: Path) -> bool:
         access_token = self._access_token()
@@ -125,7 +120,7 @@ class GoogleDriveTransport(SyncTransport):
             },
             timeout=120.0,
         )
-        if response.status_code == 401:
+        if response.status_code in {401, 403}:
             access_token = self._retry_token()
             response = httpx.post(
                 UPLOAD_API,
@@ -141,4 +136,11 @@ class GoogleDriveTransport(SyncTransport):
                 },
                 timeout=120.0,
             )
-        response.raise_for_status()
+        if response.is_error:
+            from quicklingo.sync.cloud.base import format_http_status_error
+
+            raise httpx.HTTPStatusError(
+                format_http_status_error(response),
+                request=response.request,
+                response=response,
+            )
