@@ -36,6 +36,39 @@ def auth_headers(access_token: str, token_type: str = "Bearer") -> dict[str, str
     return {"Authorization": f"{token_type} {access_token}"}
 
 
+def format_http_status_error(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = str(error.get("message", "") or "").strip()
+            errors = error.get("errors")
+            if isinstance(errors, list) and errors:
+                first = errors[0]
+                if isinstance(first, dict):
+                    reason = str(first.get("reason", "") or "").strip()
+                    detail = str(first.get("message", "") or "").strip()
+                    if reason == "insufficientScopes":
+                        from quicklingo.sync.oauth.providers.google import (
+                            SCOPE_NOT_GRANTED_MESSAGE,
+                        )
+
+                        return SCOPE_NOT_GRANTED_MESSAGE
+                    if detail:
+                        return detail
+                    if reason:
+                        return reason
+            if message:
+                return message
+    return (
+        f"HTTP {response.status_code} from Google Drive API. "
+        "Try Disconnect and Connect again in Settings → Synchronization."
+    )
+
+
 def request_with_auth(
     method: str,
     url: str,
@@ -48,11 +81,16 @@ def request_with_auth(
     headers = dict(kwargs.pop("headers", {}) or {})
     headers.update(auth_headers(access_token, token_type))
     response = httpx.request(method, url, headers=headers, timeout=120.0, **kwargs)
-    if response.status_code == 401 and retry_on_unauthorized is not None:
+    if response.status_code in {401, 403} and retry_on_unauthorized is not None:
         new_token = retry_on_unauthorized()
         headers.update(auth_headers(new_token, token_type))
         response = httpx.request(method, url, headers=headers, timeout=120.0, **kwargs)
-    response.raise_for_status()
+    if response.is_error:
+        raise httpx.HTTPStatusError(
+            format_http_status_error(response),
+            request=response.request,
+            response=response,
+        )
     return response
 
 

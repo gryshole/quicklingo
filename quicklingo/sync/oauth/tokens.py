@@ -17,7 +17,7 @@ class OAuthTokens:
         if not self.access_token:
             return True
         if self.expires_at <= 0:
-            return False
+            return bool(self.refresh_token)
         return time.time() >= self.expires_at - 60
 
     def to_dict(self) -> dict[str, object]:
