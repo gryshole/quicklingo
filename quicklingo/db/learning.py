@@ -11,7 +11,11 @@ from quicklingo.db.sync_schema import (
     touch_card_content_updated_at,
     touch_card_srs_updated_at,
 )
-from quicklingo.db.tombstones import record_card_delete, record_deck_delete
+from quicklingo.db.tombstones import (
+    clear_deck_tombstone,
+    record_card_delete,
+    record_deck_delete,
+)
 from quicklingo import settings as app_settings
 
 QUIZ_QUESTION_TYPES = ("fill_blank", "definition_match", "translation_recall")
@@ -119,6 +123,53 @@ def _migrate_deck_columns(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE learning_decks ADD COLUMN source TEXT NOT NULL DEFAULT 'corpus'"
         )
+    _dedupe_learning_decks(conn)
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_decks_tag_direction
+        ON learning_decks(tag, direction)
+        """
+    )
+
+
+def _dedupe_learning_decks(conn: sqlite3.Connection) -> None:
+    duplicates = conn.execute(
+        """
+        SELECT tag, direction, COUNT(*) AS cnt
+        FROM learning_decks
+        GROUP BY tag, direction
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    for row in duplicates:
+        tag = str(row["tag"] or "")
+        direction = str(row["direction"] or "")
+        keep = conn.execute(
+            """
+            SELECT id FROM learning_decks
+            WHERE tag = ? AND direction = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (tag, direction),
+        ).fetchone()
+        if keep is None:
+            continue
+        keep_id = int(keep["id"])
+        losers = conn.execute(
+            """
+            SELECT id FROM learning_decks
+            WHERE tag = ? AND direction = ? AND id != ?
+            """,
+            (tag, direction, keep_id),
+        ).fetchall()
+        for loser in losers:
+            loser_id = int(loser["id"])
+            conn.execute(
+                "UPDATE learning_cards SET deck_id = ? WHERE deck_id = ?",
+                (keep_id, loser_id),
+            )
+            conn.execute("DELETE FROM learning_decks WHERE id = ?", (loser_id,))
 
 
 def _migrate_learning_columns(conn: sqlite3.Connection) -> None:
@@ -303,10 +354,11 @@ def get_or_create_deck(name: str, tag: str, direction: str) -> LearningDeck:
         ).fetchone()
         if row:
             return _row_to_deck(row)
+        clear_deck_tombstone(tag, direction, conn=conn)
         cursor = conn.execute(
             """
-            INSERT INTO learning_decks (name, tag, direction, source)
-            VALUES (?, ?, ?, 'corpus')
+            INSERT INTO learning_decks (name, tag, direction, source, updated_at)
+            VALUES (?, ?, ?, 'corpus', datetime('now'))
             """,
             (name, tag, direction),
         )
@@ -339,11 +391,36 @@ def create_deck(
     *,
     source: str = "ai",
 ) -> LearningDeck:
+    """Create or revive a deck. Sync identity is tag|direction (not display name)."""
     with connection() as conn:
+        clear_deck_tombstone(tag, direction, conn=conn)
+        existing = conn.execute(
+            f"""
+            {_DECK_SELECT}
+            WHERE tag = ? AND direction = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (tag, direction),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE learning_decks
+                SET name = ?, source = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (name, source, int(existing["id"])),
+            )
+            row = conn.execute(
+                f"{_DECK_SELECT} WHERE id = ?",
+                (int(existing["id"]),),
+            ).fetchone()
+            return _row_to_deck(row)
         cursor = conn.execute(
             """
-            INSERT INTO learning_decks (name, tag, direction, source)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO learning_decks (name, tag, direction, source, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
             """,
             (name, tag, direction, source),
         )
@@ -1102,7 +1179,27 @@ def card_has_full_quiz_coverage(card_id: int) -> bool:
 
 
 def delete_quiz_questions_for_card(card_id: int) -> None:
+    from quicklingo import settings as app_settings
+    from quicklingo.db.tombstones import record_quiz_question_delete
+
     with connection() as conn:
+        card = conn.execute(
+            "SELECT sync_id FROM learning_cards WHERE id = ?",
+            (card_id,),
+        ).fetchone()
+        sync_id = str(card["sync_id"] or "") if card else ""
+        questions = conn.execute(
+            "SELECT question_type FROM quiz_questions WHERE card_id = ?",
+            (card_id,),
+        ).fetchall()
+        device_id = app_settings.get_sync_device_id()
+        for question in questions:
+            record_quiz_question_delete(
+                card_sync_id=sync_id,
+                question_type=str(question["question_type"]),
+                device_id=device_id,
+                conn=conn,
+            )
         conn.execute("DELETE FROM quiz_questions WHERE card_id = ?", (card_id,))
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from quicklingo.db.connection import connection
 from quicklingo.db.history_tags import get_translation_tag_names, set_translation_tags
 from quicklingo.db.sync_schema import new_card_sync_id
-from quicklingo.db.tombstones import is_tombstoned
+from quicklingo.db.tombstones import is_tombstoned, record_deck_children_tombstones
 from quicklingo.sync.keys import (
     card_entity_key,
     deck_entity_key,
@@ -68,6 +68,25 @@ def _merge_tombstones(conn: sqlite3.Connection) -> int:
     return merged
 
 
+def _deck_ts(row: sqlite3.Row | None) -> str:
+    if row is None:
+        return ""
+    return _max_ts(str(row["updated_at"] or ""), str(row["created_at"] or ""))
+
+
+def _max_card_ts_for_deck(conn: sqlite3.Connection, schema: str, tag: str, direction: str) -> str:
+    row = conn.execute(
+        f"""
+        SELECT MAX(lc.content_updated_at) AS ts
+        FROM {schema}.learning_cards lc
+        JOIN {schema}.learning_decks ld ON ld.id = lc.deck_id
+        WHERE ld.tag = ? AND ld.direction = ?
+        """,
+        (tag, direction),
+    ).fetchone()
+    return str(row["ts"] or "") if row else ""
+
+
 def _content_ts_for_tombstone(conn: sqlite3.Connection, entity_type: str, entity_key: str) -> str:
     if entity_type == "card" and entity_key.startswith("card:"):
         sync_id = entity_key[5:]
@@ -86,6 +105,63 @@ def _content_ts_for_tombstone(conn: sqlite3.Connection, entity_type: str, entity
         return _max_ts(
             str(row["content_updated_at"] if row else ""),
             str(remote["content_updated_at"] if remote else ""),
+        )
+    if entity_type == "deck" and entity_key.startswith("deck:"):
+        tag_direction = entity_key[5:].split("|", 1)
+        if len(tag_direction) != 2:
+            return ""
+        tag, direction = tag_direction
+        row = conn.execute(
+            """
+            SELECT updated_at, created_at FROM learning_decks
+            WHERE tag = ? AND direction = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (tag, direction),
+        ).fetchone()
+        remote = conn.execute(
+            """
+            SELECT updated_at, created_at FROM remote.learning_decks
+            WHERE tag = ? AND direction = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (tag, direction),
+        ).fetchone()
+        deck_ts = _max_ts(_deck_ts(row), _deck_ts(remote))
+        card_ts = _max_ts(
+            _max_card_ts_for_deck(conn, "main", tag, direction),
+            _max_card_ts_for_deck(conn, "remote", tag, direction),
+        )
+        return _max_ts(deck_ts, card_ts)
+    if entity_type == "quiz_question" and entity_key.startswith("quiz:"):
+        rest = entity_key[5:]
+        parts = rest.split("|", 1)
+        if len(parts) != 2:
+            return ""
+        card_sync_id, question_type = parts
+        row = conn.execute(
+            """
+            SELECT qq.updated_at AS updated_at
+            FROM quiz_questions qq
+            JOIN learning_cards lc ON lc.id = qq.card_id
+            WHERE lc.sync_id = ? AND qq.question_type = ?
+            ORDER BY qq.id DESC LIMIT 1
+            """,
+            (card_sync_id, question_type),
+        ).fetchone()
+        remote = conn.execute(
+            """
+            SELECT qq.updated_at AS updated_at
+            FROM remote.quiz_questions qq
+            JOIN remote.learning_cards lc ON lc.id = qq.card_id
+            WHERE lc.sync_id = ? AND qq.question_type = ?
+            ORDER BY qq.id DESC LIMIT 1
+            """,
+            (card_sync_id, question_type),
+        ).fetchone()
+        return _max_ts(
+            str(row["updated_at"] if row else ""),
+            str(remote["updated_at"] if remote else ""),
         )
     if entity_type == "translation" and entity_key.startswith("translation:"):
         parts = entity_key[len("translation:") :].split("|", 2)
@@ -121,7 +197,7 @@ def _prune_stale_tombstones(conn: sqlite3.Connection) -> None:
     ).fetchall()
     for row in rows:
         content_ts = _content_ts_for_tombstone(conn, row["entity_type"], row["entity_key"])
-        if content_ts and content_ts > str(row["deleted_at"] or ""):
+        if content_ts and content_ts >= str(row["deleted_at"] or ""):
             conn.execute(
                 """
                 DELETE FROM sync_tombstones
@@ -134,22 +210,30 @@ def _prune_stale_tombstones(conn: sqlite3.Connection) -> None:
 def _apply_tombstones(conn: sqlite3.Connection) -> int:
     applied = 0
     rows = conn.execute(
-        "SELECT entity_type, entity_key FROM sync_tombstones"
+        "SELECT entity_type, entity_key, device_id FROM sync_tombstones"
     ).fetchall()
     for row in rows:
         entity_type = row["entity_type"]
         entity_key = row["entity_key"]
+        device_id = str(row["device_id"] or "")
         if entity_type == "deck" and entity_key.startswith("deck:"):
             tag_direction = entity_key[5:].split("|", 1)
             if len(tag_direction) != 2:
                 continue
             tag, direction = tag_direction
-            deck = conn.execute(
-                "SELECT id FROM learning_decks WHERE tag = ? AND direction = ?",
+            decks = conn.execute(
+                """
+                SELECT id FROM learning_decks
+                WHERE tag = ? AND direction = ?
+                ORDER BY id ASC
+                """,
                 (tag, direction),
-            ).fetchone()
-            if deck:
-                conn.execute("DELETE FROM learning_decks WHERE id = ?", (int(deck["id"]),))
+            ).fetchall()
+            for deck in decks:
+                deck_id = int(deck["id"])
+                record_deck_children_tombstones(conn, deck_id, device_id=device_id)
+                conn.execute("DELETE FROM learning_cards WHERE deck_id = ?", (deck_id,))
+                conn.execute("DELETE FROM learning_decks WHERE id = ?", (deck_id,))
                 applied += 1
         elif entity_type == "card" and entity_key.startswith("card:"):
             sync_id = entity_key[5:]
@@ -160,6 +244,23 @@ def _apply_tombstones(conn: sqlite3.Connection) -> int:
             if card:
                 conn.execute("DELETE FROM learning_cards WHERE id = ?", (int(card["id"]),))
                 applied += 1
+        elif entity_type == "quiz_question" and entity_key.startswith("quiz:"):
+            rest = entity_key[5:]
+            parts = rest.split("|", 1)
+            if len(parts) != 2:
+                continue
+            card_sync_id, question_type = parts
+            cursor = conn.execute(
+                """
+                DELETE FROM quiz_questions
+                WHERE question_type = ?
+                  AND card_id IN (
+                      SELECT id FROM learning_cards WHERE sync_id = ?
+                  )
+                """,
+                (question_type, card_sync_id),
+            )
+            applied += cursor.rowcount
         elif entity_type == "translation" and entity_key.startswith("translation:"):
             parts = entity_key[len("translation:") :].split("|", 2)
             if len(parts) != 3:
