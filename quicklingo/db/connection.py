@@ -23,6 +23,8 @@ def get_connection() -> sqlite3.Connection:
     if conn is None:
         conn = sqlite3.connect(db_path(), check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        # Foreign keys are per-connection; always enable on a new handle.
+        conn.execute("PRAGMA foreign_keys=ON")
         _local.connection = conn
     with _wal_lock:
         if not _wal_initialized:
@@ -46,7 +48,10 @@ def connection() -> Iterator[sqlite3.Connection]:
 
 
 def close_all() -> None:
+    global _wal_initialized
     conn = getattr(_local, "connection", None)
     if conn is not None:
         conn.close()
         _local.connection = None
+    with _wal_lock:
+        _wal_initialized = False

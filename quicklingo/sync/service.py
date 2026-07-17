@@ -7,6 +7,7 @@ from quicklingo import settings
 from quicklingo.sync.manifest import read_manifest, write_manifest
 from quicklingo.sync.merge import compute_upload_stats, merge_remote_into_local
 from quicklingo.sync.models import SyncManifest, SyncResult, file_sha256, utc_now_iso
+from quicklingo.sync.presync_backup import create_presync_backup
 from quicklingo.sync.snapshot import checkpoint_database, create_snapshot
 from quicklingo.sync.transport import build_transport
 
@@ -27,6 +28,9 @@ def sync_now() -> SyncResult:
     merge_stats = None
     downloaded = False
     remote_snapshot_path: Path | None = None
+
+    # Durable local snapshot before any remote merge can mutate history.db.
+    create_presync_backup()
 
     try:
         with tempfile.TemporaryDirectory(prefix="quicklingo-sync-") as tmp:
