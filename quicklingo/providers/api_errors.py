@@ -5,8 +5,24 @@ import re
 from dataclasses import dataclass
 from typing import NoReturn
 
+import httpx
+
 from quicklingo.i18n import tr
 from quicklingo.i18n.translator import TranslatableError
+
+
+def format_api_error(response: httpx.Response) -> str:
+    """Extract a short human-readable error message from an API error response."""
+    try:
+        body = response.json()
+        error = body.get("error") if isinstance(body, dict) else None
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message[:300]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return (response.text.strip() or response.reason_phrase or "")[:300]
 
 
 @dataclass(frozen=True)

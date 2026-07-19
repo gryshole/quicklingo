@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 
 from quicklingo.config.rules_engine import run_rules_v1

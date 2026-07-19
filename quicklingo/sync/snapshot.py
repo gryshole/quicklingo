@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from quicklingo.db.connection import db_path, get_connection
+from quicklingo.db.connection import get_connection
 
 
 def checkpoint_database() -> None:

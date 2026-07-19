@@ -14,7 +14,6 @@ from quicklingo.learning.tts.audio_providers import (
     QtSpeechProvider,
 )
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
-from quicklingo.learning.tts.synth import resolve_sentence_audio
 from quicklingo.learning.tts.text import prepare_text_for_tts
 from quicklingo.workers.tts_prefetch_worker import TtsSynthWorker
 

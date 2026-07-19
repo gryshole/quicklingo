@@ -7,13 +7,12 @@ from dataclasses import dataclass
 from quicklingo.config.loader import resolve_learning_direction
 from quicklingo.db import learning
 from quicklingo.db.learning import LearningCard
-from quicklingo.learning.card_prompt import serialize_context
 from quicklingo.learning.quiz.eligibility import is_quiz_eligible
 from quicklingo.learning.quiz.fill_blank import (
+    blank_word,
     has_full_context_around_term,
     is_degenerate_blank_prompt,
     is_usable_fill_blank_example,
-    blank_word,
 )
 from quicklingo.learning.quiz.models import QuizWordDto
 from quicklingo.learning.quiz.normalize import card_to_quiz_word

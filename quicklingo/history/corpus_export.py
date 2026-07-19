@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from quicklingo.db import history
 
@@ -23,7 +23,7 @@ def _record_to_dict(record: history.TranslationRecord) -> dict:
 
 def export_json(records: list[history.TranslationRecord]) -> str:
     payload = {
-        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "exported_at": datetime.now(UTC).isoformat(),
         "count": len(records),
         "records": [_record_to_dict(record) for record in records],
     }

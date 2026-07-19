@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from quicklingo import settings
@@ -13,7 +15,6 @@ from quicklingo.providers.extra_providers import (
 from quicklingo.providers.gemini import GeminiProvider
 from quicklingo.providers.groq import GroqProvider
 from quicklingo.providers.logging_wrapper import LoggingProviderWrapper
-from quicklingo.settings import API_PROVIDERS
 
 
 def _wrap_provider(provider_id: str, provider: TranslationProvider) -> TranslationProvider:

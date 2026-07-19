@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from quicklingo.db.connection import connection, get_connection
+from quicklingo.db.connection import connection
 
 
 def init_db() -> None:

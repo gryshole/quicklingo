@@ -6,7 +6,10 @@ from urllib.parse import quote, urljoin, urlparse
 
 import httpx
 
+from quicklingo import settings
+from quicklingo.sync.cloud.base import ensure_access_token
 from quicklingo.sync.models import MANIFEST_FILENAME, SNAPSHOT_FILENAME
+from quicklingo.sync.oauth.tokens import OAuthTokens
 
 SYNC_TRANSPORTS = frozenset(
     {"webdav", "google_drive", "dropbox", "onedrive"}
@@ -21,6 +24,55 @@ class SyncTransport(ABC):
     @abstractmethod
     def upload_snapshot(self, snapshot: Path, manifest_path: Path) -> None:
         ...
+
+
+class OAuthCloudTransport(SyncTransport):
+    """Shared token lifecycle for OAuth2-backed cloud transports.
+
+    Subclasses set ``provider_id`` and implement ``_do_refresh`` (the provider
+    specific token refresh call) plus ``download_snapshot`` and ``_upload_file``.
+    """
+
+    provider_id: str = ""
+
+    def _tokens(self) -> OAuthTokens:
+        tokens = settings.get_sync_oauth_tokens(self.provider_id)
+        if not tokens.refresh_token:
+            raise ValueError("Not connected")
+        return tokens
+
+    def _do_refresh(self, current: OAuthTokens) -> OAuthTokens:
+        raise NotImplementedError
+
+    def _refresh(self) -> OAuthTokens:
+        current = self._tokens()
+        refreshed = self._do_refresh(current)
+        refreshed.account_label = current.account_label or refreshed.account_label
+        settings.save_sync_oauth_tokens(self.provider_id, refreshed)
+        return refreshed
+
+    def _access_token(self) -> str:
+        tokens = self._tokens()
+        return ensure_access_token(
+            self.provider_id,
+            tokens,
+            self._refresh,
+            lambda value: settings.save_sync_oauth_tokens(self.provider_id, value),
+        )
+
+    def _retry_token(self) -> str:
+        return self._refresh().access_token
+
+    def _upload_file(self, filename: str, path: Path, access_token: str) -> None:
+        raise NotImplementedError
+
+    def upload_snapshot(self, snapshot: Path, manifest_path: Path) -> None:
+        access_token = self._access_token()
+        for filename, path in (
+            (SNAPSHOT_FILENAME, snapshot),
+            (MANIFEST_FILENAME, manifest_path),
+        ):
+            self._upload_file(filename, path, access_token)
 
 
 class WebDavTransport(SyncTransport):

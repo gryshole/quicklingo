@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -10,16 +12,15 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMainWindow,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QHeaderView,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -32,10 +33,10 @@ from quicklingo.i18n import tr
 from quicklingo.learning.anki_export import export_anki_apkg, export_anki_csv
 from quicklingo.learning.card_display import parse_context, serialize_context
 from quicklingo.learning.review_queue import card_bucket, count_due_cards
+from quicklingo.ui.controllers.update_controller import UpdateController
 from quicklingo.ui.dialogs.ai_deck_generator_dialog import AiDeckGeneratorDialog
 from quicklingo.ui.dialogs.learning_onboarding_dialog import LearningOnboardingDialog
-from quicklingo.ui.controllers.update_controller import UpdateController
-from quicklingo.ui.qt_utils import configure_single_line_combo, open_help
+from quicklingo.ui.qt_utils import configure_single_line_combo, confirm, open_help
 from quicklingo.ui.settings_dialog import SettingsDialog
 from quicklingo.ui.widgets.create_deck_tab import CreateDeckTabWidget
 from quicklingo.ui.widgets.learning_progress import LearningProgressWidget
@@ -48,7 +49,6 @@ from quicklingo.ui.window_state import (
     save_table_columns,
     save_window_geometry,
 )
-
 
 _TAB_CREATE_DECK = 0
 _TAB_CARDS = 1
@@ -873,14 +873,11 @@ class LearningWindow(QMainWindow):
             return
         card_count = learning.count_cards(deck.id)
         deck_name = deck.name or deck.tag or str(deck.id)
-        reply = QMessageBox.question(
+        if not confirm(
             self,
-            tr("learning.delete_deck_title"),
             tr("learning.delete_deck_confirm", name=deck_name, count=card_count),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+            title=tr("learning.delete_deck_title"),
+        ):
             return
         learning.delete_deck(deck.id)
         if self._current_deck_id == deck.id:

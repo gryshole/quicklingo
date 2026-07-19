@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 from PySide6.QtWidgets import QFormLayout
 
 from quicklingo.learning.card_prompt import get_builtin_card_prompt_template
 from quicklingo.learning.quiz.models import QuizQuestionType
-from quicklingo.learning.quiz.quiz_prompts import get_builtin_quiz_prompt, get_builtin_quiz_system_prompt
+from quicklingo.learning.quiz.quiz_prompts import (
+    get_builtin_quiz_prompt,
+    get_builtin_quiz_system_prompt,
+)
 from quicklingo.ui.settings.feature_settings_editor import FeatureSettingsEditor, GroupSpecs
 
 

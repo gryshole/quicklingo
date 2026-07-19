@@ -3,8 +3,8 @@ from __future__ import annotations
 import html
 import re
 
-from PySide6.QtCore import Qt, Signal, QDate, QTimer
-from PySide6.QtGui import QAction, QBrush, QCloseEvent, QColor, QFont
+from PySide6.QtCore import QDate, Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QCloseEvent, QColor, QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -17,14 +17,12 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
-    QMenu,
     QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QTextBrowser,
     QVBoxLayout,
-    QWidget,
 )
 
 from quicklingo.config.loader import get_direction_label, get_directions
@@ -32,7 +30,8 @@ from quicklingo.db import history
 from quicklingo.features import is_enabled
 from quicklingo.history.corpus_export import export_json, export_markdown
 from quicklingo.i18n import tr
-from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
+from quicklingo.learning.text_normalize import collapse_whitespace
+from quicklingo.ui.qt_utils import configure_single_line_combo, confirm, reload_combo
 from quicklingo.ui.tag_wizard_dialog import TagWizardDialog
 from quicklingo.ui.window_state import (
     bind_table_columns_persistence,
@@ -225,6 +224,16 @@ class HistoryWindow(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        self._build_history_toolbar(layout)
+        self._build_history_filter_card(layout)
+        self._build_history_table_card(layout)
+        self._build_history_preview_card(layout)
+
+        self._records: list[history.TranslationRecord] = []
+        self.retranslate_ui()
+        self.refresh()
+
+    def _build_history_toolbar(self, layout: QVBoxLayout) -> None:
         toolbar_row = QHBoxLayout()
         toolbar_row.setSpacing(8)
         self._summary_label = QLabel()
@@ -267,6 +276,7 @@ class HistoryWindow(QDialog):
         toolbar_row.addWidget(self._clear_btn)
         layout.addLayout(toolbar_row)
 
+    def _build_history_filter_card(self, layout: QVBoxLayout) -> None:
         self._filter_card = QFrame()
         self._filter_card.setObjectName("filterCard")
         filter_layout = QVBoxLayout(self._filter_card)
@@ -340,6 +350,7 @@ class HistoryWindow(QDialog):
         filter_layout.addLayout(date_row)
         layout.addWidget(self._filter_card)
 
+    def _build_history_table_card(self, layout: QVBoxLayout) -> None:
         self._table_card = QFrame()
         self._table_card.setObjectName("tableCard")
         table_layout = QVBoxLayout(self._table_card)
@@ -375,6 +386,7 @@ class HistoryWindow(QDialog):
         table_layout.addWidget(self._table)
         layout.addWidget(self._table_card, stretch=2)
 
+    def _build_history_preview_card(self, layout: QVBoxLayout) -> None:
         self._preview_card = QFrame()
         self._preview_card.setObjectName("previewCard")
         preview_layout = QVBoxLayout(self._preview_card)
@@ -392,10 +404,6 @@ class HistoryWindow(QDialog):
         self._detail_field.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         preview_layout.addWidget(self._detail_field, stretch=1)
         layout.addWidget(self._preview_card, stretch=1)
-
-        self._records: list[history.TranslationRecord] = []
-        self.retranslate_ui()
-        self.refresh()
 
     def retranslate_ui(self) -> None:
         self.setWindowTitle(tr("history.title"))
@@ -711,14 +719,7 @@ class HistoryWindow(QDialog):
         stats = history.get_translation_stats()
         if stats["total"] == 0:
             return
-        answer = QMessageBox.question(
-            self,
-            tr("history.clear_title"),
-            tr("history.clear_message"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        if not confirm(self, tr("history.clear_message"), title=tr("history.clear_title")):
             return
         history.clear_all()
         self.refresh()
@@ -812,7 +813,7 @@ def _format_result_html(text: str) -> str:
 
 
 def _preview(text: str, max_len: int = 120) -> str:
-    one_line = " ".join(text.split())
+    one_line = collapse_whitespace(text)
     if len(one_line) <= max_len:
         return one_line
     return one_line[: max_len - 1] + "…"

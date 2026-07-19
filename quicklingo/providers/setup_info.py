@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.settings import API_PROVIDERS
 
 __all__ = (

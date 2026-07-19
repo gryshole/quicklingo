@@ -1,14 +1,19 @@
-import json
+from __future__ import annotations
+
 from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 import httpx
 
 from quicklingo import settings
 from quicklingo.i18n.translator import TranslatableError
 from quicklingo.providers.api_errors import raise_openai_compat_api_error
-from quicklingo.providers.base import TranslationProvider
-
-REQUEST_TIMEOUT = 30.0
+from quicklingo.providers.base import (
+    REQUEST_TIMEOUT,
+    TranslationProvider,
+    iter_sse_json,
+    map_network_errors,
+)
 
 
 class OpenAICompatProvider(TranslationProvider):
@@ -44,7 +49,12 @@ class OpenAICompatProvider(TranslationProvider):
             headers["Authorization"] = f"Bearer {api_key}"
         return headers
 
-    def _payload(self, text: str, prompt: str, model: str, *, temperature: float, stream: bool) -> dict:
+    def _unreachable_key(self) -> str | None:
+        return "errors.ollama_unreachable" if self._provider_id == "ollama" else None
+
+    def _payload(
+        self, text: str, prompt: str, model: str, *, temperature: float, stream: bool
+    ) -> dict[str, Any]:
         return {
             "model": model,
             "messages": [
@@ -71,19 +81,13 @@ class OpenAICompatProvider(TranslationProvider):
     ) -> str:
         api_key = self._require_api_key()
         payload = self._payload(text, prompt, model, temperature=temperature, stream=False)
-        try:
+        with map_network_errors(unreachable_key=self._unreachable_key()):
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 response = await client.post(
                     self._chat_url(),
                     headers=self._headers(api_key),
                     json=payload,
                 )
-        except httpx.TimeoutException as exc:
-            raise TranslatableError("errors.api_timeout") from exc
-        except httpx.RequestError as exc:
-            if self._provider_id == "ollama":
-                raise TranslatableError("errors.ollama_unreachable", detail=str(exc)) from exc
-            raise TranslatableError("errors.network", detail=str(exc)) from exc
 
         if response.status_code == 401:
             raise TranslatableError(f"errors.{self._provider_id}_invalid_key")
@@ -109,7 +113,7 @@ class OpenAICompatProvider(TranslationProvider):
     ) -> AsyncIterator[str]:
         api_key = self._require_api_key()
         payload = self._payload(text, prompt, model, temperature=temperature, stream=True)
-        try:
+        with map_network_errors(unreachable_key=self._unreachable_key()):
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
@@ -125,23 +129,8 @@ class OpenAICompatProvider(TranslationProvider):
                             status_code=response.status_code,
                             body=body.strip() or response.reason_phrase or "",
                         )
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data_str = line[5:].strip()
-                        if not data_str or data_str == "[DONE]":
-                            continue
-                        try:
-                            chunk = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+                    async for chunk in iter_sse_json(response):
                         delta = chunk.get("choices", [{}])[0].get("delta", {})
                         piece = delta.get("content")
                         if piece:
                             yield piece
-        except httpx.TimeoutException as exc:
-            raise TranslatableError("errors.api_timeout") from exc
-        except httpx.RequestError as exc:
-            if self._provider_id == "ollama":
-                raise TranslatableError("errors.ollama_unreachable", detail=str(exc)) from exc
-            raise TranslatableError("errors.network", detail=str(exc)) from exc

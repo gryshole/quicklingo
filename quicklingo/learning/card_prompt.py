@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from quicklingo.config.loader import resolve_learning_direction
-from quicklingo.learning.card_display import display_term, is_english_example, parse_context, serialize_context
+from quicklingo.learning.card_display import (
+    display_term,
+    is_english_example,
+    parse_context,
+    serialize_context,
+)
+from quicklingo.learning.text_normalize import collapse_whitespace
+
+if TYPE_CHECKING:
+    from quicklingo.learning.corpus_analysis import CorpusCandidate
 
 _PROMPT_TEXT_LIMIT = 160
 _UA_EN_EXAMPLE_COUNT = 3
@@ -292,7 +302,7 @@ def get_card_prompt_template(direction: str = "ua-en") -> str:
 
 
 def _clip_prompt_text(text: str) -> str:
-    cleaned = " ".join(text.split())
+    cleaned = collapse_whitespace(text)
     if len(cleaned) <= _PROMPT_TEXT_LIMIT:
         return cleaned
     return cleaned[: _PROMPT_TEXT_LIMIT - 1] + "…"
@@ -417,7 +427,7 @@ def hint_spoils_front(hint: str, front: str) -> bool:
 
 def _shared_prefix_len(a: str, b: str) -> int:
     count = 0
-    for left, right in zip(a, b):
+    for left, right in zip(a, b, strict=False):
         if left != right:
             break
         count += 1
@@ -616,7 +626,7 @@ def fallback_hint(front: str, back: str, direction: str) -> str:
 
 def sanitize_hint(hint: str, *, front: str, back: str, direction: str) -> str:
     kind = resolve_learning_direction(direction)
-    cleaned = " ".join(hint.split()).strip()
+    cleaned = collapse_whitespace(hint)
     if cleaned:
         if hint_spoils_answer(cleaned, back):
             return fallback_hint(front, back, direction)
@@ -638,7 +648,7 @@ def sanitize_hint(hint: str, *, front: str, back: str, direction: str) -> str:
 
 
 def _sanitize_context(context: str, *, direction: str = "ua-en") -> str:
-    cleaned = " ".join(context.split()).strip()
+    cleaned = collapse_whitespace(context)
     if not cleaned or is_boilerplate(cleaned):
         return ""
     if resolve_learning_direction(direction) == "ua-en" and is_definitional_context(cleaned):
@@ -647,7 +657,7 @@ def _sanitize_context(context: str, *, direction: str = "ua-en") -> str:
 
 
 def _looks_like_usage_sentence(text: str, *, direction: str = "ua-en") -> bool:
-    cleaned = " ".join(text.split()).strip()
+    cleaned = collapse_whitespace(text)
     if not cleaned or is_boilerplate(cleaned):
         return False
     if resolve_learning_direction(direction) == "ua-en" and is_definitional_context(cleaned):
@@ -670,20 +680,12 @@ def _corpus_context_from_source(
     *,
     direction: str = "ua-en",
 ) -> str:
-    cleaned = " ".join(source_text.split()).strip()
+    cleaned = collapse_whitespace(source_text)
     if not cleaned or not _looks_like_usage_sentence(cleaned, direction=direction):
         return ""
     if not _text_contains_term(cleaned, front):
         return ""
     return _sanitize_context(cleaned, direction=direction)
-
-
-def fallback_context(front: str, back: str, direction: str) -> str:
-    if resolve_learning_direction(direction) == "en-ua":
-        if " " in front:
-            return f"We need to consider {front} before deciding."
-        return f"The outcome seemed {front} given the circumstances."
-    return ""
 
 
 def fallback_english_examples(term: str) -> list[str]:
@@ -703,10 +705,6 @@ def fallback_english_examples(term: str) -> list[str]:
     ]
 
 
-def fallback_ua_en_examples(back: str) -> list[str]:
-    return fallback_english_examples(back)
-
-
 def _coerce_context_input(context: object, *, direction: str) -> list[str]:
     if isinstance(context, list):
         return [str(item).strip() for item in context if str(item).strip()]
@@ -716,7 +714,7 @@ def _coerce_context_input(context: object, *, direction: str) -> list[str]:
 
 
 def _sanitize_english_example(sentence: str, *, term: str) -> str:
-    cleaned = " ".join(sentence.split()).strip()
+    cleaned = collapse_whitespace(sentence)
     if not cleaned or is_boilerplate(cleaned):
         return ""
     if not is_english_example(cleaned):
@@ -776,33 +774,8 @@ def ensure_english_examples(
     return results[:_EXAMPLE_COUNT]
 
 
-def ensure_ua_en_examples(context: object, *, back: str) -> list[str]:
-    return ensure_english_examples(context, term=back, direction="ua-en")
-
-
-def ensure_context(
-    context: str,
-    *,
-    front: str,
-    back: str,
-    direction: str = "ua-en",
-    source_text: str = "",
-) -> str:
-    cleaned = _sanitize_context(context, direction=direction)
-    if cleaned:
-        return cleaned
-    from_corpus = _corpus_context_from_source(
-        source_text,
-        front,
-        direction=direction,
-    )
-    if from_corpus:
-        return from_corpus
-    return fallback_context(front, back, direction)
-
-
 def _truncate_notes(notes: str, *, max_len: int = _NOTES_MAX_LEN) -> str:
-    cleaned = " ".join(notes.split()).strip()
+    cleaned = collapse_whitespace(notes)
     if len(cleaned) <= max_len:
         return cleaned
     truncated = cleaned[:max_len]
@@ -812,7 +785,7 @@ def _truncate_notes(notes: str, *, max_len: int = _NOTES_MAX_LEN) -> str:
 
 
 def _normalize_definition_notes(notes: str) -> str:
-    cleaned = " ".join(notes.split()).strip()
+    cleaned = collapse_whitespace(notes)
     if not cleaned:
         return ""
     lower = cleaned.lower()
@@ -824,12 +797,8 @@ def _normalize_definition_notes(notes: str) -> str:
     return f"Definition: {cleaned}"
 
 
-def _normalize_en_ua_notes(notes: str) -> str:
-    return _normalize_definition_notes(notes)
-
-
 def _is_legacy_contrast_notes(notes: str) -> bool:
-    cleaned = " ".join(notes.split()).strip()
+    cleaned = collapse_whitespace(notes)
     if not cleaned:
         return False
     lower = cleaned.lower()
@@ -853,7 +822,7 @@ def _sanitize_notes(
     context_examples: list[str] | None = None,
 ) -> str:
     kind = resolve_learning_direction(direction)
-    cleaned = " ".join(notes.split()).strip()
+    cleaned = collapse_whitespace(notes)
     if not cleaned or is_boilerplate(cleaned):
         return ""
     if _is_legacy_contrast_notes(cleaned):

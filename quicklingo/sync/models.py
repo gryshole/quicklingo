@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -40,7 +39,7 @@ class SyncManifest:
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def read_manifest(path: Path) -> SyncManifest | None:

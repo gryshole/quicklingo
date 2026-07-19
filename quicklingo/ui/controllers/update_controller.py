@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from PySide6.QtCore import QUrl
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
-
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 
 from quicklingo import app as ql_app
 from quicklingo.i18n import tr
+from quicklingo.ui.qt_utils import confirm, warn
 from quicklingo.update.checker import UpdateInfo, current_version, default_download_path, is_newer
 from quicklingo.update.install import launch_update, updater_available
 from quicklingo.workers.update_worker import UpdateCheckWorker, UpdateDownloadWorker
@@ -40,11 +39,7 @@ class UpdateController:
         self._check_worker.start()
 
     def _on_check_error(self, message: str) -> None:
-        QMessageBox.warning(
-            self._window,
-            tr("common.error"),
-            tr("update.error").format(message=message),
-        )
+        warn(self._window, tr("update.error").format(message=message))
 
     def _on_check_ok(self, info: UpdateInfo) -> None:
         current = current_version()
@@ -73,21 +68,14 @@ class UpdateController:
 
     def _start_download(self, info: UpdateInfo) -> None:
         if sys.platform != "win32":
-            QMessageBox.warning(self._window, tr("common.error"), tr("update.windows_only"))
+            warn(self._window, tr("update.windows_only"))
             return
         if not updater_available():
-            QMessageBox.warning(self._window, tr("common.error"), tr("update.updater_missing"))
+            warn(self._window, tr("update.updater_missing"))
             if info.release_url:
                 QDesktopServices.openUrl(QUrl(info.release_url))
             return
-        confirm = QMessageBox.question(
-            self._window,
-            tr("common.confirm"),
-            tr("update.confirm_quit"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
+        if not confirm(self._window, tr("update.confirm_quit")):
             return
         dest = default_download_path(info.latest_version)
         self._progress = QProgressDialog(
@@ -125,11 +113,7 @@ class UpdateController:
         if self._progress is not None:
             self._progress.close()
             self._progress = None
-        QMessageBox.warning(
-            self._window,
-            tr("common.error"),
-            tr("update.error").format(message=message),
-        )
+        warn(self._window, tr("update.error").format(message=message))
 
     def _on_download_ok(self, zip_path: str) -> None:
         if self._progress is not None:
@@ -137,9 +121,7 @@ class UpdateController:
             self._progress = None
         app_instance = ql_app.get_app()
         if app_instance is None:
-            QMessageBox.warning(
-                self._window, tr("common.error"), tr("update.error").format(message="app")
-            )
+            warn(self._window, tr("update.error").format(message="app"))
             return
         try:
             app_instance.prepare_quit_for_update()
@@ -148,8 +130,4 @@ class UpdateController:
             self._window.close()
             QApplication.quit()
         except Exception as exc:
-            QMessageBox.warning(
-                self._window,
-                tr("common.error"),
-                tr("update.error").format(message=str(exc)),
-            )
+            warn(self._window, tr("update.error").format(message=str(exc)))

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.providers.openai_compat import OpenAICompatProvider
 
 

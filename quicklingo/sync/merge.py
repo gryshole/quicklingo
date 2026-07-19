@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 from quicklingo.db.connection import connection
-from quicklingo.db.history_tags import get_translation_tag_names, set_translation_tags
-from quicklingo.db.sync_schema import new_card_sync_id
+from quicklingo.db.history_tags import set_translation_tags
 from quicklingo.db.tombstones import is_tombstoned, record_deck_children_tombstones
 from quicklingo.sync.keys import (
     card_entity_key,
@@ -87,108 +86,132 @@ def _max_card_ts_for_deck(conn: sqlite3.Connection, schema: str, tag: str, direc
     return str(row["ts"] or "") if row else ""
 
 
+def _content_ts_card(conn: sqlite3.Connection, entity_key: str) -> str:
+    if not entity_key.startswith("card:"):
+        return ""
+    sync_id = entity_key[5:]
+    row = conn.execute(
+        """
+        SELECT content_updated_at FROM learning_cards WHERE sync_id = ?
+        """,
+        (sync_id,),
+    ).fetchone()
+    remote = conn.execute(
+        """
+        SELECT content_updated_at FROM remote.learning_cards WHERE sync_id = ?
+        """,
+        (sync_id,),
+    ).fetchone()
+    return _max_ts(
+        str(row["content_updated_at"] if row else ""),
+        str(remote["content_updated_at"] if remote else ""),
+    )
+
+
+def _content_ts_deck(conn: sqlite3.Connection, entity_key: str) -> str:
+    if not entity_key.startswith("deck:"):
+        return ""
+    tag_direction = entity_key[5:].split("|", 1)
+    if len(tag_direction) != 2:
+        return ""
+    tag, direction = tag_direction
+    row = conn.execute(
+        """
+        SELECT updated_at, created_at FROM learning_decks
+        WHERE tag = ? AND direction = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (tag, direction),
+    ).fetchone()
+    remote = conn.execute(
+        """
+        SELECT updated_at, created_at FROM remote.learning_decks
+        WHERE tag = ? AND direction = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (tag, direction),
+    ).fetchone()
+    deck_ts = _max_ts(_deck_ts(row), _deck_ts(remote))
+    card_ts = _max_ts(
+        _max_card_ts_for_deck(conn, "main", tag, direction),
+        _max_card_ts_for_deck(conn, "remote", tag, direction),
+    )
+    return _max_ts(deck_ts, card_ts)
+
+
+def _content_ts_quiz_question(conn: sqlite3.Connection, entity_key: str) -> str:
+    if not entity_key.startswith("quiz:"):
+        return ""
+    parts = entity_key[5:].split("|", 1)
+    if len(parts) != 2:
+        return ""
+    card_sync_id, question_type = parts
+    row = conn.execute(
+        """
+        SELECT qq.updated_at AS updated_at
+        FROM quiz_questions qq
+        JOIN learning_cards lc ON lc.id = qq.card_id
+        WHERE lc.sync_id = ? AND qq.question_type = ?
+        ORDER BY qq.id DESC LIMIT 1
+        """,
+        (card_sync_id, question_type),
+    ).fetchone()
+    remote = conn.execute(
+        """
+        SELECT qq.updated_at AS updated_at
+        FROM remote.quiz_questions qq
+        JOIN remote.learning_cards lc ON lc.id = qq.card_id
+        WHERE lc.sync_id = ? AND qq.question_type = ?
+        ORDER BY qq.id DESC LIMIT 1
+        """,
+        (card_sync_id, question_type),
+    ).fetchone()
+    return _max_ts(
+        str(row["updated_at"] if row else ""),
+        str(remote["updated_at"] if remote else ""),
+    )
+
+
+def _content_ts_translation(conn: sqlite3.Connection, entity_key: str) -> str:
+    if not entity_key.startswith("translation:"):
+        return ""
+    parts = entity_key[len("translation:") :].split("|", 2)
+    if len(parts) != 3:
+        return ""
+    content_hash, direction, profile_id = parts
+    row = conn.execute(
+        """
+        SELECT updated_at FROM translations
+        WHERE content_hash = ? AND direction = ? AND profile_id = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (content_hash, direction, profile_id),
+    ).fetchone()
+    remote = conn.execute(
+        """
+        SELECT updated_at FROM remote.translations
+        WHERE content_hash = ? AND direction = ? AND profile_id = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (content_hash, direction, profile_id),
+    ).fetchone()
+    return _max_ts(
+        str(row["updated_at"] if row else ""),
+        str(remote["updated_at"] if remote else ""),
+    )
+
+
+_CONTENT_TS_HANDLERS: dict[str, Callable[[sqlite3.Connection, str], str]] = {
+    "card": _content_ts_card,
+    "deck": _content_ts_deck,
+    "quiz_question": _content_ts_quiz_question,
+    "translation": _content_ts_translation,
+}
+
+
 def _content_ts_for_tombstone(conn: sqlite3.Connection, entity_type: str, entity_key: str) -> str:
-    if entity_type == "card" and entity_key.startswith("card:"):
-        sync_id = entity_key[5:]
-        row = conn.execute(
-            """
-            SELECT content_updated_at FROM learning_cards WHERE sync_id = ?
-            """,
-            (sync_id,),
-        ).fetchone()
-        remote = conn.execute(
-            """
-            SELECT content_updated_at FROM remote.learning_cards WHERE sync_id = ?
-            """,
-            (sync_id,),
-        ).fetchone()
-        return _max_ts(
-            str(row["content_updated_at"] if row else ""),
-            str(remote["content_updated_at"] if remote else ""),
-        )
-    if entity_type == "deck" and entity_key.startswith("deck:"):
-        tag_direction = entity_key[5:].split("|", 1)
-        if len(tag_direction) != 2:
-            return ""
-        tag, direction = tag_direction
-        row = conn.execute(
-            """
-            SELECT updated_at, created_at FROM learning_decks
-            WHERE tag = ? AND direction = ?
-            ORDER BY id DESC LIMIT 1
-            """,
-            (tag, direction),
-        ).fetchone()
-        remote = conn.execute(
-            """
-            SELECT updated_at, created_at FROM remote.learning_decks
-            WHERE tag = ? AND direction = ?
-            ORDER BY id DESC LIMIT 1
-            """,
-            (tag, direction),
-        ).fetchone()
-        deck_ts = _max_ts(_deck_ts(row), _deck_ts(remote))
-        card_ts = _max_ts(
-            _max_card_ts_for_deck(conn, "main", tag, direction),
-            _max_card_ts_for_deck(conn, "remote", tag, direction),
-        )
-        return _max_ts(deck_ts, card_ts)
-    if entity_type == "quiz_question" and entity_key.startswith("quiz:"):
-        rest = entity_key[5:]
-        parts = rest.split("|", 1)
-        if len(parts) != 2:
-            return ""
-        card_sync_id, question_type = parts
-        row = conn.execute(
-            """
-            SELECT qq.updated_at AS updated_at
-            FROM quiz_questions qq
-            JOIN learning_cards lc ON lc.id = qq.card_id
-            WHERE lc.sync_id = ? AND qq.question_type = ?
-            ORDER BY qq.id DESC LIMIT 1
-            """,
-            (card_sync_id, question_type),
-        ).fetchone()
-        remote = conn.execute(
-            """
-            SELECT qq.updated_at AS updated_at
-            FROM remote.quiz_questions qq
-            JOIN remote.learning_cards lc ON lc.id = qq.card_id
-            WHERE lc.sync_id = ? AND qq.question_type = ?
-            ORDER BY qq.id DESC LIMIT 1
-            """,
-            (card_sync_id, question_type),
-        ).fetchone()
-        return _max_ts(
-            str(row["updated_at"] if row else ""),
-            str(remote["updated_at"] if remote else ""),
-        )
-    if entity_type == "translation" and entity_key.startswith("translation:"):
-        parts = entity_key[len("translation:") :].split("|", 2)
-        if len(parts) != 3:
-            return ""
-        content_hash, direction, profile_id = parts
-        row = conn.execute(
-            """
-            SELECT updated_at FROM translations
-            WHERE content_hash = ? AND direction = ? AND profile_id = ?
-            ORDER BY id DESC LIMIT 1
-            """,
-            (content_hash, direction, profile_id),
-        ).fetchone()
-        remote = conn.execute(
-            """
-            SELECT updated_at FROM remote.translations
-            WHERE content_hash = ? AND direction = ? AND profile_id = ?
-            ORDER BY id DESC LIMIT 1
-            """,
-            (content_hash, direction, profile_id),
-        ).fetchone()
-        return _max_ts(
-            str(row["updated_at"] if row else ""),
-            str(remote["updated_at"] if remote else ""),
-        )
-    return ""
+    handler = _CONTENT_TS_HANDLERS.get(entity_type)
+    return handler(conn, entity_key) if handler else ""
 
 
 def _prune_stale_tombstones(conn: sqlite3.Connection) -> None:

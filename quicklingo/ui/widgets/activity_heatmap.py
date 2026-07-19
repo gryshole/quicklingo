@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from PySide6.QtCore import Qt, QRectF, QSize
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from quicklingo.learning.analytics.models import DailyActivityDto
@@ -61,7 +61,7 @@ class ActivityHeatmapWidget(QWidget):
             return _LEVELS[2]
         return _LEVELS[3]
 
-    def paintEvent(self, _event) -> None:
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         today = date.today()
@@ -83,7 +83,7 @@ class ActivityHeatmapWidget(QWidget):
                 painter.setBrush(color)
                 painter.drawRoundedRect(rect, 2, 2)
 
-    def mouseMoveEvent(self, event) -> None:
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         cell = self._cell_at(event.position().x(), event.position().y())
         if cell is None:
             QToolTip.hideText()
@@ -97,7 +97,7 @@ class ActivityHeatmapWidget(QWidget):
         )
         super().mouseMoveEvent(event)
 
-    def leaveEvent(self, _event) -> None:
+    def leaveEvent(self, _event: QEvent) -> None:
         QToolTip.hideText()
         super().leaveEvent(_event)
 

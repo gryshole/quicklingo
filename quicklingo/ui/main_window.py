@@ -1,105 +1,72 @@
-from PySide6.QtCore import Qt, QByteArray, Signal
-
-from PySide6.QtGui import QCloseEvent, QGuiApplication, QHideEvent, QShowEvent
-
-from PySide6.QtWidgets import (
-
-    QApplication,
-
-    QComboBox,
-
-    QFormLayout,
-
-    QFrame,
-
-    QGridLayout,
-
-    QHBoxLayout,
-
-    QLabel,
-
-    QMainWindow,
-
-    QMessageBox,
-
-    QPushButton,
-
-    QSizePolicy,
-
-    QVBoxLayout,
-
-    QWidget,
-
-)
-
-
+from __future__ import annotations
 
 import sys
 
-from quicklingo.config.loader import (
-
-    get_directions,
-
-    get_formatter,
-
-    get_profiles_for_direction,
-
-    reload_config,
-
-    resolve_active_profile_id,
-
-    resolve_learning_direction,
-
+from PySide6.QtCore import QByteArray, Qt, Signal
+from PySide6.QtGui import QCloseEvent, QGuiApplication, QHideEvent, QShowEvent
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
-
 from quicklingo import settings
+from quicklingo.config.loader import (
+    get_directions,
+    get_formatter,
+    get_profiles_for_direction,
+    reload_config,
+    resolve_active_profile_id,
+)
 from quicklingo.db import history
-from quicklingo.features import feature_changed, is_enabled, save_features
-
+from quicklingo.features import is_enabled, save_features
 from quicklingo.i18n import tr, translate_message
-
 from quicklingo.input.hotkeys import copy_selection_to_clipboard
 from quicklingo.input.tutor_capture_log import log_debug
-
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.providers.setup_info import PROVIDER_HINT_KEYS, provider_needs_api_key
-
-from quicklingo.ui.controllers.sync_controller import SyncController
-from quicklingo.ui.controllers.translation_controller import TranslationController
-from quicklingo.ui.controllers.tutor_input import append_character, backspace as tutor_backspace
-from quicklingo.ui.controllers.update_controller import UpdateController
 from quicklingo.ui.app_theme import (
     GLOBAL_BTN_OFF,
     GLOBAL_BTN_ON,
     GLOBAL_BTN_UNSUPPORTED,
-    main_window_stylesheet,
     OUTPUT_PLACEHOLDER_STYLE,
     STATUS_ERROR_STYLE,
     STATUS_MUTED_STYLE,
-    apply_compact_form_label_style,
-    apply_combo_font,
-    apply_section_title_style,
     align_settings_form_labels,
+    apply_combo_font,
+    apply_compact_form_label_style,
+    apply_section_title_style,
+    main_window_stylesheet,
     make_compact_section_card,
     make_section_card,
 )
+from quicklingo.ui.controllers.sync_controller import SyncController
+from quicklingo.ui.controllers.translation_controller import TranslationController
+from quicklingo.ui.controllers.tutor_input import append_character
+from quicklingo.ui.controllers.tutor_input import backspace as tutor_backspace
+from quicklingo.ui.controllers.update_controller import UpdateController
+from quicklingo.ui.dialogs.learning_onboarding_dialog import LearningOnboardingDialog
+from quicklingo.ui.history_window import HistoryWindow
+from quicklingo.ui.learning_window import LearningWindow
 from quicklingo.ui.qt_utils import (
     configure_single_line_combo,
     open_help,
     raise_window,
     reload_combo,
 )
-from quicklingo.ui.widgets.segmented_control import SegmentedControl
-from quicklingo.ui.dialogs.learning_onboarding_dialog import LearningOnboardingDialog
-from quicklingo.ui.history_window import HistoryWindow
-from quicklingo.ui.learning_window import LearningWindow
 from quicklingo.ui.quiz_questions_window import QuizQuestionsWindow
-
 from quicklingo.ui.settings_dialog import SettingsDialog
-
+from quicklingo.ui.widgets.segmented_control import SegmentedControl
 from quicklingo.ui.zoomable_text_edit import ZoomableInputEdit, ZoomableLineEdit, ZoomableTextEdit
-
 from quicklingo.version import __version__
 
 
@@ -187,6 +154,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(14)
 
+        self._build_central_widgets(layout)
+        self._finalize_main_window()
+
+    def _build_central_widgets(self, layout: QVBoxLayout) -> None:
         self._settings_section_label = QLabel()
         apply_section_title_style(self._settings_section_label)
 
@@ -370,8 +341,7 @@ class MainWindow(QMainWindow):
         layout.addSpacing(2)
         layout.addWidget(self._status_label)
 
-
-
+    def _finalize_main_window(self) -> None:
         self._input_label_ref = self._input_label
 
         self._refresh_input_label()
@@ -575,9 +545,6 @@ class MainWindow(QMainWindow):
 
 
     def sync_tutor_capture_ui(self) -> None:
-
-        import sys
-
         enabled = is_enabled("input.tutor_capture")
 
         self._tutor_capture_btn.blockSignals(True)
@@ -595,9 +562,6 @@ class MainWindow(QMainWindow):
 
 
     def _apply_tutor_capture_btn_style(self, enabled: bool) -> None:
-
-        import sys
-
         if sys.platform != "win32":
             self._tutor_capture_btn.setToolTip(tr("main.tutor_capture_btn_tooltip_unsupported"))
             self._tutor_capture_btn.setStyleSheet(GLOBAL_BTN_UNSUPPORTED)
@@ -650,9 +614,6 @@ class MainWindow(QMainWindow):
         if self.is_translation_busy():
             return "translation_busy"
         return None
-
-    def _tutor_input_allowed(self) -> bool:
-        return self._tutor_input_block_reason() is None
 
     def on_tutor_character(self, char: str) -> None:
         reason = self._tutor_input_block_reason()
@@ -1130,27 +1091,6 @@ class MainWindow(QMainWindow):
     def _on_quiz_questions_closed(self) -> None:
         self._quiz_questions_window = None
 
-    def _add_vocab_to_deck(
-        self, word: str, source: str, direction: str, tag: str, result: str
-    ) -> None:
-        if self._learning_window is None:
-            self._learning_window = LearningWindow(self)
-            self._learning_window.closed.connect(self._on_learning_closed)
-        if resolve_learning_direction(direction) == "en-ua":
-            front, back = word, source.strip()
-        else:
-            front, back = source.strip() or word, word
-        self._learning_window.add_vocab_card(
-            front,
-            back,
-            context=result.strip()[:400],
-            tag=tag,
-            direction=direction,
-        )
-        raise_window(self._learning_window)
-
-
-
     def _open_settings(self) -> None:
 
         dialog = SettingsDialog(self)
@@ -1428,9 +1368,6 @@ class MainWindow(QMainWindow):
 
     def _submit_translation(self) -> None:
         self._translation.submit()
-
-    def _start_translation(self, text: str) -> None:
-        self._translation.start(text)
 
     def _cancel_translation(self) -> None:
         self._translation.cancel()

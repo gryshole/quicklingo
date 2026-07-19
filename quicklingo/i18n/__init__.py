@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.i18n.translator import (
     DEFAULT_LANGUAGE,
     SUPPORTED_LANGUAGES,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from quicklingo.db.connection import connection, get_connection
+from quicklingo.db.connection import connection
 from quicklingo.sync.keys import (
     card_entity_key,
     deck_entity_key,
@@ -216,11 +216,3 @@ def is_tombstoned(conn: sqlite3.Connection, entity_type: str, entity_key: str) -
     return row is not None
 
 
-def list_tombstones(conn: sqlite3.Connection | None = None) -> list[sqlite3.Row]:
-    if conn is None:
-        return get_connection().execute(
-            "SELECT entity_type, entity_key, deleted_at, device_id FROM sync_tombstones"
-        ).fetchall()
-    return conn.execute(
-        "SELECT entity_type, entity_key, deleted_at, device_id FROM sync_tombstones"
-    ).fetchall()

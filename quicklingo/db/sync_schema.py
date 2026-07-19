@@ -97,13 +97,6 @@ def touch_translation_updated_at(conn: sqlite3.Connection, record_id: int) -> No
     )
 
 
-def touch_deck_updated_at(conn: sqlite3.Connection, deck_id: int) -> None:
-    conn.execute(
-        "UPDATE learning_decks SET updated_at = datetime('now') WHERE id = ?",
-        (deck_id,),
-    )
-
-
 def touch_card_content_updated_at(conn: sqlite3.Connection, card_id: int) -> None:
     conn.execute(
         "UPDATE learning_cards SET content_updated_at = datetime('now') WHERE id = ?",

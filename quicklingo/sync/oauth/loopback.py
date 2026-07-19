@@ -48,7 +48,7 @@ class _OAuthHandler(BaseHTTPRequestHandler):
         body = (
             "<!DOCTYPE html><html><head><meta charset='utf-8'>"
             f"<title>QuickLingo</title></head><body><p>{message}</p></body></html>"
-        ).encode("utf-8")
+        ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -73,7 +73,6 @@ def wait_for_oauth_callback(
     _OAuthHandler.expected_state = expected_state
     server = HTTPServer(("127.0.0.1", port), _OAuthHandler)
     server.timeout = 1.0
-    deadline = threading.Event()
 
     def serve() -> None:
         while _OAuthHandler.result is None and _OAuthHandler.error is None:

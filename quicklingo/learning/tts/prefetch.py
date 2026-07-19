@@ -6,7 +6,6 @@ from quicklingo.db.learning import LearningCard
 from quicklingo.learning.card_display import parse_context
 from quicklingo.learning.quiz.models import QuizQuestion
 from quicklingo.learning.review_queue import english_side_text
-from quicklingo.learning.tts.synth import resolve_sentence_audio, synthesize_sentence
 
 
 def unique_texts(texts: Iterable[str]) -> list[str]:
@@ -51,14 +50,3 @@ def collect_review_tts_texts(cards: list[LearningCard], *, direction: str) -> li
     for card in cards:
         texts.extend(collect_review_card_tts_texts(card, direction=direction))
     return unique_texts(texts)
-
-
-def prefetch_sentences(texts: Iterable[str]) -> int:
-    """Synthesize missing sentence MP3 files. Safe to call from a worker thread."""
-    synthesized = 0
-    for text in unique_texts(texts):
-        if resolve_sentence_audio(text) is not None:
-            continue
-        if synthesize_sentence(text) is not None:
-            synthesized += 1
-    return synthesized

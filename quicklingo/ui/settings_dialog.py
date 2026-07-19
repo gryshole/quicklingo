@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
@@ -14,8 +16,8 @@ from quicklingo.i18n import language_changed, tr
 from quicklingo.ui.settings.api_keys_tab import ApiKeysTab
 from quicklingo.ui.settings.directions_tab import DirectionsTab
 from quicklingo.ui.settings.features_tab import FeaturesTab
-from quicklingo.ui.settings.learning_features_tab import LearningFeaturesTab
 from quicklingo.ui.settings.interface_tab import InterfaceTab
+from quicklingo.ui.settings.learning_features_tab import LearningFeaturesTab
 from quicklingo.ui.settings.models_tab import ModelsTab
 from quicklingo.ui.settings.profiles_tab import ProfilesTab
 from quicklingo.ui.settings.sync_tab import SyncTab

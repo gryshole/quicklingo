@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.sync.models import (
     MANIFEST_FILENAME,
     SCHEMA_VERSION,

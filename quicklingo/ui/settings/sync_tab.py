@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
@@ -8,7 +10,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -26,8 +27,6 @@ from quicklingo.ui.settings_theme import (
     configure_settings_group_box,
     style_api_key_hint_text,
 )
-
-OAUTH_TRANSPORTS = frozenset({"google_drive", "dropbox", "onedrive"})
 
 
 class SyncTab(SettingsTab):
@@ -60,6 +59,29 @@ class SyncTab(SettingsTab):
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
 
+        self._build_transport_selector()
+        self._build_webdav_fields()
+        self._build_google_fields()
+        self._build_dropbox_fields()
+        self._build_onedrive_fields()
+
+        self._privacy_note = QLabel()
+        self._privacy_note.setWordWrap(True)
+        self._privacy_note.setObjectName("apiKeyNote")
+
+        self._populate_connection_form()
+        self._build_status_group()
+
+        content_layout.addWidget(connection_card)
+        content_layout.addWidget(self._status_group)
+        content_layout.addStretch()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+
+        self.reload()
+        self.retranslate_ui()
+
+    def _build_transport_selector(self) -> None:
         self._transport_label = QLabel()
         configure_api_key_label(self._transport_label, spaced=False)
         self._transport_combo = QComboBox()
@@ -72,6 +94,7 @@ class SyncTab(SettingsTab):
         self._migration_note.setWordWrap(True)
         self._migration_note.setObjectName("apiKeyNote")
 
+    def _build_webdav_fields(self) -> None:
         self._webdav_url_label = QLabel()
         configure_api_key_label(self._webdav_url_label)
         self._webdav_url_field = QLineEdit()
@@ -88,6 +111,7 @@ class SyncTab(SettingsTab):
         self._webdav_hint = QLabel()
         configure_api_key_hint(self._webdav_hint)
 
+    def _build_google_fields(self) -> None:
         self._google_client_id_label = QLabel()
         configure_api_key_label(self._google_client_id_label)
         self._google_client_id_field = QLineEdit()
@@ -113,6 +137,7 @@ class SyncTab(SettingsTab):
             self._google_disconnect_btn,
         )
 
+    def _build_dropbox_fields(self) -> None:
         self._dropbox_app_key_label = QLabel()
         configure_api_key_label(self._dropbox_app_key_label)
         self._dropbox_app_key_field = QLineEdit()
@@ -138,6 +163,7 @@ class SyncTab(SettingsTab):
             self._dropbox_disconnect_btn,
         )
 
+    def _build_onedrive_fields(self) -> None:
         self._onedrive_client_id_label = QLabel()
         configure_api_key_label(self._onedrive_client_id_label)
         self._onedrive_client_id_field = QLineEdit()
@@ -158,10 +184,7 @@ class SyncTab(SettingsTab):
             self._onedrive_disconnect_btn,
         )
 
-        self._privacy_note = QLabel()
-        self._privacy_note.setWordWrap(True)
-        self._privacy_note.setObjectName("apiKeyNote")
-
+    def _populate_connection_form(self) -> None:
         self._connection_form.addRow(self._transport_label, self._transport_combo)
         self._connection_form.addRow(self._migration_note)
         self._connection_form.addRow(self._webdav_url_label, self._webdav_url_field)
@@ -193,6 +216,7 @@ class SyncTab(SettingsTab):
         self._connection_form.addRow(self._onedrive_actions)
         self._connection_form.addRow(self._privacy_note)
 
+    def _build_status_group(self) -> None:
         self._status_group = QGroupBox()
         configure_settings_group_box(self._status_group)
         self._status_form = QFormLayout(self._status_group)
@@ -226,15 +250,6 @@ class SyncTab(SettingsTab):
         self._status_form.addRow(self._device_id_label, self._device_id_value)
         self._status_form.addRow(self._last_sync_label, self._last_sync_value)
         self._status_form.addRow(self._last_status_label, self._last_status_value)
-
-        content_layout.addWidget(connection_card)
-        content_layout.addWidget(self._status_group)
-        content_layout.addStretch()
-        scroll.setWidget(content)
-        outer.addWidget(scroll)
-
-        self.reload()
-        self.retranslate_ui()
 
     def _action_row(self, connect_btn: QPushButton, disconnect_btn: QPushButton) -> QWidget:
         row = QWidget()
@@ -397,6 +412,3 @@ class SyncTab(SettingsTab):
         self._last_sync_value.setText(last_sync or tr("settings.sync.never"))
         status = settings.get_sync_last_sync_status()
         self._last_status_value.setText(status or tr("settings.sync.never"))
-
-    def refresh_status(self) -> None:
-        self._refresh_status_labels()

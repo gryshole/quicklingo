@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from quicklingo import settings
 from quicklingo.config.formatter_registry import get_formatter_callable
-from quicklingo.config.json_io import load_json_dir, read_json
+from quicklingo.config.json_io import load_json_dir
 from quicklingo.config.models import Direction, FormatterDef, Profile
 from quicklingo.config.seed import ensure_user_config
 from quicklingo.paths import user_config_dir
-from quicklingo import settings
 
 _DIRECTIONS: dict[str, Direction] = {}
 _PROFILES: dict[str, Profile] = {}
@@ -31,10 +31,6 @@ def _config_root() -> Path:
 
 def _load_json_dir(subdir: str) -> dict[str, dict]:
     return load_json_dir(_config_root(), subdir)
-
-
-def _read_json(path: Path) -> dict:
-    return read_json(path)
 
 
 def _resolve_prompt_path(relative: str) -> tuple[str, Path | None]:
@@ -127,12 +123,6 @@ def _ordered_profiles(profiles: list[Profile]) -> list[Profile]:
     )
     ordered.extend(remaining)
     return ordered
-
-
-def get_all_formatters() -> list[FormatterDef]:
-    if not _FORMATTERS:
-        reload_config()
-    return list(_FORMATTERS.values())
 
 
 def get_direction(direction_id: str) -> Direction | None:

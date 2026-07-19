@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
@@ -18,10 +20,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from quicklingo.config.loader import get_all_directions, get_all_profiles, resolve_learning_direction
+from quicklingo import settings
+from quicklingo.config.loader import (
+    get_all_directions,
+    get_all_profiles,
+    resolve_learning_direction,
+)
 from quicklingo.config.store import delete_profile, read_prompt_body, save_profile
 from quicklingo.config.validation import ValidationError
-from quicklingo import settings
 from quicklingo.i18n import tr
 from quicklingo.ui.settings.base_tab import SettingsTab
 from quicklingo.ui.settings_theme import (
@@ -183,7 +189,7 @@ class ProfilesTab(SettingsTab):
         self._direction_label.setText(tr("settings.profiles.direction"))
         self._add_dir_btn.setText(tr("settings.profiles.add_direction"))
         self._save_btn.setText(tr("settings.profiles.save"))
-        for direction_id, widgets in self._direction_widgets.items():
+        for widgets in self._direction_widgets.values():
             widgets["prompt_label"].setText(tr("settings.profiles.prompt"))
             widgets["remove_btn"].setText(tr("settings.profiles.remove_direction"))
 

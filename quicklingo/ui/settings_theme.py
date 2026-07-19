@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QDialogButtonBox,
@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QTabWidget,
-    QVBoxLayout,
     QWidget,
 )
 

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
 from quicklingo.i18n import tr, translate_message
 from quicklingo.sync.models import SyncMergeStats, SyncResult
+from quicklingo.ui.qt_utils import warn
 from quicklingo.workers.sync_worker import SyncWorker
 
 if TYPE_CHECKING:
@@ -78,11 +79,7 @@ class SyncController:
             message = tr("main.sync_not_configured")
         elif message == "Not connected":
             message = tr("main.sync_not_connected")
-        QMessageBox.warning(
-            self._window,
-            tr("main.sync_error_title"),
-            translate_message(message),
-        )
+        warn(self._window, translate_message(message), title=tr("main.sync_error_title"))
 
     @staticmethod
     def _format_stats_line(key: str, stats: SyncMergeStats) -> str:

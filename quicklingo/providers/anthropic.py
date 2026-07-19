@@ -1,16 +1,23 @@
-import json
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
 from quicklingo import settings
 from quicklingo.i18n.translator import TranslatableError
-from quicklingo.providers.base import TranslationProvider
+from quicklingo.providers.api_errors import format_api_error
+from quicklingo.providers.base import (
+    REQUEST_TIMEOUT,
+    TranslationProvider,
+    iter_sse_json,
+    map_network_errors,
+)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MAX_TOKENS = 4096
-REQUEST_TIMEOUT = 30.0
 
 
 class AnthropicProvider(TranslationProvider):
@@ -37,7 +44,7 @@ class AnthropicProvider(TranslationProvider):
         *,
         temperature: float,
         stream: bool,
-    ) -> dict:
+    ) -> dict[str, Any]:
         return {
             "model": model,
             "max_tokens": DEFAULT_MAX_TOKENS,
@@ -60,24 +67,20 @@ class AnthropicProvider(TranslationProvider):
             raise TranslatableError("errors.anthropic_api_key_missing")
 
         payload = self._payload(text, prompt, model, temperature=temperature, stream=False)
-        try:
+        with map_network_errors():
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 response = await client.post(
                     ANTHROPIC_API_URL,
                     headers=self._headers(api_key),
                     json=payload,
                 )
-        except httpx.TimeoutException as exc:
-            raise TranslatableError("errors.api_timeout") from exc
-        except httpx.RequestError as exc:
-            raise TranslatableError("errors.network", detail=str(exc)) from exc
 
         if response.status_code in (401, 403):
             raise TranslatableError("errors.anthropic_invalid_key")
         if response.status_code == 429:
             raise TranslatableError("errors.anthropic_rate_limit")
         if response.status_code >= 400:
-            detail = _format_api_error(response)
+            detail = format_api_error(response)
             raise TranslatableError(
                 "errors.api_error",
                 status=response.status_code,
@@ -103,7 +106,7 @@ class AnthropicProvider(TranslationProvider):
             raise TranslatableError("errors.anthropic_api_key_missing")
 
         payload = self._payload(text, prompt, model, temperature=temperature, stream=True)
-        try:
+        with map_network_errors():
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
@@ -122,26 +125,13 @@ class AnthropicProvider(TranslationProvider):
                             status=response.status_code,
                             detail=body[:300],
                         )
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data_str = line[5:].strip()
-                        if not data_str:
-                            continue
-                        try:
-                            chunk = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+                    async for chunk in iter_sse_json(response):
                         piece = _extract_anthropic_text(chunk)
                         if piece:
                             yield piece
-        except httpx.TimeoutException as exc:
-            raise TranslatableError("errors.api_timeout") from exc
-        except httpx.RequestError as exc:
-            raise TranslatableError("errors.network", detail=str(exc)) from exc
 
 
-def _extract_anthropic_text(chunk: dict) -> str:
+def _extract_anthropic_text(chunk: dict[str, Any]) -> str:
     if chunk.get("type") != "content_block_delta":
         return ""
     delta = chunk.get("delta")
@@ -149,16 +139,3 @@ def _extract_anthropic_text(chunk: dict) -> str:
         return ""
     text = delta.get("text")
     return text if isinstance(text, str) else ""
-
-
-def _format_api_error(response: httpx.Response) -> str:
-    try:
-        body = response.json()
-        error = body.get("error")
-        if isinstance(error, dict):
-            message = error.get("message")
-            if isinstance(message, str):
-                return message[:300]
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return (response.text.strip() or response.reason_phrase or "")[:300]

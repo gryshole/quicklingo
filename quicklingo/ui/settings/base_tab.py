@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QWidget
 
 from quicklingo.i18n import tr
+from quicklingo.ui.qt_utils import confirm, warn
 
 
 class SettingsTab(QWidget):
@@ -36,25 +39,15 @@ class SettingsTab(QWidget):
     def confirm_discard(self) -> bool:
         if not self.is_dirty():
             return True
-        answer = QMessageBox.question(
+        return confirm(
             self,
-            tr("common.unsaved_title"),
             tr("common.unsaved_message"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            title=tr("common.unsaved_title"),
         )
-        return answer == QMessageBox.StandardButton.Yes
 
     @staticmethod
     def show_error(parent: QWidget, message: str) -> None:
-        QMessageBox.warning(parent, tr("common.error"), message)
+        warn(parent, message)
 
     def confirm_delete(self, message: str) -> bool:
-        answer = QMessageBox.question(
-            self,
-            tr("common.confirm"),
-            message,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        return confirm(self, message)

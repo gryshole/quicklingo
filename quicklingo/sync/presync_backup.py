@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import tempfile
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from quicklingo.paths import user_data_dir
@@ -70,10 +70,10 @@ def create_presync_backup(*, keep: int = PRESYNC_KEEP) -> Path | None:
     """Snapshot history.db before sync, store as max-compressed zip. Returns path or None."""
     try:
         directory = presync_backup_dir()
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         dest = directory / f"history-{stamp}.zip"
         if dest.exists():
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
             dest = directory / f"history-{stamp}.zip"
 
         with tempfile.TemporaryDirectory(prefix="quicklingo-presync-") as tmp:

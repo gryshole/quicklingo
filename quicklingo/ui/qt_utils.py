@@ -5,8 +5,9 @@ from contextlib import contextmanager
 from typing import Any
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QSizePolicy, QWidget
+from PySide6.QtWidgets import QComboBox, QMessageBox, QSizePolicy, QWidget
 
+from quicklingo.i18n import tr
 from quicklingo.ui.app_theme import apply_combo_font
 from quicklingo.ui.help_dialog import show_help
 
@@ -15,6 +16,23 @@ def raise_window(widget: QWidget) -> None:
     widget.show()
     widget.raise_()
     widget.activateWindow()
+
+
+def confirm(parent: QWidget, message: str, *, title: str | None = None) -> bool:
+    """Show a Yes/No question dialog; return True only when the user confirms."""
+    answer = QMessageBox.question(
+        parent,
+        title or tr("common.confirm"),
+        message,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return answer == QMessageBox.StandardButton.Yes
+
+
+def warn(parent: QWidget, message: str, *, title: str | None = None) -> None:
+    """Show a warning dialog with a default 'error' title."""
+    QMessageBox.warning(parent, title or tr("common.error"), message)
 
 
 def _find_main_window(anchor: QWidget | None):
@@ -87,15 +105,6 @@ def configure_single_line_combo(combo: QComboBox) -> None:
     combo.currentIndexChanged.connect(lambda _index: _sync_tooltip())
     combo.currentTextChanged.connect(_sync_tooltip)
     _sync_tooltip()
-
-
-def labeled_combo_row(label: QLabel, combo: QComboBox) -> QHBoxLayout:
-    row = QHBoxLayout()
-    row.setContentsMargins(0, 0, 0, 0)
-    label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-    row.addWidget(label)
-    row.addWidget(combo, stretch=1)
-    return row
 
 
 def reload_combo(

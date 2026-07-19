@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from PySide6.QtWidgets import QFormLayout
 
 from quicklingo.ui.settings.feature_settings_editor import FeatureSettingsEditor, GroupSpecs

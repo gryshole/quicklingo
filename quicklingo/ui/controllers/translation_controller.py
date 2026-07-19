@@ -40,14 +40,6 @@ class TranslationController:
         self._request_queue: list[QueuedRequest] = []
         self._replace_after_translate = False
 
-    @property
-    def last_error_message(self) -> str:
-        return self._last_error_message
-
-    @property
-    def pending_source(self) -> str:
-        return self._pending_source
-
     def is_busy(self) -> bool:
         return self._worker is not None and self._worker.isRunning()
 

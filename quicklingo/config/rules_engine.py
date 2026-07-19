@@ -8,11 +8,9 @@ from typing import Any
 
 from quicklingo.ui.format_output import (
     RESULT_WRAP_STYLE,
-    format_en_ua_output,
-    format_plain_output,
-    format_ua_en_output,
-    merge_ua_en_wrapped_lines,
     _ua_en_gloss_row,
+    format_plain_output,
+    merge_ua_en_wrapped_lines,
 )
 
 _CYRILLIC = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
@@ -208,7 +206,7 @@ def _format_ua_en_block_rules(block: str) -> str:
 
 
 def _format_en_ua_blocks_rules(text: str) -> list[str]:
-    from quicklingo.ui.format_output import _parse_en_ua_entries, _format_en_ua_entry
+    from quicklingo.ui.format_output import _format_en_ua_entry, _parse_en_ua_entries
 
     normalized = _normalize_separators(text)
     entries = _parse_en_ua_entries(normalized)
@@ -219,49 +217,3 @@ def _format_en_ua_blocks_rules(text: str) -> list[str]:
     ]
 
 
-# Preset rule sets for UI "duplicate from preset"
-PRESET_RULES: dict[str, list[dict[str, Any]]] = {
-    "plain": [{"type": "escape_plain"}],
-    "ua_en_cards": [
-        {"type": "normalize_separators"},
-        {
-            "type": "split_blocks",
-            "pattern": r"\n(?=──────────────────\n|You probably meant: )",
-        },
-        {
-            "type": "foreach_block",
-            "rules": [{"type": "format_ua_en_block"}],
-        },
-        {"type": "wrap_document"},
-    ],
-    "en_ua_cards": [
-        {"type": "normalize_separators"},
-        {"type": "format_en_ua_blocks"},
-        {"type": "wrap_document"},
-    ],
-}
-
-BUILTIN_ENGINES = {
-    "builtin:plain": "plain",
-    "builtin:ua_en_cards": "ua_en_cards",
-    "builtin:en_ua_cards": "en_ua_cards",
-}
-
-
-def preset_rules_for_engine(engine: str) -> list[dict[str, Any]]:
-    key = BUILTIN_ENGINES.get(engine)
-    if key:
-        return [dict(r) for r in PRESET_RULES[key]]
-    return [{"type": "escape_plain"}]
-
-
-def preview_formatter(engine: str, rules: list[dict[str, Any]], text: str) -> str:
-    if engine.startswith("rules:v1"):
-        return run_rules_v1(rules, text)
-    if engine == "builtin:plain":
-        return format_plain_output(text)
-    if engine == "builtin:ua_en_cards":
-        return format_ua_en_output(text)
-    if engine == "builtin:en_ua_cards":
-        return format_en_ua_output(text)
-    return format_plain_output(text)

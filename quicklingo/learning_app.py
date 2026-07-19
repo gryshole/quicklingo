@@ -1,15 +1,16 @@
-import sys
+from __future__ import annotations
 
-import quicklingo.qt_env  # noqa: F401 — before QtMultimedia
+import sys
 
 from PySide6.QtWidgets import QApplication
 
 import quicklingo.app as ql_app
+import quicklingo.qt_env  # noqa: F401 — before QtMultimedia
 from quicklingo.app_icon import configure_windows_app_id, load_app_icon
-from quicklingo.qt_env import apply_qt_logging_filters
 from quicklingo.db import history
 from quicklingo.features import feature_changed
 from quicklingo.i18n import init_language, language_changed, tr
+from quicklingo.qt_env import apply_qt_logging_filters
 from quicklingo.ui.app_theme import disable_combo_popup_animation
 from quicklingo.ui.learning_window import LearningWindow
 

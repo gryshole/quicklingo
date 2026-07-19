@@ -6,44 +6,24 @@ from urllib.parse import quote
 import httpx
 
 from quicklingo import settings
-from quicklingo.sync.cloud.base import ensure_access_token, request_with_auth
-from quicklingo.sync.models import MANIFEST_FILENAME, SNAPSHOT_FILENAME
+from quicklingo.sync.cloud.base import request_with_auth
+from quicklingo.sync.models import SNAPSHOT_FILENAME
 from quicklingo.sync.oauth.providers import microsoft as microsoft_oauth
 from quicklingo.sync.oauth.tokens import OAuthTokens
-from quicklingo.sync.transport import SyncTransport
+from quicklingo.sync.transport import OAuthCloudTransport
 
 GRAPH_API = "https://graph.microsoft.com/v1.0"
 REMOTE_PREFIX = "QuickLingo"
 
 
-class OneDriveTransport(SyncTransport):
-    def _tokens(self) -> OAuthTokens:
-        tokens = settings.get_sync_oauth_tokens("onedrive")
-        if not tokens.refresh_token:
-            raise ValueError("Not connected")
-        return tokens
+class OneDriveTransport(OAuthCloudTransport):
+    provider_id = "onedrive"
 
-    def _refresh(self) -> OAuthTokens:
-        current = self._tokens()
-        refreshed = microsoft_oauth.refresh_tokens(
+    def _do_refresh(self, current: OAuthTokens) -> OAuthTokens:
+        return microsoft_oauth.refresh_tokens(
             client_id=settings.get_sync_onedrive_client_id(),
             refresh_token=current.refresh_token,
         )
-        refreshed.account_label = current.account_label or refreshed.account_label
-        settings.save_sync_oauth_tokens("onedrive", refreshed)
-        return refreshed
-
-    def _access_token(self) -> str:
-        tokens = self._tokens()
-        return ensure_access_token(
-            "onedrive",
-            tokens,
-            self._refresh,
-            lambda value: settings.save_sync_oauth_tokens("onedrive", value),
-        )
-
-    def _retry_token(self) -> str:
-        return self._refresh().access_token
 
     def _item_url(self, filename: str) -> str:
         path = f"{REMOTE_PREFIX}/{filename}"
@@ -68,17 +48,12 @@ class OneDriveTransport(SyncTransport):
         dest.write_bytes(response.content)
         return True
 
-    def upload_snapshot(self, snapshot: Path, manifest_path: Path) -> None:
-        access_token = self._access_token()
-        for filename, path in (
-            (SNAPSHOT_FILENAME, snapshot),
-            (MANIFEST_FILENAME, manifest_path),
-        ):
-            request_with_auth(
-                "PUT",
-                self._item_url(filename),
-                access_token=access_token,
-                content=path.read_bytes(),
-                headers={"Content-Type": "application/octet-stream"},
-                retry_on_unauthorized=self._retry_token,
-            )
+    def _upload_file(self, filename: str, path: Path, access_token: str) -> None:
+        request_with_auth(
+            "PUT",
+            self._item_url(filename),
+            access_token=access_token,
+            content=path.read_bytes(),
+            headers={"Content-Type": "application/octet-stream"},
+            retry_on_unauthorized=self._retry_token,
+        )

@@ -3,10 +3,13 @@ from __future__ import annotations
 import csv
 import io
 
-from quicklingo.db.connection import connection, get_connection
-from quicklingo.db.sync_schema import touch_translation_updated_at
-from quicklingo.db.tombstones import record_all_translations_deleted, record_translation_delete
 from quicklingo import settings as app_settings
+from quicklingo.db.connection import (
+    connection,
+    fetch_all,
+    fetch_one,
+    in_placeholders,
+)
 from quicklingo.db.history_analytics import _direction_filter_clause
 from quicklingo.db.history_models import (
     TranslationRecord,
@@ -19,6 +22,9 @@ from quicklingo.db.history_tags import (
     set_translation_tags,
     tags_subquery_sql,
 )
+from quicklingo.db.sync_schema import touch_translation_updated_at
+from quicklingo.db.tombstones import record_all_translations_deleted, record_translation_delete
+from quicklingo.learning.text_normalize import collapse_whitespace
 
 
 def _validate_direction(direction: str) -> None:
@@ -64,7 +70,7 @@ def find_cached(
     ttl_days: int,
 ) -> str | None:
     content_hash = make_content_hash(source_text, direction, profile_id)
-    row = get_connection().execute(
+    row = fetch_one(
         """
         SELECT result_text
         FROM translations
@@ -75,7 +81,7 @@ def find_cached(
         LIMIT 1
         """,
         (content_hash, direction, f"-{max(1, ttl_days)} days"),
-    ).fetchone()
+    )
     return row["result_text"] if row else None
 
 
@@ -167,7 +173,7 @@ def search_records(
         LIMIT ?
     """
     params.append(limit)
-    rows = get_connection().execute(sql, params).fetchall()
+    rows = fetch_all(sql, params)
     return [row_to_record(row) for row in rows]
 
 
@@ -182,7 +188,7 @@ def get_recent_for_context(
     exclude_source: str | None = None,
 ) -> list[tuple[str, str]]:
     fetch_limit = max(1, limit) + 5
-    rows = get_connection().execute(
+    rows = fetch_all(
         """
         SELECT source_text, result_text
         FROM translations
@@ -191,14 +197,14 @@ def get_recent_for_context(
         LIMIT ?
         """,
         (direction, fetch_limit),
-    ).fetchall()
+    )
     pairs: list[tuple[str, str]] = []
-    normalized_exclude = " ".join(exclude_source.split()) if exclude_source else None
+    normalized_exclude = collapse_whitespace(exclude_source) if exclude_source else None
     for row in rows:
         source = row["source_text"].strip()
         if not source:
             continue
-        if normalized_exclude and " ".join(source.split()) == normalized_exclude:
+        if normalized_exclude and collapse_whitespace(source) == normalized_exclude:
             continue
         pairs.append((source, row["result_text"].strip()))
         if len(pairs) >= limit:
@@ -276,7 +282,7 @@ def bulk_apply_tags(
     remove_tags = {tag.strip().lower() for tag in remove or [] if tag.strip()}
     updated = 0
     with connection() as conn:
-        placeholders = ",".join("?" * len(record_ids))
+        placeholders = in_placeholders(len(record_ids))
         rows = conn.execute(
             f"SELECT id FROM translations WHERE id IN ({placeholders})",
             record_ids,

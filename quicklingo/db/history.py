@@ -1,8 +1,10 @@
 """Translation history persistence — public API facade."""
 
+from __future__ import annotations
+
 from quicklingo.db.history_analytics import (
-    count_untagged,
     count_corpus_records,
+    count_untagged,
     get_daily_counts,
     get_direction_counts,
     get_distinct_models,

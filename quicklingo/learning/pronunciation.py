@@ -162,7 +162,7 @@ def _synthesize_tts(card_id: int, text: str) -> str | None:
     try:
         import asyncio
 
-        import edge_tts
+        import edge_tts  # noqa: F401  # availability probe
     except ImportError:
         return None
 

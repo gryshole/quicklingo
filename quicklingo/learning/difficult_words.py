@@ -5,6 +5,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from quicklingo.db import history
+from quicklingo.learning.text_normalize import normalize_source as _normalize_source
 
 _WORD_RE = re.compile(r"[\w']+", re.UNICODE)
 
@@ -16,9 +17,6 @@ class DifficultItem:
     example_source: str
     example_result: str
     kind: str
-
-
-from quicklingo.learning.text_normalize import normalize_source as _normalize_source
 
 
 def compute_difficult_words(records: list[history.TranslationRecord]) -> list[DifficultItem]:

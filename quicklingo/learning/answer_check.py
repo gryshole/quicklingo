@@ -5,6 +5,8 @@ import unicodedata
 from difflib import SequenceMatcher
 from enum import Enum
 
+from quicklingo.learning.text_normalize import collapse_whitespace
+
 
 class AnswerResult(str, Enum):
     CORRECT = "correct"
@@ -15,7 +17,7 @@ class AnswerResult(str, Enum):
 def normalize_answer(text: str) -> str:
     text = unicodedata.normalize("NFKC", text.strip().lower())
     text = re.sub(r"[^\w\s'-]+", " ", text, flags=re.UNICODE)
-    return " ".join(text.split())
+    return collapse_whitespace(text)
 
 
 def split_acceptable_answers(back: str) -> list[str]:
