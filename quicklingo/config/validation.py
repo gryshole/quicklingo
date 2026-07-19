@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 
 from quicklingo import settings
@@ -29,16 +31,6 @@ def prompt_path(profile_id: str, direction_id: str) -> str:
     validate_id(profile_id, field="ID")
     validate_id(direction_id, field="ID")
     return f"prompts/{profile_id}--{direction_id}.txt"
-
-
-def profiles_using_formatter(formatter_id: str) -> list[str]:
-    from quicklingo.config.loader import get_all_profiles
-
-    return [
-        p.id
-        for p in get_all_profiles()
-        if formatter_id in p.formatters.values()
-    ]
 
 
 def profiles_using_direction(direction_id: str) -> list[str]:
@@ -83,8 +75,3 @@ def check_profile_deletable(profile_id: str) -> None:
         raise ValidationError("validation.profile_in_use", refs=", ".join(refs))
 
 
-def check_formatter_deletable(formatter_id: str) -> None:
-    used = profiles_using_formatter(formatter_id)
-    if used:
-        names = ", ".join(f"«{p}»" for p in used)
-        raise ValidationError("validation.formatter_in_use", names=names)

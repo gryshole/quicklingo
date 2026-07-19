@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 
-from quicklingo.sync.models import SyncResult
 from quicklingo.sync.service import sync_now
 
 

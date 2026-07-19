@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 _local = threading.local()
 _wal_initialized = False
@@ -45,6 +45,30 @@ def connection() -> Iterator[sqlite3.Connection]:
     except Exception:
         conn.rollback()
         raise
+
+
+def fetch_one(sql: str, params: Sequence[object] = ()) -> sqlite3.Row | None:
+    """Run a read query on the thread-local connection and return the first row."""
+    return get_connection().execute(sql, params).fetchone()
+
+
+def fetch_all(sql: str, params: Sequence[object] = ()) -> list[sqlite3.Row]:
+    """Run a read query on the thread-local connection and return all rows."""
+    return get_connection().execute(sql, params).fetchall()
+
+
+def scalar_int(sql: str, params: Sequence[object] = (), *, default: int = 0) -> int:
+    """Return the first column of the first row as int (e.g. COUNT queries)."""
+    row = get_connection().execute(sql, params).fetchone()
+    if row is None:
+        return default
+    value = row[0]
+    return int(value) if value is not None else default
+
+
+def in_placeholders(count: int) -> str:
+    """Build a comma-separated ``?`` placeholder list for an ``IN (...)`` clause."""
+    return ",".join("?" * count)
 
 
 def close_all() -> None:

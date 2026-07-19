@@ -6,7 +6,13 @@ import time
 from quicklingo.features import get_feature
 from quicklingo.learning.quiz.aggregator import build_quiz_pool
 from quicklingo.learning.quiz.generator import get_quiz_generator
-from quicklingo.learning.quiz.models import QuizAnswer, QuizQuestion, QuizResult, QuizSessionState, QuizWordDto
+from quicklingo.learning.quiz.models import (
+    QuizAnswer,
+    QuizQuestion,
+    QuizResult,
+    QuizSessionState,
+    QuizWordDto,
+)
 
 
 class QuizSessionController:
@@ -99,11 +105,6 @@ class QuizSessionController:
 
     def words_by_id(self) -> dict[int, QuizWordDto]:
         return {word.card_id: word for word in self._state.words}
-
-    def last_answer(self) -> QuizAnswer | None:
-        if not self._state.answers:
-            return None
-        return self._state.answers[-1]
 
     def question_for_answer(self, answer: QuizAnswer) -> QuizQuestion | None:
         for question in self._state.questions:

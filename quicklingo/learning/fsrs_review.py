@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from fsrs import Card as FsrsCard
 from fsrs import Rating, Scheduler, State
 
 from quicklingo.db.connection import connection, get_connection
-from quicklingo.db.learning import LearningCard, _CARD_SELECT
+from quicklingo.db.learning import _CARD_SELECT, LearningCard
 
 _scheduler: Scheduler | None = None
 
@@ -22,11 +22,6 @@ def get_scheduler() -> Scheduler:
             retention /= 100.0
         _scheduler = Scheduler(desired_retention=retention)
     return _scheduler
-
-
-def reset_scheduler() -> None:
-    global _scheduler
-    _scheduler = None
 
 
 def apply_fsrs_review(card_id: int, rating: Rating) -> None:
@@ -59,13 +54,13 @@ def load_fsrs_card(learning_card: LearningCard) -> FsrsCard:
 
 
 def _save_fsrs_state(card_id: int, fsrs_card: FsrsCard) -> None:
-    due_date = fsrs_card.due.astimezone(timezone.utc).date().isoformat()
+    due_date = fsrs_card.due.astimezone(UTC).date().isoformat()
     last_reviewed = ""
     interval_days = 0
     if fsrs_card.last_review is not None:
-        last_reviewed = fsrs_card.last_review.astimezone(timezone.utc).date().isoformat()
-        due_day = fsrs_card.due.astimezone(timezone.utc).date()
-        last_day = fsrs_card.last_review.astimezone(timezone.utc).date()
+        last_reviewed = fsrs_card.last_review.astimezone(UTC).date().isoformat()
+        due_day = fsrs_card.due.astimezone(UTC).date()
+        last_day = fsrs_card.last_review.astimezone(UTC).date()
         interval_days = max(1, (due_day - last_day).days)
     payload = json.dumps(fsrs_card.to_dict())
     with connection() as conn:
@@ -92,16 +87,16 @@ def _parse_due_date(value: str) -> datetime:
         try:
             parsed = datetime.fromisoformat(value)
             if parsed.tzinfo is None:
-                return parsed.replace(tzinfo=timezone.utc)
+                return parsed.replace(tzinfo=UTC)
             return parsed
         except ValueError:
             pass
         try:
             parsed = date.fromisoformat(value)
-            return datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc)
+            return datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
         except ValueError:
             pass
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _row_to_learning_card(row) -> LearningCard:
@@ -133,11 +128,11 @@ def preview_fsrs_intervals(learning_card: LearningCard) -> dict[int, int]:
     """Return mapping rating (1-4) -> scheduled days until next review (preview only)."""
     fsrs_card = load_fsrs_card(learning_card)
     scheduler = get_scheduler()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     previews: dict[int, int] = {}
     for rating in (Rating.Again, Rating.Hard, Rating.Good, Rating.Easy):
         clone = FsrsCard.from_dict(fsrs_card.to_dict())
         updated, _log = scheduler.review_card(clone, rating)
-        delta = updated.due.astimezone(timezone.utc) - now
+        delta = updated.due.astimezone(UTC) - now
         previews[rating.value] = max(0, int(delta.total_seconds() // 86400))
     return previews

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.config.loader import get_prompt as _get_prompt
 
 

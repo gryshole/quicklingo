@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -24,7 +24,7 @@ from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.quiz.aggregator import get_quiz_pool_stats, list_quiz_eligible_decks
 from quicklingo.learning.tts.audio_service import AudioService
-from quicklingo.learning.tts.prefetch import collect_quiz_tts_texts, collect_question_tts_texts
+from quicklingo.learning.tts.prefetch import collect_question_tts_texts, collect_quiz_tts_texts
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
 from quicklingo.ui.controllers.quiz_session_controller import QuizSessionController
 from quicklingo.ui.widgets.quiz_deck_combo import QuizDeckComboBox
@@ -264,6 +264,20 @@ class QuizSessionWidget(QWidget):
 
         self._stack = QStackedWidget()
 
+        idle_page = self._build_quiz_idle_page()
+        active_page = self._build_quiz_active_page()
+        victory_page = self._build_quiz_victory_page()
+
+        self._stack.addWidget(idle_page)
+        self._stack.addWidget(active_page)
+        self._stack.addWidget(victory_page)
+        layout.addWidget(self._stack, stretch=1)
+
+        self._show_idle()
+        self._deck_ids = self._deck_combo.selected_deck_ids()
+        self._generation_panel.set_deck_scope(self._deck_ids)
+
+    def _build_quiz_idle_page(self) -> QWidget:
         idle_page = QWidget()
         idle_page.setObjectName("quizIdleHost")
         idle_layout = QVBoxLayout(idle_page)
@@ -331,7 +345,9 @@ class QuizSessionWidget(QWidget):
         idle_center.addStretch(1)
         idle_layout.addLayout(idle_center)
         idle_layout.addStretch(1)
+        return idle_page
 
+    def _build_quiz_active_page(self) -> QWidget:
         active_page = QWidget()
         active_layout = QVBoxLayout(active_page)
         active_layout.setContentsMargins(0, 0, 0, 0)
@@ -436,7 +452,9 @@ class QuizSessionWidget(QWidget):
         active_center.addStretch(1)
         active_layout.addLayout(active_center)
         active_layout.addStretch(1)
+        return active_page
 
+    def _build_quiz_victory_page(self) -> QWidget:
         victory_page = QWidget()
         victory_layout = QVBoxLayout(victory_page)
         victory_layout.setContentsMargins(8, 4, 8, 8)
@@ -526,15 +544,7 @@ class QuizSessionWidget(QWidget):
         victory_card_layout.addWidget(self._victory_footer)
         victory_row.addWidget(self._victory_card, stretch=1)
         victory_layout.addLayout(victory_row, stretch=1)
-
-        self._stack.addWidget(idle_page)
-        self._stack.addWidget(active_page)
-        self._stack.addWidget(victory_page)
-        layout.addWidget(self._stack, stretch=1)
-
-        self._show_idle()
-        self._deck_ids = self._deck_combo.selected_deck_ids()
-        self._generation_panel.set_deck_scope(self._deck_ids)
+        return victory_page
 
     @property
     def generation_panel(self) -> QuizGenerationPanel:
@@ -562,10 +572,6 @@ class QuizSessionWidget(QWidget):
             self._generation_panel.set_deck_scope(deck_ids)
             self._refresh_idle()
             self.deck_selection_changed.emit(deck_ids)
-
-    def set_deck_ids(self, deck_ids: frozenset[int] | None) -> None:
-        self._deck_ids = deck_ids
-        self._refresh_idle()
 
     def refresh_preview(self) -> None:
         """Re-count eligible words (idle or victory screen)."""

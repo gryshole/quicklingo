@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import random
 
+from quicklingo.learning.text_normalize import collapse_whitespace
+
 
 def sample_display_choices(
     pool: list[str],
@@ -9,7 +11,7 @@ def sample_display_choices(
     *,
     display_count: int = 4,
 ) -> list[str]:
-    correct_clean = " ".join(correct.split()).strip()
+    correct_clean = collapse_whitespace(correct)
     if not correct_clean:
         return []
     distractors: list[str] = []

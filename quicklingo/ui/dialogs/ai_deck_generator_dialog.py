@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QSpinBox,
@@ -24,7 +23,7 @@ from quicklingo.config.loader import get_directions
 from quicklingo.db import learning
 from quicklingo.features import get_feature
 from quicklingo.i18n import tr
-from quicklingo.learning.ai_deck.models import CEFR_LEVELS, AiDeckParams, TAG_PATTERN
+from quicklingo.learning.ai_deck.models import CEFR_LEVELS, TAG_PATTERN, AiDeckParams
 from quicklingo.learning.ai_deck.topics import (
     CUSTOM_TOPIC_KEY,
     LEXICON_TYPE_KEYS,
@@ -34,7 +33,7 @@ from quicklingo.learning.ai_deck.topics import (
 )
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.ui.app_theme import apply_combo_style
-from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
+from quicklingo.ui.qt_utils import configure_single_line_combo, confirm, reload_combo, warn
 from quicklingo.workers.ai_deck_generator_worker import AiDeckGeneratorWorker
 
 _PAGE_FORM = 0
@@ -344,15 +343,12 @@ class AiDeckGeneratorDialog(QDialog):
         )
 
     def _validate(self, params: AiDeckParams) -> bool:
+        title = tr("learning.ai_deck.dialog_title")
         if not re.fullmatch(TAG_PATTERN, params.normalized_tag()):
-            QMessageBox.warning(self, tr("learning.ai_deck.dialog_title"), tr("learning.ai_deck.tag_invalid"))
+            warn(self, tr("learning.ai_deck.tag_invalid"), title=title)
             return False
         if params.topic_key == CUSTOM_TOPIC_KEY and not params.custom_topic.strip():
-            QMessageBox.warning(
-                self,
-                tr("learning.ai_deck.dialog_title"),
-                tr("learning.ai_deck.custom_topic_required"),
-            )
+            warn(self, tr("learning.ai_deck.custom_topic_required"), title=title)
             return False
         return True
 
@@ -362,23 +358,18 @@ class AiDeckGeneratorDialog(QDialog):
             return
 
         existing = learning.find_deck_by_tag(params.normalized_tag(), params.direction)
-        merge_existing = False
         if existing is not None:
-            answer = QMessageBox.question(
+            if not confirm(
                 self,
-                tr("learning.ai_deck.duplicate_title"),
                 tr("learning.ai_deck.duplicate_message", tag=params.normalized_tag()),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+                title=tr("learning.ai_deck.duplicate_title"),
+            ):
                 return
-            merge_existing = True
             params = self._collect_params(merge_existing=True)
 
         model_entry = get_model_by_index(self._model_combo.currentIndex())
         if self._model_combo.count() == 0:
-            QMessageBox.warning(self, tr("learning.ai_deck.dialog_title"), tr("learning.ai_deck.no_model"))
+            warn(self, tr("learning.ai_deck.no_model"), title=tr("learning.ai_deck.dialog_title"))
             return
 
         feature = get_feature("learning.ai_deck_generator")

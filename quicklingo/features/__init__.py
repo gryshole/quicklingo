@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.features.registry import (
     FEATURE_DEFAULTS,
     feature_changed,

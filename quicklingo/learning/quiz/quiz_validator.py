@@ -6,6 +6,7 @@ from quicklingo.learning.quiz.distractors import (
     distractor_passes_substitution_test,
 )
 from quicklingo.learning.quiz.models import QuizQuestionType
+from quicklingo.learning.text_normalize import collapse_whitespace
 
 
 def validate_choice_candidate(
@@ -17,7 +18,7 @@ def validate_choice_candidate(
     definition: str,
     example_sentence: str = "",
 ) -> bool:
-    word = " ".join(candidate.split()).strip()
+    word = collapse_whitespace(candidate)
     if not word:
         return False
     if word.lower() == correct.lower():
@@ -56,7 +57,7 @@ def filter_valid_choices(
         target_size = int(get_feature("learning.quiz").get("choices_pool_size", 6))
     result: list[str] = []
     seen = {correct.lower()}
-    correct_clean = " ".join(correct.split()).strip()
+    correct_clean = collapse_whitespace(correct)
     if correct_clean:
         result.append(correct_clean)
     for candidate in candidates:

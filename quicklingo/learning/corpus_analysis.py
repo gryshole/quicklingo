@@ -94,7 +94,6 @@ def select_candidates(
                 )
                 break
 
-    direction = deduped[0].direction if deduped else "ua-en"
     top_words = _top_tokens_from_records(deduped, top_n=80)
     for record in deduped:
         if record.id in candidates:

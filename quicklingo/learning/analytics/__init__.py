@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.learning.analytics.models import (
     DailyActivityDto,
     LearningDashboardDto,

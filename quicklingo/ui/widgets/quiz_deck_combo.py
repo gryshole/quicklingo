@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import shiboken6
-
-from PySide6.QtCore import QEvent, QModelIndex, QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import (
+    QEvent,
+    QModelIndex,
+    QObject,
+    QPoint,
+    QRect,
+    QSize,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import (
+    QCloseEvent,
     QColor,
     QCursor,
     QFontMetrics,
@@ -11,6 +20,7 @@ from PySide6.QtGui import (
     QPainter,
     QPen,
     QPixmap,
+    QResizeEvent,
     QStandardItem,
     QStandardItemModel,
 )
@@ -22,8 +32,8 @@ from PySide6.QtWidgets import (
     QListView,
     QSizePolicy,
     QStyle,
-    QStyleOptionViewItem,
     QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
 )
 
@@ -235,7 +245,7 @@ class CheckableComboBox(QFrame):
         if self._qt_alive(viewport):
             viewport.removeEventFilter(self)
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         self._detach_event_filters()
         super().closeEvent(event)
 
@@ -261,7 +271,7 @@ class CheckableComboBox(QFrame):
         self._rebuild_items(list_quiz_eligible_decks())
         self.update_display_text()
 
-    def resizeEvent(self, event) -> None:
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._refresh_label_elide()
 
@@ -299,7 +309,7 @@ class CheckableComboBox(QFrame):
             return
         super().mouseReleaseEvent(event)
 
-    def eventFilter(self, watched, event) -> bool:
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         try:
             popup = getattr(self, "_popup", None)
             list_view = getattr(self, "_list_view", None)
