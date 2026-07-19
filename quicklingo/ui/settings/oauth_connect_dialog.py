@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEventLoop, QThread, Signal, Qt
+from PySide6.QtCore import QEventLoop, Qt, QThread, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog, QWidget
 
 from quicklingo import settings

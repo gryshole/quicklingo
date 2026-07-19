@@ -163,14 +163,12 @@ _HEADING_EMOJI = {
     "Що НЕ синхронізується": "🚫",
     "Де налаштувати": "⚙️",
     "Доступні транспорти": "🚚",
-    "Як користуватися": "👆",
     # Sync — English
     "Why sync": "☁️",
     "What is synced": "✅",
     "What is NOT synced": "🚫",
     "Where to configure": "⚙️",
     "Available transports": "🚚",
-    "How to use it": "👆",
     # Google Drive — Ukrainian
     "Одноразове налаштування в Google Cloud": "☁️",
     "Підключення в QuickLingo": "🔌",

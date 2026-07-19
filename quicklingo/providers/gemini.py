@@ -1,17 +1,24 @@
-import json
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
 from quicklingo import settings
 from quicklingo.i18n.translator import TranslatableError
-from quicklingo.providers.base import TranslationProvider
+from quicklingo.providers.api_errors import format_api_error
+from quicklingo.providers.base import (
+    REQUEST_TIMEOUT,
+    TranslationProvider,
+    iter_sse_json,
+    map_network_errors,
+)
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_STREAM_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent"
 )
-REQUEST_TIMEOUT = 30.0
 
 
 class GeminiProvider(TranslationProvider):
@@ -23,7 +30,7 @@ class GeminiProvider(TranslationProvider):
             return self._api_key
         return settings.get_api_key("gemini")
 
-    def _payload(self, text: str, prompt: str, *, temperature: float) -> dict:
+    def _payload(self, text: str, prompt: str, *, temperature: float) -> dict[str, Any]:
         return {
             "systemInstruction": {"parts": [{"text": prompt}]},
             "contents": [{"role": "user", "parts": [{"text": text}]}],
@@ -46,13 +53,9 @@ class GeminiProvider(TranslationProvider):
         params = {"key": api_key}
         payload = self._payload(text, prompt, temperature=temperature)
 
-        try:
+        with map_network_errors():
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 response = await client.post(url, params=params, json=payload)
-        except httpx.TimeoutException as exc:
-            raise TranslatableError("errors.api_timeout") from exc
-        except httpx.RequestError as exc:
-            raise TranslatableError("errors.network", detail=str(exc)) from exc
 
         if response.status_code in (401, 403):
             raise TranslatableError("errors.gemini_invalid_key")
@@ -61,7 +64,7 @@ class GeminiProvider(TranslationProvider):
         if response.status_code == 429:
             raise TranslatableError("errors.gemini_rate_limit")
         if response.status_code >= 400:
-            detail = _format_api_error(response)
+            detail = format_api_error(response)
             raise TranslatableError(
                 "errors.gemini_api",
                 status=response.status_code,
@@ -90,7 +93,7 @@ class GeminiProvider(TranslationProvider):
         params = {"key": api_key, "alt": "sse"}
         payload = self._payload(text, prompt, temperature=temperature)
 
-        try:
+        with map_network_errors():
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
@@ -111,26 +114,13 @@ class GeminiProvider(TranslationProvider):
                             status=response.status_code,
                             detail=body[:300],
                         )
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data_str = line[5:].strip()
-                        if not data_str:
-                            continue
-                        try:
-                            chunk = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+                    async for chunk in iter_sse_json(response):
                         piece = _extract_gemini_text(chunk)
                         if piece:
                             yield piece
-        except httpx.TimeoutException as exc:
-            raise TranslatableError("errors.api_timeout") from exc
-        except httpx.RequestError as exc:
-            raise TranslatableError("errors.network", detail=str(exc)) from exc
 
 
-def _extract_gemini_text(chunk: dict) -> str:
+def _extract_gemini_text(chunk: dict[str, Any]) -> str:
     try:
         parts = chunk["candidates"][0]["content"]["parts"]
     except (KeyError, IndexError, TypeError):
@@ -140,11 +130,3 @@ def _extract_gemini_text(chunk: dict) -> str:
         if isinstance(part, dict) and part.get("text"):
             text_parts.append(str(part["text"]))
     return "".join(text_parts)
-
-
-def _format_api_error(response: httpx.Response) -> str:
-    try:
-        message = response.json()["error"]["message"]
-    except (json.JSONDecodeError, KeyError, TypeError):
-        message = response.text.strip() or response.reason_phrase
-    return message[:300]

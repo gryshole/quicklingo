@@ -98,11 +98,6 @@ def format_example_pills_html(examples: list[str], highlight_term: str) -> str:
     )
 
 
-def format_ua_en_examples_html(examples: list[str], back: str) -> str:
-    """Backward-compatible alias."""
-    return format_example_pills_html(examples, back)
-
-
 def highlight_term_styled(
     text: str,
     term: str,

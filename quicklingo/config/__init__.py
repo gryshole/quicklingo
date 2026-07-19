@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.config.loader import (
     get_direction,
     get_direction_label,

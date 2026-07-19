@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -21,7 +23,10 @@ from quicklingo.config.store import delete_direction, save_direction
 from quicklingo.config.validation import ValidationError
 from quicklingo.i18n import tr
 from quicklingo.ui.settings.base_tab import SettingsTab
-from quicklingo.ui.settings_theme import configure_directions_tab_widgets, configure_settings_group_box
+from quicklingo.ui.settings_theme import (
+    configure_directions_tab_widgets,
+    configure_settings_group_box,
+)
 
 
 class DirectionsTab(SettingsTab):

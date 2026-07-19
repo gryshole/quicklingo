@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
 

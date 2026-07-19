@@ -175,35 +175,6 @@ class FeatureSettingsEditor(SettingsTab):
         for row in self._hotkey_rows:
             row.set_label_width(width)
 
-    def _add_text_area(
-        self,
-        form: QFormLayout,
-        key: str,
-        field: str,
-        label_key: str,
-        *,
-        reset_factory: Callable[[], str] | None = None,
-    ) -> None:
-        from quicklingo.learning.card_prompt import get_builtin_card_prompt_template
-
-        factory = reset_factory or (lambda: get_builtin_card_prompt_template("ua-en"))
-        column = QVBoxLayout()
-        edit = QPlainTextEdit()
-        edit.setMinimumHeight(120)
-        edit.setPlaceholderText(tr("settings.features.corpus_card_prompt_placeholder"))
-        edit.textChanged.connect(self.mark_dirty)
-        reset_btn = QPushButton(tr("settings.features.corpus_card_prompt_reset"))
-        reset_btn.clicked.connect(lambda: edit.setPlainText(factory()))
-        btn_row = QHBoxLayout()
-        btn_row.addWidget(reset_btn)
-        btn_row.addStretch()
-        column.addWidget(edit)
-        column.addLayout(btn_row)
-        wrap = QWidget()
-        wrap.setLayout(column)
-        self._text_edits[(key, field)] = edit
-        form.addRow(tr(label_key), wrap)
-
     def _add_prompt_field(
         self,
         form: QFormLayout,

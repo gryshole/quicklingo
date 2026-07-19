@@ -17,6 +17,7 @@ from quicklingo.i18n import tr
 from quicklingo.learning.card_display import parse_context
 from quicklingo.learning.quiz.models import QuizQuestionType
 from quicklingo.learning.quiz.quiz_validator import filter_valid_choices
+from quicklingo.ui.qt_utils import warn
 
 
 class QuizQuestionEditDialog(QDialog):
@@ -83,7 +84,7 @@ class QuizQuestionEditDialog(QDialog):
         example_sentence = self._example.toPlainText().strip()
         correct = self._correct.text().strip()
         if not correct:
-            QMessageBox.warning(self, tr("common.error"), tr("learning.quiz_question_edit_no_correct"))
+            warn(self, tr("learning.quiz_question_edit_no_correct"))
             return
 
         validated = filter_valid_choices(

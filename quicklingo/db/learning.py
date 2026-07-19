@@ -5,18 +5,22 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from quicklingo.db.connection import connection, get_connection
+from quicklingo import settings as app_settings
+from quicklingo.db.connection import (
+    connection,
+    fetch_all,
+    in_placeholders,
+    scalar_int,
+)
 from quicklingo.db.sync_schema import (
     new_card_sync_id,
-    touch_card_content_updated_at,
-    touch_card_srs_updated_at,
 )
 from quicklingo.db.tombstones import (
     clear_deck_tombstone,
     record_card_delete,
     record_deck_delete,
 )
-from quicklingo import settings as app_settings
+from quicklingo.learning.text_normalize import normalize_source
 
 QUIZ_QUESTION_TYPES = ("fill_blank", "definition_match", "translation_recall")
 
@@ -62,13 +66,6 @@ class QuizCoverageStats:
     ready: int
     missing_any: int
     missing_by_type: dict[str, int]
-
-
-@dataclass(frozen=True)
-class GlobalQuizCoverageStats:
-    decks_total: int
-    decks_complete: int
-    decks_incomplete: int
 
 
 @dataclass
@@ -485,19 +482,18 @@ def list_cards(deck_id: int) -> list[LearningCard]:
 def list_cards_by_ids(card_ids: list[int]) -> list[LearningCard]:
     if not card_ids:
         return []
-    placeholders = ",".join("?" * len(card_ids))
-    with connection() as conn:
-        rows = conn.execute(
-            f"{_CARD_SELECT} WHERE id IN ({placeholders}) ORDER BY id ASC",
-            card_ids,
-        ).fetchall()
+    placeholders = in_placeholders(len(card_ids))
+    rows = fetch_all(
+        f"{_CARD_SELECT} WHERE id IN ({placeholders}) ORDER BY id ASC",
+        card_ids,
+    )
     return [_row_to_card(row) for row in rows]
 
 
 def get_card_review_stats(card_ids: list[int]) -> dict[int, dict[str, int | str]]:
     if not card_ids:
         return {}
-    placeholders = ",".join("?" * len(card_ids))
+    placeholders = in_placeholders(len(card_ids))
     stats: dict[int, dict[str, int | str]] = {
         card_id: {"review_count": 0, "last_rating": 0, "quiz_correct": 0, "quiz_total": 0}
         for card_id in card_ids
@@ -607,7 +603,7 @@ def upsert_card(
     priority: int = 3,
     source_record_id: int | None = None,
 ) -> int:
-    normalized_front = " ".join(front.split()).lower()
+    normalized_front = normalize_source(front)
     with connection() as conn:
         existing = conn.execute(
             """
@@ -672,7 +668,7 @@ def batch_upsert_cards(
                 source_record_id = int(source_record_id) if source_record_id is not None else None
             except (TypeError, ValueError):
                 source_record_id = None
-            normalized_front = " ".join(front.split()).lower()
+            normalized_front = normalize_source(front)
             existing = conn.execute(
                 """
                 SELECT id FROM learning_cards
@@ -854,11 +850,10 @@ def delete_card(card_id: int) -> bool:
 
 
 def count_cards(deck_id: int) -> int:
-    row = get_connection().execute(
+    return scalar_int(
         "SELECT COUNT(*) AS cnt FROM learning_cards WHERE deck_id = ?",
         (deck_id,),
-    ).fetchone()
-    return int(row["cnt"])
+    )
 
 
 def delete_deck(deck_id: int) -> bool:
@@ -866,22 +861,6 @@ def delete_deck(deck_id: int) -> bool:
         record_deck_delete(deck_id, device_id=app_settings.get_sync_device_id(), conn=conn)
         cursor = conn.execute("DELETE FROM learning_decks WHERE id = ?", (deck_id,))
         return cursor.rowcount > 0
-
-
-def get_due_cards(deck_id: int, *, limit: int = 20) -> list[LearningCard]:
-    today = date.today().isoformat()
-    with connection() as conn:
-        rows = conn.execute(
-            f"""
-            {_CARD_SELECT}
-            WHERE deck_id = ?
-              AND (next_review_date = '' OR next_review_date <= ?)
-            ORDER BY priority DESC, next_review_date ASC, id ASC
-            LIMIT ?
-            """,
-            (deck_id, today, limit),
-        ).fetchall()
-    return [_row_to_card(row) for row in rows]
 
 
 def insert_review_log(
@@ -904,37 +883,6 @@ def insert_review_log(
                 mode,
                 None if was_correct is None else int(was_correct),
                 response_ms,
-            ),
-        )
-
-
-def insert_quiz_log(
-    *,
-    card_id: int | None,
-    question_type: str,
-    selected: str,
-    correct: bool,
-    response_ms: int | None = None,
-    question_id: int | None = None,
-    choices_shown: str = "",
-) -> None:
-    with connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO quiz_logs (
-                card_id, question_type, selected, correct, response_ms,
-                question_id, choices_shown
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                card_id,
-                question_type,
-                selected,
-                int(correct),
-                response_ms,
-                question_id,
-                choices_shown,
             ),
         )
 
@@ -1077,7 +1025,7 @@ def list_quiz_questions_for_cards(
 ) -> list[QuizQuestionRecord]:
     if not card_ids:
         return []
-    placeholders = ",".join("?" for _ in card_ids)
+    placeholders = in_placeholders(len(card_ids))
     params: list[object] = list(card_ids)
     query = f"""
         SELECT id, card_id, question_type, prompt_text, example_sentence,
@@ -1163,15 +1111,13 @@ def get_quiz_question_by_id(question_id: int) -> QuizQuestionRow | None:
 
 
 def count_active_quiz_questions(card_id: int) -> int:
-    with connection() as conn:
-        row = conn.execute(
-            """
-            SELECT COUNT(*) AS cnt FROM quiz_questions
-            WHERE card_id = ? AND status = 'active'
-            """,
-            (card_id,),
-        ).fetchone()
-    return int(row["cnt"]) if row else 0
+    return scalar_int(
+        """
+        SELECT COUNT(*) AS cnt FROM quiz_questions
+        WHERE card_id = ? AND status = 'active'
+        """,
+        (card_id,),
+    )
 
 
 def card_has_full_quiz_coverage(card_id: int) -> bool:
@@ -1204,16 +1150,15 @@ def delete_quiz_questions_for_card(card_id: int) -> None:
 
 
 def list_recent_quiz_question_types(card_id: int, *, limit: int = 10) -> list[str]:
-    with connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT question_type FROM quiz_logs
-            WHERE card_id = ?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (card_id, max(1, limit)),
-        ).fetchall()
+    rows = fetch_all(
+        """
+        SELECT question_type FROM quiz_logs
+        WHERE card_id = ?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (card_id, max(1, limit)),
+    )
     return [str(row["question_type"]) for row in rows]
 
 
@@ -1239,15 +1184,13 @@ def get_quiz_coverage(deck_id: int) -> QuizCoverageStats:
         if not is_quiz_eligible(card, word):
             continue
         eligible_ids.add(card.id)
-        active_types: set[str] = set()
-        with connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT question_type FROM quiz_questions
-                WHERE card_id = ? AND status = 'active'
-                """,
-                (card.id,),
-            ).fetchall()
+        rows = fetch_all(
+            """
+            SELECT question_type FROM quiz_questions
+            WHERE card_id = ? AND status = 'active'
+            """,
+            (card.id,),
+        )
         active_types = {str(row["question_type"]) for row in rows}
         if len(active_types) >= len(QUIZ_QUESTION_TYPES):
             ready += 1
@@ -1266,38 +1209,14 @@ def get_quiz_coverage(deck_id: int) -> QuizCoverageStats:
 
 
 def count_failed_quiz_questions_for_deck(deck_id: int) -> int:
-    with connection() as conn:
-        row = conn.execute(
-            """
-            SELECT COUNT(*) AS cnt
-            FROM quiz_questions qq
-            INNER JOIN learning_cards c ON c.id = qq.card_id
-            WHERE c.deck_id = ? AND qq.status = 'failed'
-            """,
-            (deck_id,),
-        ).fetchone()
-    return int(row["cnt"]) if row else 0
-
-
-def get_global_quiz_coverage() -> GlobalQuizCoverageStats:
-    from quicklingo.config.loader import resolve_learning_direction
-
-    decks = list_decks()
-    quiz_decks = [
-        deck
-        for deck in decks
-        if resolve_learning_direction(deck.direction) in ("ua-en", "en-ua")
-    ]
-    complete = 0
-    for deck in quiz_decks:
-        stats = get_quiz_coverage(deck.id)
-        if stats.eligible == 0 or stats.ready >= stats.eligible:
-            complete += 1
-    total = len(quiz_decks)
-    return GlobalQuizCoverageStats(
-        decks_total=total,
-        decks_complete=complete,
-        decks_incomplete=max(0, total - complete),
+    return scalar_int(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM quiz_questions qq
+        INNER JOIN learning_cards c ON c.id = qq.card_id
+        WHERE c.deck_id = ? AND qq.status = 'failed'
+        """,
+        (deck_id,),
     )
 
 

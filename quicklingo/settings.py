@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import base64
 import json
 from binascii import Error as BinasciiError
+from pathlib import Path
+from typing import Any
 
 from quicklingo.paths import user_data_dir
 
@@ -32,13 +36,10 @@ API_PROVIDERS: tuple[str, ...] = (
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 
 
-DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
-
-
 class SettingsStore:
     """JSON settings file with load/save/update helpers."""
 
-    def load(self) -> dict:
+    def load(self) -> dict[str, Any]:
         path = _settings_path()
         if not path.is_file():
             return {}
@@ -47,13 +48,13 @@ class SettingsStore:
         except (json.JSONDecodeError, OSError):
             return {}
 
-    def save(self, data: dict) -> None:
+    def save(self, data: dict[str, Any]) -> None:
         _settings_path().write_text(
             json.dumps(data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
 
-    def update(self, patch: dict) -> None:
+    def update(self, patch: dict[str, Any]) -> None:
         data = self.load()
         data.update(patch)
         self.save(data)
@@ -62,16 +63,36 @@ class SettingsStore:
 _store = SettingsStore()
 
 
-def _settings_path():
+def _settings_path() -> Path:
     return user_data_dir() / _SETTINGS_FILE
 
 
-def _load() -> dict:
+def _load() -> dict[str, Any]:
     return _store.load()
 
 
-def _save(data: dict) -> None:
+def _save(data: dict[str, Any]) -> None:
     _store.save(data)
+
+
+def _get_str(key: str, default: str = "") -> str:
+    value = _load().get(key, default)
+    return value if isinstance(value, str) else default
+
+
+def _set_str(key: str, value: str) -> None:
+    _store.update({key: value.strip()})
+
+
+def _get_secret(key: str) -> str:
+    value = _load().get(key, "")
+    if not isinstance(value, str):
+        return ""
+    return _decode_api_key_value(value.strip())
+
+
+def _set_secret(key: str, value: str) -> None:
+    _store.update({key: _encode_api_key_value(value.strip())})
 
 
 def get_zoom_steps() -> tuple[int, int]:
@@ -108,7 +129,7 @@ def save_window_geometry_state(state: bytes) -> None:
     _save(data)
 
 
-def get_tool_window_state(window_id: str) -> dict:
+def get_tool_window_state(window_id: str) -> dict[str, Any]:
     data = _load()
     states = data.get("tool_windows")
     if not isinstance(states, dict):
@@ -117,7 +138,7 @@ def get_tool_window_state(window_id: str) -> dict:
     return dict(state) if isinstance(state, dict) else {}
 
 
-def save_tool_window_state(window_id: str, patch: dict) -> None:
+def save_tool_window_state(window_id: str, patch: dict[str, Any]) -> None:
     data = _load()
     states = data.get("tool_windows")
     if not isinstance(states, dict):
@@ -152,10 +173,6 @@ def save_active_profiles(active_profiles: dict[str, str]) -> None:
     data = _load()
     data["active_profiles"] = active_profiles
     _save(data)
-
-
-def get_active_profile(direction_id: str) -> str:
-    return get_active_profiles().get(direction_id, "detailed")
 
 
 def get_ui_preferences() -> tuple[str | None, str | None]:
@@ -220,11 +237,7 @@ def get_api_key(provider: str) -> str:
     key_name = API_KEY_FIELDS.get(provider)
     if not key_name:
         return ""
-    data = _load()
-    value = data.get(key_name, "")
-    if not isinstance(value, str):
-        return ""
-    return _decode_api_key_value(value.strip())
+    return _get_secret(key_name)
 
 
 def _decode_api_key_value(value: str) -> str:
@@ -254,31 +267,13 @@ def get_api_keys() -> dict[str, str]:
     return {provider: get_api_key(provider) for provider in API_KEY_FIELDS}
 
 
-def save_api_keys(
-    *,
-    groq: str = "",
-    gemini: str = "",
-    openrouter: str = "",
-    mistral: str = "",
-    ollama: str = "",
-    deepseek: str = "",
-    openai: str = "",
-    anthropic: str = "",
-    pixabay: str = "",
-) -> None:
+def save_api_keys(**keys: str) -> None:
+    unknown = set(keys) - set(API_KEY_FIELDS)
+    if unknown:
+        raise ValueError(f"Unknown API providers: {sorted(unknown)}")
     data = _load()
-    for provider, value in (
-        ("groq", groq),
-        ("gemini", gemini),
-        ("openrouter", openrouter),
-        ("mistral", mistral),
-        ("ollama", ollama),
-        ("deepseek", deepseek),
-        ("openai", openai),
-        ("anthropic", anthropic),
-        ("pixabay", pixabay),
-    ):
-        data[API_KEY_FIELDS[provider]] = _encode_api_key_value(value.strip())
+    for provider, field in API_KEY_FIELDS.items():
+        data[field] = _encode_api_key_value(keys.get(provider, "").strip())
     _save(data)
 
 
@@ -360,7 +355,7 @@ def migrate_api_keys_to_encrypted() -> None:
         _save(data)
 
 
-def get_features_raw() -> dict:
+def get_features_raw() -> dict[str, Any]:
     data = _load()
     stored = data.get("features")
     return stored if isinstance(stored, dict) else {}
@@ -406,24 +401,6 @@ def get_learning_show_onboarding() -> bool:
 
 def set_learning_show_onboarding(show: bool) -> None:
     _store.update({"learning_show_onboarding": show})
-
-
-def get_learning_flow_hint_dismissed() -> bool:
-    data = _load()
-    return bool(data.get("learning_flow_hint_dismissed", False))
-
-
-def set_learning_flow_hint_dismissed(dismissed: bool) -> None:
-    _store.update({"learning_flow_hint_dismissed": dismissed})
-
-
-def get_learning_flow_cycle_completed() -> bool:
-    data = _load()
-    return bool(data.get("learning_flow_cycle_completed", False))
-
-
-def set_learning_flow_cycle_completed(completed: bool) -> None:
-    _store.update({"learning_flow_cycle_completed": completed})
 
 
 def get_sync_device_id() -> str:
@@ -496,107 +473,75 @@ def get_sync_oauth_account(provider: str) -> str:
 
 
 def get_sync_google_client_id() -> str:
-    data = _load()
-    value = data.get("sync_google_client_id", "")
-    return value if isinstance(value, str) else ""
+    return _get_str("sync_google_client_id")
 
 
 def save_sync_google_client_id(value: str) -> None:
-    _store.update({"sync_google_client_id": value.strip()})
+    _set_str("sync_google_client_id", value)
 
 
 def get_sync_google_client_secret() -> str:
-    data = _load()
-    value = data.get("sync_google_client_secret", "")
-    if not isinstance(value, str):
-        return ""
-    return _decode_api_key_value(value.strip())
+    return _get_secret("sync_google_client_secret")
 
 
 def save_sync_google_client_secret(value: str) -> None:
-    data = _load()
-    data["sync_google_client_secret"] = _encode_api_key_value(value.strip())
-    _save(data)
+    _set_secret("sync_google_client_secret", value)
 
 
 def get_sync_dropbox_app_key() -> str:
-    data = _load()
-    value = data.get("sync_dropbox_app_key", "")
-    return value if isinstance(value, str) else ""
+    return _get_str("sync_dropbox_app_key")
 
 
 def save_sync_dropbox_app_key(value: str) -> None:
-    _store.update({"sync_dropbox_app_key": value.strip()})
+    _set_str("sync_dropbox_app_key", value)
 
 
 def get_sync_dropbox_app_secret() -> str:
-    data = _load()
-    value = data.get("sync_dropbox_app_secret", "")
-    if not isinstance(value, str):
-        return ""
-    return _decode_api_key_value(value.strip())
+    return _get_secret("sync_dropbox_app_secret")
 
 
 def save_sync_dropbox_app_secret(value: str) -> None:
-    data = _load()
-    data["sync_dropbox_app_secret"] = _encode_api_key_value(value.strip())
-    _save(data)
+    _set_secret("sync_dropbox_app_secret", value)
 
 
 def get_sync_onedrive_client_id() -> str:
-    data = _load()
-    value = data.get("sync_onedrive_client_id", "")
-    return value if isinstance(value, str) else ""
+    return _get_str("sync_onedrive_client_id")
 
 
 def save_sync_onedrive_client_id(value: str) -> None:
-    _store.update({"sync_onedrive_client_id": value.strip()})
+    _set_str("sync_onedrive_client_id", value)
 
 
 def get_sync_webdav_url() -> str:
-    data = _load()
-    value = data.get("sync_webdav_url", "")
-    return value if isinstance(value, str) else ""
+    return _get_str("sync_webdav_url")
 
 
 def save_sync_webdav_url(url: str) -> None:
-    _store.update({"sync_webdav_url": url.strip()})
+    _set_str("sync_webdav_url", url)
 
 
 def get_sync_webdav_username() -> str:
-    data = _load()
-    value = data.get("sync_webdav_username", "")
-    return value if isinstance(value, str) else ""
+    return _get_str("sync_webdav_username")
 
 
 def save_sync_webdav_username(username: str) -> None:
-    _store.update({"sync_webdav_username": username.strip()})
+    _set_str("sync_webdav_username", username)
 
 
 def get_sync_webdav_password() -> str:
-    data = _load()
-    value = data.get("sync_webdav_password", "")
-    if not isinstance(value, str):
-        return ""
-    return _decode_api_key_value(value.strip())
+    return _get_secret("sync_webdav_password")
 
 
 def save_sync_webdav_password(password: str) -> None:
-    data = _load()
-    data["sync_webdav_password"] = _encode_api_key_value(password.strip())
-    _save(data)
+    _set_secret("sync_webdav_password", password)
 
 
 def get_sync_last_sync_at() -> str:
-    data = _load()
-    value = data.get("sync_last_sync_at", "")
-    return value if isinstance(value, str) else ""
+    return _get_str("sync_last_sync_at")
 
 
 def get_sync_last_sync_status() -> str:
-    data = _load()
-    value = data.get("sync_last_sync_status", "")
-    return value if isinstance(value, str) else ""
+    return _get_str("sync_last_sync_status")
 
 
 def save_sync_status(*, last_sync_at: str, last_sync_status: str) -> None:

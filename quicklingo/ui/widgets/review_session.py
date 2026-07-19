@@ -28,15 +28,18 @@ from quicklingo.learning.card_display import (
     parse_context,
     phonetic_display_text,
 )
+from quicklingo.learning.cram_queue import cram_hard_cards, cram_train_cards
+from quicklingo.learning.fsrs_review import preview_fsrs_intervals
 from quicklingo.learning.image_resolver import resolve_image_path
+from quicklingo.learning.review_queue import count_due_cards
 from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch import collect_review_card_tts_texts, collect_review_tts_texts
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
+from quicklingo.ui.controllers.review_session_controller import (
+    ReviewSessionController,
+    SessionStats,
+)
 from quicklingo.workers.card_image_worker import CardImageFetchWorker, CardImagePrefetchWorker
-from quicklingo.learning.cram_queue import cram_hard_cards, cram_train_cards
-from quicklingo.learning.fsrs_review import preview_fsrs_intervals
-from quicklingo.learning.review_queue import count_due_cards
-from quicklingo.ui.controllers.review_session_controller import ReviewSessionController, SessionStats
 
 _PHONETIC_STYLE = "color: #64748b;"
 _ANSWER_PHONETIC_STYLE = _PHONETIC_STYLE
@@ -360,6 +363,21 @@ class ReviewSessionWidget(QWidget):
 
         self._card_stack = QStackedWidget()
 
+        idle_page = self._build_idle_page()
+
+        active_page = self._build_active_page()
+
+        self._card_stack.addWidget(idle_page)
+        self._card_stack.addWidget(active_page)
+        card_outer.addWidget(self._card_stack)
+
+        self._build_summary_and_controls(layout)
+
+        self._setup_review_hotkeys()
+        self.retranslate_ui()
+        self._show_idle_ui()
+
+    def _build_idle_page(self) -> QWidget:
         idle_page = QWidget()
         idle_layout = QVBoxLayout(idle_page)
         self._idle_stack = QStackedWidget()
@@ -411,7 +429,9 @@ class ReviewSessionWidget(QWidget):
         self._idle_stack.addWidget(ready_widget)
         self._idle_stack.addWidget(done_widget)
         idle_layout.addWidget(self._idle_stack)
+        return idle_page
 
+    def _build_active_page(self) -> QWidget:
         active_page = QWidget()
         active_outer = QHBoxLayout(active_page)
         active_outer.setContentsMargins(0, 0, 0, 0)
@@ -645,11 +665,9 @@ class ReviewSessionWidget(QWidget):
 
         active_outer.addWidget(self._main_column, stretch=0)
         active_outer.addStretch(1)
+        return active_page
 
-        self._card_stack.addWidget(idle_page)
-        self._card_stack.addWidget(active_page)
-        card_outer.addWidget(self._card_stack)
-
+    def _build_summary_and_controls(self, layout: QVBoxLayout) -> None:
         self._summary_label = QLabel()
         self._summary_label.setWordWrap(True)
         self._summary_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -708,10 +726,6 @@ class ReviewSessionWidget(QWidget):
         grade_row.addWidget(self._easy_btn)
         grade_row.addStretch()
         layout.addWidget(self._grade_widget)
-
-        self._setup_review_hotkeys()
-        self.retranslate_ui()
-        self._show_idle_ui()
 
     def _setup_review_hotkeys(self) -> None:
         """Hotkeys only while this widget (or a child) has focus — not other tabs."""

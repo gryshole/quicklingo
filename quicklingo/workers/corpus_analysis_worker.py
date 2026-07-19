@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import asyncio
 import json
 
 from PySide6.QtCore import QThread, Signal
 
 from quicklingo.db import learning
+from quicklingo.i18n import tr
 from quicklingo.learning.card_prompt import enrich_card_fields
 from quicklingo.learning.corpus_analysis import (
     AnalysisSummary,
@@ -15,7 +18,6 @@ from quicklingo.learning.corpus_analysis import (
 )
 from quicklingo.learning.deck_corpus import pending_corpus_records
 from quicklingo.learning.difficult_words import compute_difficult_words
-from quicklingo.i18n import tr
 from quicklingo.logging.ai_requests import ai_request_scope
 from quicklingo.providers.registry import ModelEntry
 

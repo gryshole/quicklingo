@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QKeyEvent, QKeySequence, QShortcut, QWheelEvent
 from PySide6.QtWidgets import QLineEdit, QTextEdit
@@ -241,12 +243,6 @@ class ZoomableTextEdit(QTextEdit):
         if self._result_plain is not None:
             return bool(self._result_plain.strip())
         return False
-
-    def clear_result(self) -> None:
-        self._result_html = None
-        self._result_plain = None
-        self.clear()
-        self.result_changed.emit()
 
     def set_result_html(self, html: str) -> None:
         self._result_html = html

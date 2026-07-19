@@ -1,27 +1,28 @@
-import sys
+from __future__ import annotations
 
-import quicklingo.qt_env  # noqa: F401 — before QtMultimedia
+import sys
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
+import quicklingo.qt_env  # noqa: F401 — before QtMultimedia
 from quicklingo.app_icon import configure_windows_app_id, load_app_icon
-from quicklingo.qt_env import apply_qt_logging_filters
 from quicklingo.db import history
 from quicklingo.features import feature_changed, is_enabled, save_features
 from quicklingo.i18n import init_language, language_changed
 from quicklingo.input.hotkeys import HotkeyManager
 from quicklingo.input.tutor_capture import TutorCaptureManager
-from quicklingo.input.tutor_capture_log import log_info, log_file_path
+from quicklingo.input.tutor_capture_log import log_file_path, log_info
+from quicklingo.qt_env import apply_qt_logging_filters
 from quicklingo.ui.app_theme import disable_combo_popup_animation
 from quicklingo.ui.main_window import MainWindow
 from quicklingo.ui.qt_utils import raise_window
 from quicklingo.ui.tray import TrayManager
 
-_app: "QuickLingoApp | None" = None
+_app: QuickLingoApp | None = None
 
 
-def get_app() -> "QuickLingoApp | None":
+def get_app() -> QuickLingoApp | None:
     return _app
 
 

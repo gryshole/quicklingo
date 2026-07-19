@@ -11,7 +11,6 @@ from quicklingo.db import learning
 from quicklingo.features import get_feature, is_enabled
 from quicklingo.learning.answer_check import AnswerResult, check_answer
 from quicklingo.learning.cram_queue import build_cram_queue
-from quicklingo.learning.pronunciation import ensure_card_pronunciation, resolve_audio_path
 from quicklingo.learning.review_queue import (
     SessionQueue,
     build_session_queue,
@@ -62,10 +61,6 @@ class ReviewSessionController:
         return self._session_active
 
     @property
-    def study_mode(self) -> StudyMode:
-        return self._study_mode
-
-    @property
     def is_cram(self) -> bool:
         return self._study_mode == "cram"
 
@@ -86,10 +81,6 @@ class ReviewSessionController:
     @property
     def revealed(self) -> bool:
         return self._revealed
-
-    @property
-    def typing_result(self) -> AnswerResult | None:
-        return self._typing_result
 
     @property
     def queue_position(self) -> int:
@@ -171,15 +162,6 @@ class ReviewSessionController:
         self._stats.answered += 1
         return result
 
-    def suggested_rating(self) -> int:
-        if self._typing_result == AnswerResult.CORRECT:
-            return 3
-        if self._typing_result == AnswerResult.PARTIAL:
-            return 2
-        if self._typing_result == AnswerResult.WRONG:
-            return 1
-        return 3
-
     def submit_grade(self, rating_value: int) -> bool:
         card = self.current_card()
         if card is None or not self._session_active:
@@ -235,19 +217,3 @@ class ReviewSessionController:
                 counts[bucket] += 1
         return counts
 
-    def ensure_pronunciation(self) -> str | None:
-        card = self.current_card()
-        if card is None or not is_enabled("learning.tts_enabled"):
-            return None
-        updated = ensure_card_pronunciation(card.id, direction=self._direction)
-        if updated is None:
-            return None
-        path = resolve_audio_path(updated)
-        return str(path) if path else None
-
-    def audio_path_for_current(self) -> str | None:
-        card = self.current_card()
-        if card is None:
-            return None
-        path = resolve_audio_path(card)
-        return str(path) if path else None

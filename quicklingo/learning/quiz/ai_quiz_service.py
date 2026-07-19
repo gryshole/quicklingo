@@ -19,9 +19,9 @@ from quicklingo.learning.quiz.quiz_prompts import (
     CardQuizContext,
     build_choices_user_prompt,
     build_regen_extra_context,
+    get_quiz_system_prompt,
     is_custom_quiz_prompt,
     parse_choices_response,
-    get_quiz_system_prompt,
 )
 from quicklingo.learning.quiz.quiz_validator import filter_valid_choices, pools_overlap_too_much
 from quicklingo.learning.tts.text import prepare_text_for_tts

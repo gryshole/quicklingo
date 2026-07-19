@@ -12,7 +12,6 @@ from quicklingo.config.loader import reload_config
 from quicklingo.config.validation import (
     ValidationError,
     check_direction_deletable,
-    check_formatter_deletable,
     check_profile_deletable,
     prompt_path,
     validate_id,
@@ -65,13 +64,6 @@ def _save_entity_json(
         if old_path.exists() and old_path != path:
             old_path.unlink(missing_ok=True)
     _atomic_write_json(path, data)
-    reload_config()
-
-
-def _delete_entity_json(subdir: str, entity_id: str) -> None:
-    path = _entity_path(subdir, entity_id)
-    if path.is_file():
-        path.unlink()
     reload_config()
 
 
@@ -228,7 +220,6 @@ def save_profile(
 
 def delete_profile(profile_id: str) -> None:
     validate_id(profile_id)
-    from quicklingo.config.loader import get_all_directions
 
     check_profile_deletable(profile_id)
 
@@ -254,30 +245,6 @@ def delete_profile(profile_id: str) -> None:
     if changed:
         settings.save_active_profiles(active)
 
-    reload_config()
-
-
-def remove_direction_from_profile(profile_id: str, direction_id: str) -> None:
-    validate_id(profile_id)
-    validate_id(direction_id)
-    path = _root() / "profiles" / f"{profile_id}.json"
-    if not path.is_file():
-        raise ValidationError("validation.profile_not_found", profile_id=profile_id)
-    data = _read_json_file(path)
-    prompts = dict(data.get("prompts", {}))
-    formatters = dict(data.get("formatters", {}))
-    if direction_id not in prompts:
-        return
-    if len(prompts) <= 1:
-        raise ValidationError("validation.profile_need_direction")
-    rel = prompts.pop(direction_id)
-    formatters.pop(direction_id, None)
-    prompt_file = _root() / rel
-    if prompt_file.is_file():
-        prompt_file.unlink(missing_ok=True)
-    data["prompts"] = prompts
-    data["formatters"] = formatters
-    _atomic_write_json(path, data)
     reload_config()
 
 
@@ -327,62 +294,3 @@ def read_prompt_body(profile_id: str, direction_id: str) -> str:
     if profile and direction_id in profile.prompts:
         return profile.prompts[direction_id]
     return ""
-
-
-# --- Formatters ---
-
-
-def save_formatter(
-    *,
-    id: str,
-    name: str,
-    engine: str,
-    rules: list[dict[str, Any]] | None = None,
-    old_id: str | None = None,
-) -> None:
-    validate_id(id)
-    if not name.strip():
-        raise ValidationError("validation.empty_formatter_name")
-    if not engine.strip():
-        raise ValidationError("validation.empty_formatter_engine")
-
-    if old_id and old_id != id:
-        validate_id(old_id)
-        _rename_formatter(old_id, id)
-
-    data: dict[str, Any] = {
-        "id": id,
-        "name": name.strip(),
-        "engine": engine.strip(),
-    }
-    if rules is not None:
-        data["rules"] = rules
-
-    _save_entity_json("formatters", id, data, old_id=old_id)
-
-
-def delete_formatter(formatter_id: str) -> None:
-    validate_id(formatter_id)
-    check_formatter_deletable(formatter_id)
-    _delete_entity_json("formatters", formatter_id)
-
-
-def _rename_formatter(old_id: str, new_id: str) -> None:
-    for profile_path in (_root() / "profiles").glob("*.json"):
-        data = _read_json_file(profile_path)
-        formatters = dict(data.get("formatters", {}))
-        changed = False
-        for direction_id, fid in formatters.items():
-            if fid == old_id:
-                formatters[direction_id] = new_id
-                changed = True
-        if changed:
-            data["formatters"] = formatters
-            _atomic_write_json(profile_path, data)
-
-    old_path = _root() / "formatters" / f"{old_id}.json"
-    if old_path.is_file() and old_id != new_id:
-        data = _read_json_file(old_path)
-        data["id"] = new_id
-        _atomic_write_json(_root() / "formatters" / f"{new_id}.json", data)
-        old_path.unlink(missing_ok=True)

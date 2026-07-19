@@ -200,7 +200,7 @@ class LearningOnboardingDialog(QDialog):
             (tr("learning.onboarding.step3_title"), tr("learning.onboarding.step3_body")),
         ]
         self._slide_titles = [title for title, _body in slides]
-        for index, (title, body) in enumerate(slides):
+        for index, (_title, body) in enumerate(slides):
             self._slide_bodies[index].setText(_format_body(body))
         self._title.setText(self._slide_titles[self._index])
         self._apply_uniform_height()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import json
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 
@@ -92,7 +91,3 @@ def request_with_auth(
             response=response,
         )
     return response
-
-
-def encode_json(data: dict[str, object]) -> bytes:
-    return json.dumps(data).encode("utf-8")

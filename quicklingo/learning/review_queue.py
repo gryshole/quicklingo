@@ -113,15 +113,6 @@ def count_due_cards(deck_id: int) -> int:
     return count
 
 
-def count_due_today_all_decks() -> int:
-    total = 0
-    from quicklingo.db import learning
-
-    for deck in learning.list_decks():
-        total += count_due_cards(deck.id)
-    return total
-
-
 def english_side_text(card: LearningCard, direction: str) -> str:
     if direction.startswith("en"):
         return card.front.strip()

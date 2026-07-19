@@ -5,8 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QFontMetrics, QColor, QPalette
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPalette
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
 
 APP_BG = "#f8fafc"
 CARD_BG = "#ffffff"
@@ -24,9 +30,7 @@ ERROR = "#dc2626"
 RADIUS_CARD = "12px"
 RADIUS_CONTROL = "8px"
 
-SETTINGS_LABEL_WIDTH = 108  # fallback until labels are measured
 SETTINGS_FORM_LABEL_MIN_WIDTH = 72
-COMPACT_ROW_SPACING = 8
 COMPACT_SECTION_SPACING = 6
 COMPACT_SECTION_MARGINS = (12, 12, 12, 12)
 SETTINGS_CONTROL_HEIGHT = 28
@@ -40,7 +44,7 @@ def _ensure_chevron_png() -> Path:
         return _CHEVRON_PNG
 
     from PySide6.QtCore import QPointF
-    from PySide6.QtGui import QGuiApplication, QColor, QPainter, QPen, QPixmap
+    from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPixmap
 
     if QGuiApplication.instance() is None:
         raise RuntimeError("QApplication must exist before building combo chevron icon")
@@ -376,7 +380,7 @@ GLOBAL_BTN_ON = (
 
 GLOBAL_BTN_UNSUPPORTED = (
     GLOBAL_BTN_BASE
-    + f" border-color: #c8c8c8; background: #f3f4f6; color: #94a3b8; }}"
+    + " border-color: #c8c8c8; background: #f3f4f6; color: #94a3b8; }"
 )
 
 STATUS_LABEL_STYLE = "color: #555555; padding-left: 8px; padding-bottom: 4px;"
@@ -439,19 +443,6 @@ def align_settings_form_labels(labels: list[QLabel]) -> None:
     sync_compact_form_label_width(labels)
 
 
-def compact_form_row(label: QLabel, widget: QWidget) -> QHBoxLayout:
-    row = QHBoxLayout()
-    row.setContentsMargins(0, 0, 0, 0)
-    row.setSpacing(COMPACT_ROW_SPACING)
-    label.setSizePolicy(
-        QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
-    )
-    label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-    row.addWidget(label)
-    row.addWidget(widget, stretch=1)
-    return row
-
-
 def apply_compact_form_label_style(label: QLabel) -> None:
     label.setStyleSheet(COMPACT_FORM_LABEL_STYLE)
 
@@ -464,5 +455,3 @@ def apply_combo_style(combo: QComboBox) -> None:
     combo.setStyleSheet(_combo_style())
 
 
-def apply_secondary_btn_style(button: QWidget) -> None:
-    button.setStyleSheet(SECONDARY_BTN_STYLE)

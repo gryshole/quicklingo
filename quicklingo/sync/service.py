@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 from quicklingo import settings
-from quicklingo.sync.manifest import read_manifest, write_manifest
+from quicklingo.sync.manifest import write_manifest
 from quicklingo.sync.merge import compute_upload_stats, merge_remote_into_local
 from quicklingo.sync.models import SyncManifest, SyncResult, file_sha256, utc_now_iso
 from quicklingo.sync.presync_backup import create_presync_backup

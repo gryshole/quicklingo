@@ -6,8 +6,6 @@ import re
 
 from quicklingo.learning.card_prompt import _content_tokens, texts_too_similar
 
-_MIN_DISTRACTORS = 3
-_MAX_DISTRACTORS = 5
 _CYRILLIC = re.compile(r"[\u0400-\u04FF]")
 _DEFINITION_PREFIX = re.compile(r"(?i)^definition:\s*")
 _DISTRACTOR_SIMILARITY_THRESHOLD = 0.35
@@ -170,25 +168,6 @@ def distractor_passes_substitution_test(
         if distractor_fits_example(term, distractor, example):
             return False
     return True
-
-
-def filter_valid_distractors(
-    term: str,
-    distractors: list[str],
-    examples: list[str],
-    definition: str = "",
-) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = {term.lower()}
-    for word in distractors:
-        key = word.lower()
-        if key in seen:
-            continue
-        if not distractor_passes_substitution_test(term, word, examples, definition):
-            continue
-        seen.add(key)
-        result.append(word)
-    return result
 
 
 def fallback_quiz_distractors(

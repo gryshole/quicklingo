@@ -204,12 +204,6 @@ class QuizGenerationPanel(QFrame):
         if not self.is_busy():
             self.refresh()
 
-    def reload_deck_combo(self, *, preferred_deck_id: int | None = None) -> None:
-        if preferred_deck_id is not None:
-            self.set_deck_id(preferred_deck_id)
-            return
-        self.set_deck_scope(self._scope_deck_ids)
-
     def _reload_model_combo(self) -> None:
         current = self._model_combo.currentData() if self._model_combo.count() else None
         reload_combo(
@@ -375,6 +369,3 @@ class QuizGenerationPanel(QFrame):
 
     def is_busy(self) -> bool:
         return self._quiz_worker is not None or self._fix_worker is not None
-
-    def is_generating(self) -> bool:
-        return self.is_busy()

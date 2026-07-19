@@ -230,6 +230,21 @@ class CreateDeckTabWidget(QWidget):
         form_layout.setContentsMargins(0, 0, 0, 0)
         form_layout.setSpacing(12)
 
+        form_layout.addWidget(self._build_source_card())
+        form_layout.addWidget(self._build_preview_card(), stretch=1)
+        form_layout.addLayout(self._build_action_row())
+        self._build_form_footer(form_layout)
+
+        root.addWidget(self._form_host, stretch=1)
+
+        self._direction_combo.currentIndexChanged.connect(self._on_direction_changed)
+        self._tag_combo.currentIndexChanged.connect(self._refresh_state)
+        self._starred_only.toggled.connect(self._refresh_preview)
+        self.reload_model_combo()
+        self.retranslate_ui()
+        self._reload_tags()
+
+    def _build_source_card(self) -> QFrame:
         source_card = QFrame()
         source_card.setObjectName("createDeckSourceCard")
         source_layout = QVBoxLayout(source_card)
@@ -269,8 +284,9 @@ class CreateDeckTabWidget(QWidget):
         source_layout.addWidget(self._source_title)
         source_layout.addWidget(self._source_hint)
         source_layout.addLayout(grid)
-        form_layout.addWidget(source_card)
+        return source_card
 
+    def _build_preview_card(self) -> QFrame:
         preview_card = QFrame()
         preview_card.setObjectName("createDeckPreviewCard")
         preview_layout = QVBoxLayout(preview_card)
@@ -309,8 +325,9 @@ class CreateDeckTabWidget(QWidget):
         self._preview_table.setColumnWidth(_COL_DELETE, _DELETE_COL_WIDTH)
         preview_body.addWidget(self._preview_table, stretch=1)
         preview_layout.addLayout(preview_body, stretch=1)
-        form_layout.addWidget(preview_card, stretch=1)
+        return preview_card
 
+    def _build_action_row(self) -> QHBoxLayout:
         action_row = QHBoxLayout()
         action_row.setContentsMargins(_FORM_ACTION_INSET, 0, 0, 0)
         action_row.setSpacing(8)
@@ -324,8 +341,9 @@ class CreateDeckTabWidget(QWidget):
         action_row.addWidget(self._create_btn)
         action_row.addWidget(self._cancel_btn)
         action_row.addStretch()
-        form_layout.addLayout(action_row)
+        return action_row
 
+    def _build_form_footer(self, form_layout: QVBoxLayout) -> None:
         hint_row = QHBoxLayout()
         hint_row.setContentsMargins(_FORM_ACTION_INSET, 0, 0, 0)
         self._create_hint = QLabel()
@@ -350,15 +368,6 @@ class CreateDeckTabWidget(QWidget):
         self._status_label.setWordWrap(True)
         status_row.addWidget(self._status_label)
         form_layout.addLayout(status_row)
-
-        root.addWidget(self._form_host, stretch=1)
-
-        self._direction_combo.currentIndexChanged.connect(self._on_direction_changed)
-        self._tag_combo.currentIndexChanged.connect(self._refresh_state)
-        self._starred_only.toggled.connect(self._refresh_preview)
-        self.reload_model_combo()
-        self.retranslate_ui()
-        self._reload_tags()
 
     def _init_direction_combo(self) -> None:
         self._direction_combo.clear()
