@@ -83,7 +83,7 @@ class TranslatableError(Exception):
         super().__init__(key)
 
     def __str__(self) -> str:
-        return translate_message(self.key, **self.params)
+        return tr(self.key, **self.params)
 
 
 def translate_message(message: str, **params: object) -> str:

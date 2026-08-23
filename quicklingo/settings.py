@@ -293,18 +293,19 @@ def save_ollama_base_url(url: str) -> None:
 
 
 def get_main_model_ids() -> list[str]:
-    _defaults = (
-        "llama-3.1-8b-instant",
-        "llama-3.3-70b-versatile",
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-    )
+    from quicklingo.providers.registry import DEFAULT_MAIN_MODEL_IDS, migrate_main_model_ids
+
     data = _load()
     stored = data.get("main_model_ids")
     if not isinstance(stored, list):
-        return list(_defaults)
+        return list(DEFAULT_MAIN_MODEL_IDS)
     ids = [item for item in stored if isinstance(item, str) and item.strip()]
-    return ids if ids else list(_defaults)
+    if not ids:
+        return list(DEFAULT_MAIN_MODEL_IDS)
+    migrated = migrate_main_model_ids(ids)
+    if migrated != ids:
+        save_main_model_ids(migrated)
+    return migrated
 
 
 def save_main_model_ids(

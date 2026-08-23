@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import date
 
-from fsrs import Card as FsrsCard
 from fsrs import State
 
 from quicklingo.db.learning import LearningCard, list_cards
+from quicklingo.learning.fsrs_review import card_fsrs_state
 
 
 @dataclass
@@ -47,13 +46,7 @@ def card_bucket(card: LearningCard) -> str:
 
 
 def _fsrs_state(card: LearningCard) -> State | None:
-    raw = card.fsrs_state or ""
-    if not raw.strip():
-        return None
-    try:
-        return FsrsCard.from_dict(json.loads(raw)).state
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return None
+    return card_fsrs_state(card)
 
 
 def build_session_queue(

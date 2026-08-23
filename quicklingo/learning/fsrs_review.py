@@ -24,6 +24,52 @@ def get_scheduler() -> Scheduler:
     return _scheduler
 
 
+def parse_fsrs_card(raw: str, *, default_card_id: int) -> FsrsCard | None:
+    """Parse stored FSRS JSON (current or legacy py-fsrs format)."""
+    if not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    if "card_id" not in data:
+        data = {**data, "card_id": default_card_id}
+
+    if "step" in data:
+        try:
+            return FsrsCard.from_dict(data)
+        except (TypeError, ValueError, KeyError):
+            pass
+
+    if "state" not in data:
+        return None
+    try:
+        due = _parse_iso_datetime(data.get("due")) or datetime.now(UTC)
+        last_review = _parse_iso_datetime(data.get("last_review"))
+        stability = data.get("stability")
+        difficulty = data.get("difficulty")
+        step = data.get("step", data.get("learning_steps"))
+        return FsrsCard(
+            card_id=int(data.get("card_id", default_card_id)),
+            state=State(int(data["state"])),
+            step=int(step) if step is not None else None,
+            stability=float(stability) if stability is not None else None,
+            difficulty=float(difficulty) if difficulty is not None else None,
+            due=due,
+            last_review=last_review,
+        )
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def card_fsrs_state(card: LearningCard) -> State | None:
+    parsed = parse_fsrs_card(card.fsrs_state or "", default_card_id=card.id)
+    return parsed.state if parsed else None
+
+
 def apply_fsrs_review(card_id: int, rating: Rating) -> None:
     row = _fetch_card_row(card_id)
     if row is None:
@@ -37,7 +83,9 @@ def apply_fsrs_review(card_id: int, rating: Rating) -> None:
 def _load_fsrs_from_row(row, learning_card: LearningCard) -> FsrsCard:
     raw = row["fsrs_state"] or ""
     if raw.strip():
-        return FsrsCard.from_dict(json.loads(raw))
+        parsed = parse_fsrs_card(raw, default_card_id=learning_card.id)
+        if parsed is not None:
+            return parsed
     due = _parse_due_date(learning_card.next_review_date)
     return FsrsCard(
         card_id=learning_card.id,
@@ -80,6 +128,23 @@ def _fetch_card_row(card_id: int):
         f"{_CARD_SELECT} WHERE id = ?",
         (card_id,),
     ).fetchone()
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 def _parse_due_date(value: str) -> datetime:

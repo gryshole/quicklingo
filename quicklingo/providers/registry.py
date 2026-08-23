@@ -40,28 +40,34 @@ class ModelEntry:
 
 
 DEFAULT_MAIN_MODEL_IDS: tuple[str, ...] = (
-    "llama-3.1-8b-instant",
-    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
     "gemini-2.5-flash",
+    "openai/gpt-oss-20b",
     "gemini-2.5-flash-lite",
 )
 
+_DEPRECATED_MODEL_IDS: dict[str, str] = {
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "gemini-2.0-flash": "gemini-3.1-flash-lite",
+    "gemini-2.0-flash-lite": "gemini-3.1-flash-lite",
+}
+
 _CATALOG_SPECS: tuple[tuple[str, str, str], ...] = (
-    ("llama-3.1-8b-instant", "Groq Llama 3.1 8B", "groq"),
-    ("llama-3.3-70b-versatile", "Groq Llama 3.3 70B", "groq"),
-    ("openai/gpt-oss-20b", "Groq GPT-OSS 20B", "groq"),
     ("openai/gpt-oss-120b", "Groq GPT-OSS 120B", "groq"),
-    ("meta-llama/llama-4-scout-17b-16e-instruct", "Groq Llama 4 Scout 17B", "groq"),
-    ("qwen/qwen3-32b", "Groq Qwen3 32B", "groq"),
+    ("openai/gpt-oss-20b", "Groq GPT-OSS 20B", "groq"),
     ("qwen/qwen3.6-27b", "Groq Qwen3.6 27B", "groq"),
-    ("gemini-2.5-flash", "Gemini 2.5 Flash", "gemini"),
+    ("gemini-3.6-flash", "Gemini 3.6 Flash", "gemini"),
     ("gemini-3.5-flash", "Gemini 3.5 Flash", "gemini"),
+    ("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite", "gemini"),
     ("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview", "gemini"),
-    ("gemini-2.5-pro", "Gemini 2.5 Pro", "gemini"),
-    ("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", "gemini"),
     ("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite", "gemini"),
-    ("gemini-2.0-flash", "Gemini 2.0 Flash", "gemini"),
-    ("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite", "gemini"),
+    ("gemini-2.5-pro", "Gemini 2.5 Pro", "gemini"),
+    ("gemini-2.5-flash", "Gemini 2.5 Flash", "gemini"),
+    ("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", "gemini"),
+    ("gemini-flash-latest", "Gemini Flash (latest)", "gemini"),
+    ("gemini-flash-lite-latest", "Gemini Flash Lite (latest)", "gemini"),
+    ("gemini-pro-latest", "Gemini Pro (latest)", "gemini"),
     ("meta-llama/llama-3.3-70b-instruct:free", "OR Llama 3.3 70B (free)", "openrouter"),
     ("google/gemma-3-27b-it:free", "OR Gemma 3 27B (free)", "openrouter"),
     ("mistralai/mistral-small-3.1-24b-instruct:free", "OR Mistral Small 3.1 (free)", "openrouter"),
@@ -160,11 +166,17 @@ def get_model_entry(model_id: str) -> ModelEntry | None:
     return _CATALOG_BY_ID.get(model_id)
 
 
+def migrate_main_model_ids(model_ids: list[str]) -> list[str]:
+    migrated: list[str] = []
+    for model_id in model_ids:
+        replacement = _DEPRECATED_MODEL_IDS.get(model_id, model_id)
+        if replacement not in migrated:
+            migrated.append(replacement)
+    return migrated
+
+
 def get_main_model_ids() -> list[str]:
-    stored = settings.get_main_model_ids()
-    if stored:
-        return stored
-    return list(DEFAULT_MAIN_MODEL_IDS)
+    return settings.get_main_model_ids()
 
 
 def get_model_entries() -> list[ModelEntry]:
