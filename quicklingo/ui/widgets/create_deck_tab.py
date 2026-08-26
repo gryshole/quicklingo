@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from quicklingo.config.loader import get_directions, resolve_learning_direction
-from quicklingo.db import history
+from quicklingo.db import history, learning
 from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.corpus_analysis import CorpusCandidate, select_candidates
@@ -480,7 +480,6 @@ class CreateDeckTabWidget(QWidget):
         self._preview_title.setText(tr("learning.create_deck_preview_title"))
         self._starred_only.setText(tr("learning.starred_only"))
         self._model_label.setText(tr("learning.model"))
-        self._create_btn.setText(tr("learning.run_analysis"))
         self._cancel_btn.setText(tr("main.cancel"))
         self._create_hint.setText(tr("learning.create_deck_hint"))
         self._preview_table.setHorizontalHeaderLabels(
@@ -617,6 +616,20 @@ class CreateDeckTabWidget(QWidget):
         tag = str(data or "").strip()
         return tag, False, tag or tr("learning.untagged_deck_name")
 
+    def _deck_exists_for_selection(self) -> bool:
+        tag, untagged, _label = self._corpus_tag_selection()
+        direction = self._direction_combo.currentData()
+        if not direction:
+            return False
+        deck_tag = "" if untagged else tag
+        return learning.find_deck_by_tag(deck_tag, direction) is not None
+
+    def _update_create_button_label(self) -> None:
+        if self._deck_exists_for_selection():
+            self._create_btn.setText(tr("learning.run_analysis_add"))
+        else:
+            self._create_btn.setText(tr("learning.run_analysis"))
+
     def _corpus_records(self) -> list[history.TranslationRecord]:
         tag, untagged, _label = self._corpus_tag_selection()
         direction = self._direction_combo.currentData()
@@ -637,6 +650,7 @@ class CreateDeckTabWidget(QWidget):
         any_pending = self._any_direction_has_pending()
         self._form_host.setVisible(has_new or any_pending)
         self._create_btn.setEnabled(has_new and not self._analysis_running())
+        self._update_create_button_label()
         if has_new:
             self._empty.hide_state()
             self._status_label.clear()
@@ -781,16 +795,29 @@ class CreateDeckTabWidget(QWidget):
             difficult_items=compute_difficult_words(pending),
         )
         direction_label = self._direction_combo.currentText()
-        confirm = QMessageBox.question(
-            self,
-            tr("learning.analysis_confirm_title", deck=deck_label),
-            tr(
+        deck_exists = self._deck_exists_for_selection()
+        if deck_exists:
+            confirm_title = tr("learning.analysis_confirm_add_title", deck=deck_label)
+            confirm_body = tr(
+                "learning.analysis_confirm_add_body",
+                records=len(pending),
+                candidates=len(candidates),
+                deck=deck_label,
+                direction=direction_label,
+            )
+        else:
+            confirm_title = tr("learning.analysis_confirm_title", deck=deck_label)
+            confirm_body = tr(
                 "learning.analysis_confirm_body",
                 records=len(pending),
                 candidates=len(candidates),
                 deck=deck_label,
                 direction=direction_label,
-            ),
+            )
+        confirm = QMessageBox.question(
+            self,
+            confirm_title,
+            confirm_body,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
