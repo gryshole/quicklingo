@@ -32,7 +32,8 @@ from quicklingo.features import is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.anki_export import export_anki_apkg, export_anki_csv
 from quicklingo.learning.card_display import parse_context, serialize_context
-from quicklingo.learning.review_queue import card_bucket, count_due_cards
+from quicklingo.learning.review_queue import card_bucket
+from quicklingo.db.learning_due import count_due_cards_map, get_deck_summaries
 from quicklingo.ui.controllers.update_controller import UpdateController
 from quicklingo.ui.dialogs.ai_deck_generator_dialog import AiDeckGeneratorDialog
 from quicklingo.ui.dialogs.learning_onboarding_dialog import LearningOnboardingDialog
@@ -228,7 +229,9 @@ QFrame#cardsTableCard QHeaderView::section:last {
 
 
 class _CardEditDialog(QDialog):
-    def __init__(self, card: learning.LearningCard, *, direction: str = "ua-en", parent=None) -> None:
+    def __init__(
+        self, card: learning.LearningCard, *, direction: str = "ua-en", parent=None
+    ) -> None:
         super().__init__(parent)
         self._direction = direction
         self._learning_kind = resolve_learning_direction(direction)
@@ -261,9 +264,7 @@ class _CardEditDialog(QDialog):
     def values(self) -> dict[str, str]:
         if self._learning_kind in ("ua-en", "en-ua"):
             lines = [
-                line.strip()
-                for line in self._context.toPlainText().splitlines()
-                if line.strip()
+                line.strip() for line in self._context.toPlainText().splitlines() if line.strip()
             ]
             context = serialize_context(lines, direction=self._direction)
         else:
@@ -478,7 +479,9 @@ class LearningWindow(QMainWindow):
         self._review_deck_combo.currentIndexChanged.connect(self._on_review_deck_changed)
         self._review_deck_label = QLabel()
         self._learn_context_label = QLabel()
-        self._learn_context_label.setStyleSheet("color: #64748b; font-size: 12px; font-weight: 600;")
+        self._learn_context_label.setStyleSheet(
+            "color: #64748b; font-size: 12px; font-weight: 600;"
+        )
         top.addWidget(self._learn_context_label)
         top.addWidget(self._review_deck_label)
         top.addWidget(self._review_deck_combo, stretch=1)
@@ -497,9 +500,7 @@ class LearningWindow(QMainWindow):
         self._quiz_session = QuizSessionWidget()
         self._quiz_session.generation_finished.connect(self._on_quiz_generation_finished)
         self._quiz_session.session_finished.connect(self._on_quiz_session_finished)
-        self._quiz_session.finish_requested.connect(
-            lambda: self._tabs.setCurrentIndex(_TAB_REVIEW)
-        )
+        self._quiz_session.finish_requested.connect(lambda: self._tabs.setCurrentIndex(_TAB_REVIEW))
         layout.addWidget(self._quiz_session, stretch=1)
         return widget
 
@@ -581,9 +582,7 @@ class LearningWindow(QMainWindow):
         header = self._cards_table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(40)
-        header.setDefaultAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.resizeSection(8, min(header.sectionSize(8), _LEARNING_CARDS_PRIORITY_WIDTH))
 
@@ -656,7 +655,7 @@ class LearningWindow(QMainWindow):
         if deck is None:
             self._learn_context_label.setText("")
             return
-        due = count_due_cards(deck.id)
+        due = count_due_cards_map([deck.id]).get(deck.id, 0)
         self._learn_context_label.setText(
             tr("learning.learn_deck_context", name=deck.name, due=due)
         )
@@ -670,14 +669,14 @@ class LearningWindow(QMainWindow):
         self._review_session.start_cram_with_cards(deck.id, cards, direction=deck.direction)
 
     def _reload_decks(self) -> None:
-        decks = learning.list_decks()
+        summaries = get_deck_summaries()
         for combo in (self._deck_combo, self._review_deck_combo):
             current = combo.currentData()
             combo.blockSignals(True)
             combo.clear()
-            for deck in decks:
-                due = count_due_cards(deck.id)
-                label = f"{deck.name} ({get_direction_label(deck.direction)}) · {due}"
+            for summary in summaries:
+                deck = summary.deck
+                label = f"{deck.name} ({get_direction_label(deck.direction)}) · {summary.due_count}"
                 combo.addItem(label, deck.id)
             if current is not None:
                 index = combo.findData(current)
@@ -694,14 +693,15 @@ class LearningWindow(QMainWindow):
             self._quiz_session.reload_decks()
 
     def _refresh_deck_combo_due_counts(self) -> None:
+        summaries = {s.deck.id: s for s in get_deck_summaries()}
         for combo in (self._deck_combo, self._review_deck_combo):
             for index in range(combo.count()):
                 deck_id = combo.itemData(index)
-                deck = learning.get_deck(deck_id)
-                if deck is None:
+                summary = summaries.get(deck_id)
+                if summary is None:
                     continue
-                due = count_due_cards(deck.id)
-                label = f"{deck.name} ({get_direction_label(deck.direction)}) · {due}"
+                deck = summary.deck
+                label = f"{deck.name} ({get_direction_label(deck.direction)}) · {summary.due_count}"
                 combo.setItemText(index, label)
         if hasattr(self, "_quiz_session"):
             self._quiz_session.reload_decks()
@@ -885,7 +885,9 @@ class LearningWindow(QMainWindow):
         self._reload_decks()
         self._load_cards()
 
-    def add_vocab_card(self, front: str, back: str, *, context: str = "", tag: str = "", direction: str = "") -> None:
+    def add_vocab_card(
+        self, front: str, back: str, *, context: str = "", tag: str = "", direction: str = ""
+    ) -> None:
         if not front.strip() or not back.strip():
             return
         deck = learning.get_or_create_deck(

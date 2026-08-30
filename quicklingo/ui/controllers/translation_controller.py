@@ -12,7 +12,7 @@ from quicklingo.providers.registry import get_model_by_index
 from quicklingo.workers.translate_worker import TranslateWorker
 
 if TYPE_CHECKING:
-    from quicklingo.ui.main_window import MainWindow
+    from quicklingo.ui.main_window_facade import MainWindowFacade
 
 
 @dataclass
@@ -26,7 +26,7 @@ class QueuedRequest:
 class TranslationController:
     """Manages translation workers, cache lookup, and request queue."""
 
-    def __init__(self, window: MainWindow) -> None:
+    def __init__(self, window: MainWindowFacade) -> None:
         self._window = window
         self._worker: TranslateWorker | None = None
         self._worker_gen = 0
@@ -47,20 +47,20 @@ class TranslationController:
         self._replace_after_translate = enabled
 
     def submit(self) -> None:
-        text = self._window._input_field.input_text()
+        text = self._window.translation_input_text()
         if not text:
             return
         if self.is_busy():
             self._request_queue.append(
                 QueuedRequest(
                     text,
-                    self._window._current_direction(),
-                    self._window._current_profile_id(),
-                    self._window._model_combo.currentIndex(),
+                    self._window.translation_current_direction(),
+                    self._window.translation_current_profile_id(),
+                    self._window.translation_model_index(),
                 )
             )
-            self._window._input_field.clear_input()
-            self._window._set_status(
+            self._window.translation_clear_input()
+            self._window.translation_set_status(
                 "main.status_queued", error=False, count=len(self._request_queue)
             )
             return
@@ -68,9 +68,9 @@ class TranslationController:
 
     def start(self, text: str) -> None:
         self._pending_source = text
-        self._pending_direction = self._window._current_direction()
-        self._pending_profile_id = self._window._current_profile_id()
-        model_entry = get_model_by_index(self._window._model_combo.currentIndex())
+        self._pending_direction = self._window.translation_current_direction()
+        self._pending_profile_id = self._window.translation_current_profile_id()
+        model_entry = get_model_by_index(self._window.translation_model_index())
         self._pending_model_id = model_entry.model_id
         self._pending_from_cache = False
         self._last_error_message = ""
@@ -86,15 +86,15 @@ class TranslationController:
                 ttl_days=ttl,
             )
 
-        self._window._input_field.clear_input()
+        self._window.translation_clear_input()
 
         if cached is not None:
             self._pending_from_cache = True
             self._on_finished(cached)
             return
 
-        self._window._set_busy(True)
-        self._window._set_status("main.status_translating", error=False)
+        self._window.translation_set_busy(True)
+        self._window.translation_set_status("main.status_translating", error=False)
         self._start_worker(text, model_entry)
 
     def _start_worker(self, text: str, model_entry) -> None:
@@ -106,7 +106,7 @@ class TranslationController:
             self._pending_direction,
             model_entry,
             profile_id=self._pending_profile_id,
-            parent=self._window,
+            parent=self._window.as_qwidget(),
         )
         self._worker = worker
         worker.finished.connect(lambda result, g=gen: self._on_worker_finished(result, g))
@@ -121,7 +121,13 @@ class TranslationController:
     def _disconnect_worker(self) -> None:
         if self._worker is None:
             return
-        for signal in (self._worker.finished, self._worker.chunk, self._worker.error, self._worker.cancelled):
+        signals = (
+            self._worker.finished,
+            self._worker.chunk,
+            self._worker.error,
+            self._worker.cancelled,
+        )
+        for signal in signals:
             try:
                 signal.disconnect()
             except RuntimeError:
@@ -134,14 +140,14 @@ class TranslationController:
     def retry(self) -> None:
         if not self._pending_source:
             return
-        self._window._input_field.set_input_text(self._pending_source)
+        self._window.translation_set_input_text(self._pending_source)
         self.submit()
 
     def _on_worker_chunk(self, piece: str, gen: int) -> None:
         if gen != self._worker_gen:
             return
         self._stream_buffer += piece
-        self._window._output_field.set_result_plain(self._stream_buffer)
+        self._window.translation_set_output_plain(self._stream_buffer)
 
     def _on_worker_finished(self, result: str, gen: int) -> None:
         if gen != self._worker_gen:
@@ -150,9 +156,11 @@ class TranslationController:
 
     def _on_finished(self, result: str) -> None:
         from_cache = self._pending_from_cache
-        self._window._show_result(result, self._pending_direction, self._pending_profile_id)
+        self._window.translation_show_result(
+            result, self._pending_direction, self._pending_profile_id
+        )
         if is_enabled("history.auto_save") and not from_cache:
-            tag = self._window._current_tag()
+            tag = self._window.translation_current_tag()
             history.save_translation(
                 self._pending_direction,
                 self._pending_source,
@@ -162,7 +170,7 @@ class TranslationController:
                 tags=[tag] if tag else None,
             )
             if tag and is_enabled("history.tags"):
-                self._window._reload_tag_combo()
+                self._window.translation_reload_tag_combo()
             saved_status = (
                 ("main.status_saved_tag", {"tag": tag})
                 if tag
@@ -176,37 +184,37 @@ class TranslationController:
             paste_text(result)
             self._replace_after_translate = False
         self._worker = None
-        self._window._set_busy(False)
+        self._window.translation_set_busy(False)
         if saved_status is not None:
             key, params = saved_status
-            self._window._set_status(key, error=False, **params)
+            self._window.translation_set_status(key, error=False, **params)
         else:
-            self._window._set_status(
+            self._window.translation_set_status(
                 "main.status_cached" if from_cache else "main.status_ready",
                 error=False,
             )
         self._process_queue()
-        self._window._input_field.setFocus()
+        self._window.translation_focus_input()
 
     def _on_worker_error(self, message: str, gen: int) -> None:
         if gen != self._worker_gen:
             return
         self._last_error_message = message
         self._worker = None
-        self._window._set_busy(False)
-        self._window._retry_btn.setVisible(True)
-        self._window._set_status("main.status_error", error=True, message=message)
+        self._window.translation_set_busy(False)
+        self._window.translation_show_retry(True)
+        self._window.translation_set_status("main.status_error", error=True, message=message)
         self._process_queue()
-        self._window._input_field.setFocus()
+        self._window.translation_focus_input()
 
     def _on_worker_cancelled(self, gen: int) -> None:
         if gen != self._worker_gen:
             return
         self._worker = None
-        self._window._set_busy(False)
-        self._window._set_status("main.status_cancelled", error=False)
+        self._window.translation_set_busy(False)
+        self._window.translation_set_status("main.status_cancelled", error=False)
         self._process_queue()
-        self._window._input_field.setFocus()
+        self._window.translation_focus_input()
 
     def _process_queue(self) -> None:
         if not self._request_queue:
@@ -214,12 +222,9 @@ class TranslationController:
         if self.is_busy():
             return
         next_req = self._request_queue.pop(0)
-        if 0 <= next_req.model_index < self._window._model_combo.count():
-            self._window._model_combo.setCurrentIndex(next_req.model_index)
-        for radio, direction_id in self._window._direction_radios:
-            radio.setChecked(direction_id == next_req.direction)
-        self._window._refresh_profile_combo()
-        profile_index = self._window._profile_combo.findData(next_req.profile_id)
-        if profile_index >= 0:
-            self._window._profile_combo.setCurrentIndex(profile_index)
+        if 0 <= next_req.model_index < self._window.translation_model_count():
+            self._window.translation_set_model_index(next_req.model_index)
+        self._window.translation_set_direction(next_req.direction)
+        self._window.translation_refresh_profile_combo()
+        self._window.translation_set_profile_id(next_req.profile_id)
         self.start(next_req.text)

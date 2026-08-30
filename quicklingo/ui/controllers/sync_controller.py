@@ -11,13 +11,13 @@ from quicklingo.ui.qt_utils import warn
 from quicklingo.workers.sync_worker import SyncWorker
 
 if TYPE_CHECKING:
-    from quicklingo.ui.main_window import MainWindow
+    from quicklingo.ui.main_window_facade import MainWindowFacade
 
 
 class SyncController:
     """Background database sync with non-blocking progress UI."""
 
-    def __init__(self, window: MainWindow) -> None:
+    def __init__(self, window: MainWindowFacade) -> None:
         self._window = window
         self._worker: SyncWorker | None = None
         self._progress: QProgressDialog | None = None
@@ -34,7 +34,7 @@ class SyncController:
             None,
             0,
             0,
-            self._window,
+            self._window.as_qwidget(),
         )
         self._progress.setWindowTitle(tr("main.sync_progress_title"))
         self._progress.setWindowModality(Qt.WindowModality.NonModal)
@@ -43,9 +43,7 @@ class SyncController:
         self._progress.setAutoReset(True)
         self._progress.show()
 
-        sync_action = getattr(self._window, "_sync_action", None)
-        if sync_action is not None:
-            sync_action.setEnabled(False)
+        self._window.set_sync_action_enabled(False)
 
         self._worker = SyncWorker()
         self._worker.finished_result.connect(self._on_finished)
@@ -57,9 +55,7 @@ class SyncController:
             self._progress.close()
             self._progress = None
 
-        sync_action = getattr(self._window, "_sync_action", None)
-        if sync_action is not None:
-            sync_action.setEnabled(True)
+        self._window.set_sync_action_enabled(True)
 
         if self._worker is not None:
             self._worker.deleteLater()
@@ -68,7 +64,7 @@ class SyncController:
     def _on_finished(self, result: SyncResult) -> None:
         if result.ok:
             QMessageBox.information(
-                self._window,
+                self._window.as_qwidget(),
                 tr("main.sync_success_title"),
                 self._format_success_message(result),
             )
@@ -79,7 +75,11 @@ class SyncController:
             message = tr("main.sync_not_configured")
         elif message == "Not connected":
             message = tr("main.sync_not_connected")
-        warn(self._window, translate_message(message), title=tr("main.sync_error_title"))
+        warn(
+            self._window.as_qwidget(),
+            translate_message(message),
+            title=tr("main.sync_error_title"),
+        )
 
     @staticmethod
     def _format_stats_line(key: str, stats: SyncMergeStats) -> str:

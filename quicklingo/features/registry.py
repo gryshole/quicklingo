@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import sys
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal
@@ -81,7 +82,10 @@ def feature_changed() -> _FeatureNotifier:
 
 
 def default_features() -> dict[str, dict[str, Any]]:
-    return copy.deepcopy(FEATURE_DEFAULTS)
+    merged = copy.deepcopy(FEATURE_DEFAULTS)
+    if sys.platform == "win32":
+        merged["privacy.encrypted_keys"]["enabled"] = True
+    return merged
 
 
 def _merged_features() -> dict[str, dict[str, Any]]:

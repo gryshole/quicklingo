@@ -4,7 +4,7 @@ from PySide6.QtCore import QEventLoop, Qt, QThread, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog, QWidget
 
 from quicklingo import settings
-from quicklingo.i18n import tr
+from quicklingo.i18n import tr, translate_message
 from quicklingo.sync.oauth.flow import connect_provider
 from quicklingo.ui.qt_utils import suspend_always_on_top_for_oauth
 
@@ -21,7 +21,7 @@ class _OAuthConnectWorker(QThread):
         try:
             tokens = connect_provider(self._provider)
         except Exception as exc:
-            self.finished_error.emit(str(exc))
+            self.finished_error.emit(translate_message(exc))
             return
         self.finished_ok.emit(tokens)
 

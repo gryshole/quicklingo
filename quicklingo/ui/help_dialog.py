@@ -29,6 +29,7 @@ HELP_TOPICS = (
     "learning",
     "sync",
     "sync_google_drive",
+    "privacy",
 )
 
 _HEADING_EMOJI = {

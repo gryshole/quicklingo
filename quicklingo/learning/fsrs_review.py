@@ -7,7 +7,7 @@ from fsrs import Card as FsrsCard
 from fsrs import Rating, Scheduler, State
 
 from quicklingo.db.connection import connection, get_connection
-from quicklingo.db.learning import _CARD_SELECT, LearningCard
+from quicklingo.db.learning_models import LearningCard, _CARD_SELECT
 
 _scheduler: Scheduler | None = None
 

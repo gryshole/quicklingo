@@ -5,7 +5,8 @@ from datetime import date
 
 from fsrs import State
 
-from quicklingo.db.learning import LearningCard, list_cards
+from quicklingo.db.learning_models import LearningCard
+from quicklingo.db.learning_cards import list_cards
 from quicklingo.learning.fsrs_review import card_fsrs_state
 
 
@@ -87,7 +88,9 @@ def build_session_queue(
     return SessionQueue(cards=selected)
 
 
-def requeue_in_session(queue: SessionQueue, card: LearningCard, rating: int, *, offset: int = 3) -> None:
+def requeue_in_session(
+    queue: SessionQueue, card: LearningCard, rating: int, *, offset: int = 3
+) -> None:
     if rating > 1:
         return
     insert_at = min(len(queue.cards), queue.position + max(1, offset))
@@ -95,15 +98,9 @@ def requeue_in_session(queue: SessionQueue, card: LearningCard, rating: int, *, 
 
 
 def count_due_cards(deck_id: int) -> int:
-    today = date.today().isoformat()
-    count = 0
-    for card in list_cards(deck_id):
-        bucket = card_bucket(card)
-        if bucket in ("learning", "review") and card.next_review_date and card.next_review_date <= today:
-            count += 1
-        elif bucket == "new":
-            count += 1
-    return count
+    from quicklingo.db.learning_due import count_due_cards as _count_due_cards
+
+    return _count_due_cards(deck_id)
 
 
 def english_side_text(card: LearningCard, direction: str) -> str:

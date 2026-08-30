@@ -13,6 +13,8 @@ from quicklingo.learning.ai_deck.word_list_parser import parse_word_list_respons
 from quicklingo.learning.ai_deck.word_list_prompt import build_word_list_prompt
 from quicklingo.learning.card_prompt import enrich_card_fields
 from quicklingo.learning.corpus_analysis import AnalysisSummary, parse_analysis_response
+from quicklingo.i18n import tr
+from quicklingo.learning.ai_deck.system_prompts import CARD_BATCH_SYSTEM_PROMPT, WORD_LIST_SYSTEM_PROMPT
 from quicklingo.logging.ai_requests import ai_request_scope
 from quicklingo.providers.registry import ModelEntry
 
@@ -56,7 +58,7 @@ class AiDeckGeneratorWorker(QThread):
         params = self._params
         tag = params.normalized_tag()
 
-        self.progress.emit("Step 1/2: Generating word list…")
+        self.progress.emit(tr("worker.ai_deck_step_word_list"))
         words = await self._fetch_word_list()
         if self._cancelled:
             raise asyncio.CancelledError()
@@ -81,7 +83,7 @@ class AiDeckGeneratorWorker(QThread):
         for index, batch in enumerate(batches, start=1):
             if self._cancelled:
                 raise asyncio.CancelledError()
-            self.progress.emit(f"Step 2/2: Batch {index}/{len(batches)}")
+            self.progress.emit(tr("worker.ai_deck_step_batch", index=index, total=len(batches)))
             cards, summary = await self._analyze_batch(batch)
             all_cards.extend(cards)
             summaries.append(summary)
@@ -140,7 +142,7 @@ class AiDeckGeneratorWorker(QThread):
         prompt = build_word_list_prompt(self._params)
         with ai_request_scope("learning.ai_deck.word_list"):
             raw = await self._model_entry.provider.complete(
-                "You are a vocabulary curator for language learners. Output JSON only.",
+                WORD_LIST_SYSTEM_PROMPT,
                 prompt,
                 self._model_entry.model_id,
                 temperature=0.4,
@@ -172,8 +174,7 @@ class AiDeckGeneratorWorker(QThread):
         prompt = build_ai_word_card_prompt(batch, self._params)
         with ai_request_scope("learning.ai_deck.cards"):
             raw = await self._model_entry.provider.complete(
-                "You are a language learning assistant creating flashcards for active recall. "
-                "The learner must recall back without spoilers in hint. Output JSON only.",
+                CARD_BATCH_SYSTEM_PROMPT,
                 prompt,
                 self._model_entry.model_id,
                 temperature=0.3,

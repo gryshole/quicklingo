@@ -8,6 +8,7 @@ from PySide6.QtCore import QThread, Signal
 from quicklingo.db import learning
 from quicklingo.i18n import tr
 from quicklingo.learning.card_prompt import enrich_card_fields
+from quicklingo.learning.ai_deck.system_prompts import CARD_BATCH_SYSTEM_PROMPT
 from quicklingo.learning.corpus_analysis import (
     AnalysisSummary,
     CorpusCandidate,
@@ -197,8 +198,7 @@ class CorpusAnalysisWorker(QThread):
         prompt = build_analysis_prompt(batch, tag=self._tag, direction=self._direction)
         with ai_request_scope("learning.corpus_analysis"):
             raw = await self._model_entry.provider.complete(
-                "You are a language learning assistant creating flashcards for active recall. "
-                "The learner must recall back without spoilers in hint. Output JSON only.",
+                CARD_BATCH_SYSTEM_PROMPT,
                 prompt,
                 self._model_entry.model_id,
                 temperature=0.3,

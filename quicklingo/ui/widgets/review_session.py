@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QKeyEvent, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
+from PySide6.QtGui import QFont, QKeyEvent, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -39,259 +39,22 @@ from quicklingo.ui.controllers.review_session_controller import (
     ReviewSessionController,
     SessionStats,
 )
+from quicklingo.ui.widgets.review_session_helpers import (
+    definition_body_from_notes,
+    get_rounded_pixmap,
+    html_definition_block,
+)
+from quicklingo.ui.widgets.review_session_theme import (
+    ANSWER_PHONETIC_STYLE,
+    CONTENT_MAX_WIDTH,
+    CONTENT_MIN_WIDTH,
+    IMAGE_RADIUS,
+    IMAGE_SIZE,
+    MAX_WIDGET,
+    PHONETIC_STYLE,
+    REVIEW_STYLE,
+)
 from quicklingo.workers.card_image_worker import CardImageFetchWorker, CardImagePrefetchWorker
-
-_PHONETIC_STYLE = "color: #64748b;"
-_ANSWER_PHONETIC_STYLE = _PHONETIC_STYLE
-_CONTENT_MIN_WIDTH = 600
-_CONTENT_MAX_WIDTH = 750
-_IMAGE_SIZE = 240
-_IMAGE_RADIUS = 12
-_MAX_WIDGET = 16777215
-
-_REVIEW_STYLE = """
-ReviewSessionWidget QLabel#reviewMetaLabel {
-    color: #64748b;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-}
-QPushButton#btnStartReview {
-    background-color: #3b82f6;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 22px;
-    font-size: 14px;
-    font-weight: 600;
-    min-height: 36px;
-}
-QPushButton#btnStartReview:hover:enabled {
-    background-color: #2563eb;
-}
-QPushButton#btnStartReview:disabled {
-    background-color: #e2e8f0;
-    color: #94a3b8;
-}
-QPushButton#btnModeToggle {
-    background-color: #ffffff;
-    color: #475569;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 6px 14px;
-    font-size: 13px;
-    min-height: 32px;
-}
-QPushButton#btnModeToggle:checked {
-    background-color: #eff6ff;
-    border-color: #3b82f6;
-    color: #1d4ed8;
-    font-weight: 600;
-}
-QPushButton#btnShowAnswer {
-    background-color: #ffffff;
-    color: #1e293b;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: 600;
-    min-height: 36px;
-}
-QPushButton#btnShowAnswer:hover:enabled {
-    background-color: #f8fafc;
-    border-color: #94a3b8;
-}
-QPushButton#btnAgain {
-    background-color: #fef2f2;
-    color: #dc2626;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 20px;
-    font-weight: bold;
-    font-size: 13px;
-    min-height: 36px;
-}
-QPushButton#btnAgain:hover:enabled {
-    background-color: #fee2e2;
-}
-QPushButton#btnHard {
-    background-color: #fff7ed;
-    color: #ea580c;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 20px;
-    font-weight: bold;
-    font-size: 13px;
-    min-height: 36px;
-}
-QPushButton#btnHard:hover:enabled {
-    background-color: #ffedd5;
-}
-QPushButton#btnGood {
-    background-color: #f0fdf4;
-    color: #16a34a;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 20px;
-    font-weight: bold;
-    font-size: 13px;
-    min-height: 36px;
-}
-QPushButton#btnGood:hover:enabled {
-    background-color: #dcfce7;
-}
-QPushButton#btnEasy {
-    background-color: #eff6ff;
-    color: #2563eb;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 20px;
-    font-weight: bold;
-    font-size: 13px;
-    min-height: 36px;
-}
-QPushButton#btnEasy:hover:enabled {
-    background-color: #dbeafe;
-}
-QFrame#reviewCardFrame {
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-}
-QWidget#reviewImageColumn {
-    background: transparent;
-}
-QFrame#reviewImageFrame {
-    background: transparent;
-    border: none;
-}
-QLabel#reviewImageLabel {
-    background: transparent;
-    border: none;
-}
-QWidget#reviewFrontColumn {
-    background: transparent;
-}
-QPushButton#reviewSpeakerBtn {
-    border: none;
-    background: transparent;
-    font-family: "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
-    font-size: 16px;
-    min-width: 28px;
-    max-width: 28px;
-    min-height: 28px;
-    max-height: 28px;
-    padding: 0px;
-}
-QPushButton#reviewSpeakerBtn:hover {
-    background-color: #F1F5F9;
-    border-radius: 14px;
-}
-QWidget#reviewMainContent {
-    background: transparent;
-    min-width: 600px;
-    max-width: 750px;
-}
-QWidget#reviewBackSection {
-    background: transparent;
-}
-QWidget#reviewExampleRow {
-    background: transparent;
-}
-QFrame#reviewExampleQuote {
-    background: transparent;
-    border: none;
-    border-left: 4px solid #CBD5E1;
-}
-QLabel#reviewDefinitionLabel {
-    background: transparent;
-}
-QLabel#reviewHintLabel {
-    color: #64748b;
-    background: transparent;
-}
-QLabel#reviewTermLabel {
-    color: #1e293b;
-    background: transparent;
-}
-QLabel#reviewAnswerLabel {
-    color: #1d4ed8;
-    background: transparent;
-}
-ReviewSessionWidget QProgressBar#reviewProgressBar {
-    border: none;
-    background-color: #e2e8f0;
-    border-radius: 3px;
-    max-height: 4px;
-    min-height: 4px;
-}
-ReviewSessionWidget QProgressBar#reviewProgressBar::chunk {
-    background-color: #3b82f6;
-    border-radius: 3px;
-}
-QProgressBar {
-    border: none;
-    background-color: #e2e8f0;
-    border-radius: 4px;
-    max-height: 6px;
-    min-height: 6px;
-}
-QProgressBar::chunk {
-    background-color: #3b82f6;
-    border-radius: 4px;
-}
-"""
-
-
-def get_rounded_pixmap(
-    pixmap: QPixmap,
-    *,
-    size: int = _IMAGE_SIZE,
-    radius: int = _IMAGE_RADIUS,
-) -> QPixmap:
-    """Scale-to-fill square crop, then clip to rounded corners (QSS cannot do this)."""
-    if pixmap.isNull():
-        return pixmap
-    scaled = pixmap.scaled(
-        size,
-        size,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-        Qt.TransformationMode.SmoothTransformation,
-    )
-    x = max(0, (scaled.width() - size) // 2)
-    y = max(0, (scaled.height() - size) // 2)
-    cropped = scaled.copy(x, y, size, size)
-    target = QPixmap(cropped.size())
-    target.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(target)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    path = QPainterPath()
-    path.addRoundedRect(0, 0, cropped.width(), cropped.height(), radius, radius)
-    painter.setClipPath(path)
-    painter.drawPixmap(0, 0, cropped)
-    painter.end()
-    return target
-
-
-def _html_definition_block(body_html: str) -> str:
-    return (
-        '<table cellspacing="0" cellpadding="0" border="0" '
-        'style="margin:0;border-collapse:separate;">'
-        "<tr>"
-        '<td style="background-color:#F8FAFC;border:1px solid #E2E8F0;'
-        "border-radius:8px;padding:10px 14px;color:#475569;font-size:15px;"
-        'white-space:normal;word-wrap:break-word;">'
-        f"<b>Definition:</b> <i>{body_html}</i>"
-        "</td></tr></table>"
-    )
-
-
-def _definition_body_from_notes(notes: str) -> str:
-    plain = (notes or "").strip()
-    if plain.lower().startswith("definition:"):
-        plain = plain.split(":", 1)[1].strip()
-    return plain
 
 
 class ReviewSessionWidget(QWidget):
@@ -301,7 +64,7 @@ class ReviewSessionWidget(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("ReviewSessionWidget")
-        self.setStyleSheet(_REVIEW_STYLE)
+        self.setStyleSheet(REVIEW_STYLE)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._controller = ReviewSessionController()
         self._deck_id: int | None = None
@@ -440,8 +203,8 @@ class ReviewSessionWidget(QWidget):
 
         self._main_column = QWidget()
         self._main_column.setObjectName("reviewMainContent")
-        self._main_column.setMinimumWidth(_CONTENT_MIN_WIDTH)
-        self._main_column.setMaximumWidth(_CONTENT_MAX_WIDTH)
+        self._main_column.setMinimumWidth(CONTENT_MIN_WIDTH)
+        self._main_column.setMaximumWidth(CONTENT_MAX_WIDTH)
         self._main_column.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
@@ -458,7 +221,7 @@ class ReviewSessionWidget(QWidget):
 
         self._image_column = QWidget()
         self._image_column.setObjectName("reviewImageColumn")
-        self._image_column.setFixedWidth(_IMAGE_SIZE)
+        self._image_column.setFixedWidth(IMAGE_SIZE)
         self._image_column.setSizePolicy(
             QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Fixed,
@@ -470,7 +233,7 @@ class ReviewSessionWidget(QWidget):
         self._image_label = QLabel()
         self._image_label.setObjectName("reviewImageLabel")
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._image_label.setFixedSize(_IMAGE_SIZE, _IMAGE_SIZE)
+        self._image_label.setFixedSize(IMAGE_SIZE, IMAGE_SIZE)
         self._image_label.setScaledContents(False)
         self._image_label.setVisible(False)
         image_col_layout.addWidget(self._image_label)
@@ -520,7 +283,7 @@ class ReviewSessionWidget(QWidget):
         self._front_phonetic_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        self._front_phonetic_label.setStyleSheet(_PHONETIC_STYLE)
+        self._front_phonetic_label.setStyleSheet(PHONETIC_STYLE)
         self._front_phonetic_label.setWordWrap(True)
         self._front_phonetic_label.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -597,7 +360,7 @@ class ReviewSessionWidget(QWidget):
         self._answer_phonetic_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        self._answer_phonetic_label.setStyleSheet(_ANSWER_PHONETIC_STYLE)
+        self._answer_phonetic_label.setStyleSheet(ANSWER_PHONETIC_STYLE)
         self._answer_phonetic_label.setWordWrap(True)
         self._answer_phonetic_label.setSizePolicy(
             QSizePolicy.Policy.Preferred,
@@ -869,7 +632,7 @@ class ReviewSessionWidget(QWidget):
             self._answer_block,
             self._back_section,
         ):
-            widget.setMaximumHeight(_MAX_WIDGET)
+            widget.setMaximumHeight(MAX_WIDGET)
 
     def _sync_label_heights(self) -> None:
         """Ensure painted font fits; clears stale max-heights left after image cards."""
@@ -921,7 +684,7 @@ class ReviewSessionWidget(QWidget):
             elif self._front_column.width() >= 40:
                 width = max(40, self._front_column.width() - 40)
             else:
-                width = _CONTENT_MIN_WIDTH
+                width = CONTENT_MIN_WIDTH
         wrapped = label.heightForWidth(width)
         label.setMinimumHeight(max(line, wrapped))
         label.updateGeometry()
@@ -1022,7 +785,7 @@ class ReviewSessionWidget(QWidget):
         self._front_has_image = None
         self._image_label.clear()
         self._image_label.clearMask()
-        self._image_label.setFixedSize(_IMAGE_SIZE, _IMAGE_SIZE)
+        self._image_label.setFixedSize(IMAGE_SIZE, IMAGE_SIZE)
         self._image_label.setVisible(False)
         self._image_column.setVisible(False)
         self._apply_front_layout(has_image=False, force=True)
@@ -1337,7 +1100,7 @@ class ReviewSessionWidget(QWidget):
     def _clear_image(self) -> None:
         self._image_label.clear()
         self._image_label.clearMask()
-        self._image_label.setFixedSize(_IMAGE_SIZE, _IMAGE_SIZE)
+        self._image_label.setFixedSize(IMAGE_SIZE, IMAGE_SIZE)
         self._image_label.setVisible(False)
         self._image_column.setVisible(False)
         self._apply_front_layout(has_image=False, force=True)
@@ -1345,7 +1108,7 @@ class ReviewSessionWidget(QWidget):
     def _show_image_placeholder(self) -> None:
         self._image_label.clear()
         self._image_label.clearMask()
-        self._image_label.setFixedSize(_IMAGE_SIZE, _IMAGE_SIZE)
+        self._image_label.setFixedSize(IMAGE_SIZE, IMAGE_SIZE)
         self._image_label.setVisible(True)
         self._image_column.setVisible(True)
         self._apply_front_layout(has_image=True, force=True)
@@ -1358,8 +1121,8 @@ class ReviewSessionWidget(QWidget):
             return
         rounded = get_rounded_pixmap(
             pixmap,
-            size=_IMAGE_SIZE,
-            radius=_IMAGE_RADIUS,
+            size=IMAGE_SIZE,
+            radius=IMAGE_RADIUS,
         )
         self._image_label.setPixmap(rounded)
         self._image_label.setFixedSize(rounded.size())
@@ -1501,10 +1264,10 @@ class ReviewSessionWidget(QWidget):
         kind = self._learning_kind()
         examples = parse_context(card.context, direction=self._direction)
         term = card.back if kind == "ua-en" else display_term(card.front)
-        definition = _definition_body_from_notes(card.notes or "")
+        definition = definition_body_from_notes(card.notes or "")
         if definition:
             body = highlight_term_styled(definition, self._notes_highlight_term(card))
-            self._definition_label.setText(_html_definition_block(body))
+            self._definition_label.setText(html_definition_block(body))
             self._definition_label.setVisible(True)
             self._definition_row.setVisible(True)
         else:

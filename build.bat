@@ -30,6 +30,25 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Stopping running QuickLingo instances (if any)...
+taskkill /F /IM QuickLingo.exe /T >nul 2>&1
+taskkill /F /IM QuickLingoLearning.exe /T >nul 2>&1
+taskkill /F /IM QuickLingoUpdater.exe /T >nul 2>&1
+ping -n 2 127.0.0.1 >nul
+
+if exist "dist\QuickLingo" (
+    echo Removing previous dist\QuickLingo...
+    rd /s /q "dist\QuickLingo" 2>nul
+    if exist "dist\QuickLingo" (
+        echo.
+        echo ERROR: Cannot delete dist\QuickLingo — files are locked.
+        echo Close QuickLingo / QuickLingoLearning, then run build.bat again.
+        echo Also close File Explorer if it is open inside dist\QuickLingo.
+        pause
+        exit /b 1
+    )
+)
+
 echo Building QuickLingo (onedir — faster startup)...
 .venv\Scripts\pyinstaller --noconfirm --clean QuickLingo.spec
 if errorlevel 1 (

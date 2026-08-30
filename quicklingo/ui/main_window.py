@@ -1381,3 +1381,72 @@ class MainWindow(QMainWindow):
 
         self._output_field.set_result_html(formatter(result))
 
+    # --- Facade for controllers (MainWindowFacade) ---
+
+    def as_qwidget(self) -> QWidget:
+        return self
+
+    def translation_input_text(self) -> str:
+        return self._input_field.input_text()
+
+    def translation_clear_input(self) -> None:
+        self._input_field.clear_input()
+
+    def translation_set_input_text(self, text: str) -> None:
+        self._input_field.set_input_text(text)
+
+    def translation_focus_input(self) -> None:
+        self._input_field.setFocus()
+
+    def translation_current_direction(self) -> str:
+        return self._current_direction()
+
+    def translation_current_profile_id(self) -> str:
+        return self._current_profile_id()
+
+    def translation_current_tag(self) -> str:
+        return self._current_tag()
+
+    def translation_model_index(self) -> int:
+        return self._model_combo.currentIndex()
+
+    def translation_model_count(self) -> int:
+        return self._model_combo.count()
+
+    def translation_set_model_index(self, index: int) -> None:
+        self._model_combo.setCurrentIndex(index)
+
+    def translation_set_direction(self, direction_id: str) -> None:
+        for radio, did in self._direction_radios:
+            radio.setChecked(did == direction_id)
+
+    def translation_refresh_profile_combo(self) -> None:
+        self._refresh_profile_combo()
+
+    def translation_set_profile_id(self, profile_id: str) -> None:
+        index = self._profile_combo.findData(profile_id)
+        if index >= 0:
+            self._profile_combo.setCurrentIndex(index)
+
+    def translation_set_status(self, key: str, *, error: bool, **params: object) -> None:
+        self._set_status(key, error=error, **params)
+
+    def translation_set_busy(self, busy: bool) -> None:
+        self._set_busy(busy)
+
+    def translation_show_result(self, result: str, direction: str, profile_id: str) -> None:
+        self._show_result(result, direction, profile_id)
+
+    def translation_set_output_plain(self, text: str) -> None:
+        self._output_field.set_result_plain(text)
+
+    def translation_show_retry(self, visible: bool) -> None:
+        self._retry_btn.setVisible(visible)
+
+    def translation_reload_tag_combo(self) -> None:
+        self._reload_tag_combo()
+
+    def set_sync_action_enabled(self, enabled: bool) -> None:
+        if self._sync_action is not None:
+            self._sync_action.setEnabled(enabled)
+
