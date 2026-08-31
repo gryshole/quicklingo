@@ -63,6 +63,7 @@ from quicklingo.ui.qt_utils import (
     raise_window,
     reload_combo,
 )
+from quicklingo.ui.distractor_decks_window import DistractorDecksWindow
 from quicklingo.ui.quiz_questions_window import QuizQuestionsWindow
 from quicklingo.ui.settings_dialog import SettingsDialog
 from quicklingo.ui.widgets.segmented_control import SegmentedControl
@@ -87,6 +88,7 @@ class MainWindow(QMainWindow):
         self._history_window: HistoryWindow | None = None
         self._learning_window: LearningWindow | None = None
         self._quiz_questions_window: QuizQuestionsWindow | None = None
+        self._distractor_decks_window: DistractorDecksWindow | None = None
         self._direction_control: SegmentedControl | None = None
 
         self._main_layout: QVBoxLayout | None = None
@@ -116,6 +118,7 @@ class MainWindow(QMainWindow):
         self._learning_action = None
 
         self._quiz_questions_action = None
+        self._distractor_decks_action = None
 
         self._settings_action = None
         self._sync_action = None
@@ -426,6 +429,11 @@ class MainWindow(QMainWindow):
 
             self._quiz_questions_action.setText(tr("main.menu_quiz_questions"))
             self._quiz_questions_action.setVisible(True)
+
+        if self._distractor_decks_action:
+
+            self._distractor_decks_action.setText(tr("main.menu_distractor_decks"))
+            self._distractor_decks_action.setVisible(is_enabled("learning.quiz"))
 
         if self._settings_action:
 
@@ -969,6 +977,10 @@ class MainWindow(QMainWindow):
         self._quiz_questions_action.triggered.connect(self._open_quiz_questions)
         self._quiz_questions_action.setVisible(True)
 
+        self._distractor_decks_action = self._tools_menu.addAction("")
+        self._distractor_decks_action.triggered.connect(self._open_distractor_decks)
+        self._distractor_decks_action.setVisible(is_enabled("learning.quiz"))
+
         self._sync_action = self._tools_menu.addAction("")
         self._sync_action.triggered.connect(self._run_sync)
 
@@ -1090,6 +1102,16 @@ class MainWindow(QMainWindow):
 
     def _on_quiz_questions_closed(self) -> None:
         self._quiz_questions_window = None
+
+    def _open_distractor_decks(self) -> None:
+        if self._distractor_decks_window is None:
+            self._distractor_decks_window = DistractorDecksWindow(self)
+            self._distractor_decks_window.finished.connect(self._on_distractor_decks_closed)
+        self._distractor_decks_window.refresh()
+        raise_window(self._distractor_decks_window)
+
+    def _on_distractor_decks_closed(self) -> None:
+        self._distractor_decks_window = None
 
     def _open_settings(self) -> None:
 
