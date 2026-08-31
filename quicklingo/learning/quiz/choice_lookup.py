@@ -9,7 +9,7 @@ from quicklingo.learning.quiz.distractor_deck import (
     QUIZ_DISTRACTOR_DECK_TAG,
     is_quiz_distractor_deck,
 )
-from quicklingo.learning.quiz.normalize import card_to_quiz_word
+from quicklingo.learning.quiz.normalize import card_to_quiz_word, normalize_english_quiz_key
 from quicklingo.learning.text_normalize import collapse_whitespace
 
 
@@ -25,7 +25,7 @@ class ChoiceMetadata:
 
 def lookup_english_metadata(english: str, direction: str) -> ChoiceMetadata | None:
     term = collapse_whitespace(english)
-    key = term.lower()
+    key = normalize_english_quiz_key(term)
     if not key:
         return None
     kind = resolve_learning_direction(direction)
@@ -56,7 +56,7 @@ def _match_in_deck(
 ) -> ChoiceMetadata | None:
     for card in list_cards(deck.id):
         word = card_to_quiz_word(card, deck.direction)
-        if word.english.strip().lower() != key:
+        if normalize_english_quiz_key(word.english) != key:
             continue
         return ChoiceMetadata(
             english=word.english,

@@ -9,7 +9,7 @@ from quicklingo import settings
 from quicklingo.i18n.translator import TranslatableError
 from quicklingo.providers.api_errors import format_api_error
 from quicklingo.providers.base import (
-    REQUEST_TIMEOUT,
+    LONG_REQUEST_TIMEOUT,
     TranslationProvider,
     iter_sse_json,
     map_network_errors,
@@ -54,7 +54,7 @@ class GeminiProvider(TranslationProvider):
         payload = self._payload(text, prompt, temperature=temperature)
 
         with map_network_errors():
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=LONG_REQUEST_TIMEOUT) as client:
                 response = await client.post(url, params=params, json=payload)
 
         if response.status_code in (401, 403):
@@ -94,7 +94,7 @@ class GeminiProvider(TranslationProvider):
         payload = self._payload(text, prompt, temperature=temperature)
 
         with map_network_errors():
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=LONG_REQUEST_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
                     url,

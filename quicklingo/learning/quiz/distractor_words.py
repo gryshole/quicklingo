@@ -4,6 +4,7 @@ from quicklingo.db import learning
 from quicklingo.db.learning_decks import get_deck
 from quicklingo.learning.quiz.aggregator import list_quiz_eligible_decks
 from quicklingo.learning.quiz.distractor_deck import collect_english_keys_across_decks
+from quicklingo.learning.quiz.normalize import normalize_english_quiz_key
 from quicklingo.learning.text_normalize import collapse_whitespace
 
 
@@ -18,7 +19,7 @@ def collect_missing_distractor_words(deck_id: int) -> list[str]:
     for question in learning.list_quiz_questions(deck_id, status="active"):
         for raw in question.choices_pool:
             word = collapse_whitespace(str(raw))
-            key = word.lower()
+            key = normalize_english_quiz_key(word)
             if not word or key in seen_in_pool:
                 continue
             seen_in_pool.add(key)

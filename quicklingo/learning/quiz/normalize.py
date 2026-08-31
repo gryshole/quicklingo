@@ -7,8 +7,19 @@ from quicklingo.learning.card_prompt import extract_pos_from_hint
 from quicklingo.learning.quiz.distractors import parse_quiz_distractors
 from quicklingo.learning.quiz.models import QuizWordDto
 from quicklingo.learning.review_queue import english_side_text, ukrainian_side_text
+from quicklingo.learning.text_normalize import collapse_whitespace
 
 _DEFINITION_PREFIX = "Definition:"
+_ENGLISH_ARTICLES = ("the ", "a ", "an ")
+
+
+def normalize_english_quiz_key(text: str) -> str:
+    """Canonical key for matching quiz choice text to card english side."""
+    lowered = collapse_whitespace(text).lower()
+    for article in _ENGLISH_ARTICLES:
+        if lowered.startswith(article):
+            lowered = lowered[len(article) :]
+    return lowered
 
 
 def parse_definition(notes: str) -> str:

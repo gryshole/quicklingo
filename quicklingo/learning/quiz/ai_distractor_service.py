@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Callable
 
@@ -18,6 +17,7 @@ from quicklingo.learning.quiz.distractor_deck import (
     QUIZ_DISTRACTOR_DECK_TAG,
 )
 from quicklingo.learning.quiz.distractor_generation_outcome import DistractorGenerationOutcome
+from quicklingo.learning.quiz.normalize import normalize_english_quiz_key
 from quicklingo.logging.ai_requests import ai_request_scope
 from quicklingo.providers.api_errors import parse_openai_compat_error
 from quicklingo.providers.registry import ModelEntry
@@ -31,7 +31,6 @@ _RATE_LIMIT_KEYS = frozenset(
         "errors.gemini_rate_limit",
     }
 )
-
 
 class _RateLimitStopped(Exception):
     def __init__(self, retry_seconds: int | None = None) -> None:
@@ -48,11 +47,7 @@ class AiDistractorService:
         *,
         progress_cb: Callable[[str], None] | None = None,
         cancel_flag: Callable[[], bool] | None = None,
-        word_delay_sec: float = 0,
         batch_size: int = 5,
-        retry_on_rate_limit: bool = False,
-        rate_limit_padding_sec: float = 2.0,
-        rate_limit_wait_cb: Callable[[int], None] | None = None,
     ) -> DistractorGenerationOutcome:
         source_deck = learning.get_deck(source_deck_id)
         if source_deck is None:
@@ -109,10 +104,6 @@ class AiDistractorService:
                     params,
                     model_entry,
                     cancel_flag=cancel_flag,
-                    retry_on_rate_limit=retry_on_rate_limit,
-                    rate_limit_padding_sec=rate_limit_padding_sec,
-                    rate_limit_wait_cb=rate_limit_wait_cb,
-                    progress_cb=progress_cb,
                 )
             except _RateLimitStopped as stopped:
                 if cancel_flag and cancel_flag():
@@ -133,16 +124,13 @@ class AiDistractorService:
                 kind,
             )
             if prepared:
-                learning.batch_upsert_cards(distractor_deck.id, prepared)
-                created += len(prepared)
+                saved_ids = learning.batch_upsert_cards(distractor_deck.id, prepared)
+                created += len(saved_ids)
             elif progress_cb:
                 if cards:
                     progress_cb(tr("learning.quiz_distractor_cards_batch_no_match"))
                 else:
                     progress_cb(tr("learning.quiz_distractor_cards_batch_empty_response"))
-
-            if batch_index < len(batches) and word_delay_sec > 0:
-                await asyncio.sleep(word_delay_sec)
 
         return DistractorGenerationOutcome(
             created=created,
@@ -159,56 +147,26 @@ class AiDistractorService:
         model_entry: ModelEntry,
         *,
         cancel_flag: Callable[[], bool] | None,
-        retry_on_rate_limit: bool,
-        rate_limit_padding_sec: float,
-        rate_limit_wait_cb: Callable[[int], None] | None,
-        progress_cb: Callable[[str], None] | None,
     ) -> list[dict]:
         try:
             return await self._request_batch(batch, params, model_entry, cancel_flag=cancel_flag)
-        except _RateLimitStopped as stopped:
-            if len(batch) > 1:
-                mid = len(batch) // 2
-                left_cards = await self._analyze_batch_with_rate_limit_retry(
-                    batch[:mid],
-                    params,
-                    model_entry,
-                    cancel_flag=cancel_flag,
-                    retry_on_rate_limit=retry_on_rate_limit,
-                    rate_limit_padding_sec=rate_limit_padding_sec,
-                    rate_limit_wait_cb=rate_limit_wait_cb,
-                    progress_cb=progress_cb,
-                )
-                right_cards = await self._analyze_batch_with_rate_limit_retry(
-                    batch[mid:],
-                    params,
-                    model_entry,
-                    cancel_flag=cancel_flag,
-                    retry_on_rate_limit=retry_on_rate_limit,
-                    rate_limit_padding_sec=rate_limit_padding_sec,
-                    rate_limit_wait_cb=rate_limit_wait_cb,
-                    progress_cb=progress_cb,
-                )
-                return left_cards + right_cards
-            if not retry_on_rate_limit:
+        except _RateLimitStopped:
+            if len(batch) <= 1:
                 raise
-            await self._wait_rate_limit(
-                stopped,
-                cancel_flag=cancel_flag,
-                rate_limit_padding_sec=rate_limit_padding_sec,
-                rate_limit_wait_cb=rate_limit_wait_cb,
-                progress_cb=progress_cb,
-            )
-            return await self._analyze_batch_with_rate_limit_retry(
-                batch,
+            mid = len(batch) // 2
+            left_cards = await self._analyze_batch_with_rate_limit_retry(
+                batch[:mid],
                 params,
                 model_entry,
                 cancel_flag=cancel_flag,
-                retry_on_rate_limit=retry_on_rate_limit,
-                rate_limit_padding_sec=rate_limit_padding_sec,
-                rate_limit_wait_cb=rate_limit_wait_cb,
-                progress_cb=progress_cb,
             )
+            right_cards = await self._analyze_batch_with_rate_limit_retry(
+                batch[mid:],
+                params,
+                model_entry,
+                cancel_flag=cancel_flag,
+            )
+            return left_cards + right_cards
         except (json.JSONDecodeError, ValueError):
             if len(batch) <= 1:
                 raise
@@ -218,50 +176,14 @@ class AiDistractorService:
                 params,
                 model_entry,
                 cancel_flag=cancel_flag,
-                retry_on_rate_limit=retry_on_rate_limit,
-                rate_limit_padding_sec=rate_limit_padding_sec,
-                rate_limit_wait_cb=rate_limit_wait_cb,
-                progress_cb=progress_cb,
             )
             right_cards = await self._analyze_batch_with_rate_limit_retry(
                 batch[mid:],
                 params,
                 model_entry,
                 cancel_flag=cancel_flag,
-                retry_on_rate_limit=retry_on_rate_limit,
-                rate_limit_padding_sec=rate_limit_padding_sec,
-                rate_limit_wait_cb=rate_limit_wait_cb,
-                progress_cb=progress_cb,
             )
             return left_cards + right_cards
-
-    async def _wait_rate_limit(
-        self,
-        stopped: _RateLimitStopped,
-        *,
-        cancel_flag: Callable[[], bool] | None,
-        rate_limit_padding_sec: float,
-        rate_limit_wait_cb: Callable[[int], None] | None,
-        progress_cb: Callable[[str], None] | None,
-    ) -> None:
-        wait_seconds = float(stopped.retry_seconds or 30) + max(0.0, rate_limit_padding_sec)
-        remaining_sleep = wait_seconds
-        while remaining_sleep > 0:
-            if cancel_flag and cancel_flag():
-                raise _RateLimitStopped()
-            wait_display = max(1, int(remaining_sleep))
-            if rate_limit_wait_cb is not None:
-                rate_limit_wait_cb(wait_display)
-            elif progress_cb:
-                progress_cb(
-                    tr(
-                        "learning.quiz_distractor_cards_rate_limit_wait",
-                        seconds=wait_display,
-                    )
-                )
-            step = min(1.0, remaining_sleep)
-            await asyncio.sleep(step)
-            remaining_sleep -= step
 
     async def _request_batch(
         self,
@@ -310,56 +232,102 @@ def _card_english_term(card: dict, kind: str) -> str:
     return front
 
 
+def _normalize_english_term(text: str) -> str:
+    return normalize_english_quiz_key(text)
+
+
+def _lookup_card_by_english_term(by_term: dict[str, dict], word_label: str) -> dict | None:
+    key = word_label.lower()
+    card = by_term.get(key)
+    if card is not None:
+        return card
+    normalized_key = _normalize_english_term(word_label)
+    card = by_term.get(normalized_key)
+    if card is not None:
+        return card
+    for term, candidate_card in by_term.items():
+        if _normalize_english_term(term) == normalized_key:
+            return candidate_card
+    return None
+
+
+def _build_cards_by_english_term(cards: list[dict], kind: str) -> dict[str, dict]:
+    by_term: dict[str, dict] = {}
+    for card in cards:
+        term = _card_english_term(card, kind)
+        if not term:
+            continue
+        for lookup_key in {term.lower(), _normalize_english_term(term)}:
+            if lookup_key and lookup_key not in by_term:
+                by_term[lookup_key] = card
+    return by_term
+
+
+def _resolve_card_for_candidate(
+    cards: list[dict],
+    *,
+    candidate_index: int,
+    word_label: str,
+    kind: str,
+    by_term: dict[str, dict],
+) -> dict | None:
+    card = _lookup_card_by_english_term(by_term, word_label)
+    if card is not None:
+        return card
+    if candidate_index < len(cards):
+        return cards[candidate_index]
+    return None
+
+
 def _prepare_distractor_cards_batch(
     cards: list[dict],
     batch: list[CorpusCandidate],
     direction: str,
     kind: str,
 ) -> list[dict]:
-    by_term: dict[str, dict] = {}
-    for card in cards:
-        term = _card_english_term(card, kind)
-        if not term:
-            continue
-        key = term.lower()
-        if key not in by_term:
-            by_term[key] = card
+    by_term = _build_cards_by_english_term(cards, kind)
 
     prepared: list[dict] = []
-    for candidate in batch:
+    for index, candidate in enumerate(batch):
         word_label = _candidate_label(candidate, kind)
         if not word_label:
             continue
-        card = by_term.get(word_label.lower())
+        card = _resolve_card_for_candidate(
+            cards,
+            candidate_index=index,
+            word_label=word_label,
+            kind=kind,
+            by_term=by_term,
+        )
         if card is None:
             continue
-        item = _prepare_distractor_card([card], direction, kind, word_label)
+        item = _prepare_distractor_card(card, direction, kind, word_label)
         if item is not None:
             prepared.append(item)
     return prepared
 
 
 def _prepare_distractor_card(
-    cards: list[dict],
+    card: dict,
     direction: str,
     kind: str,
     word_label: str,
 ) -> dict | None:
-    for card in cards:
-        front = str(card.get("front", "")).strip()
-        back = str(card.get("back", "")).strip()
-        if not front or not back:
-            continue
-        term = back if kind == "ua-en" else front
-        item = dict(card)
-        if not item.get("imageable"):
-            item["image_prompt"] = ""
-        item["card_type"] = QUIZ_DISTRACTOR_CARD_TYPE
-        quiz_pool = [term] if term else ([word_label] if word_label else [])
-        return enrich_card_fields(
-            item,
-            direction=direction,
-            source_text="",
-            quiz_pool=quiz_pool,
-        )
-    return None
+    front = str(card.get("front", "")).strip()
+    back = str(card.get("back", "")).strip()
+    if not front or not back:
+        return None
+    item = dict(card)
+    if kind == "ua-en":
+        item["back"] = word_label
+    else:
+        item["front"] = word_label
+    if not item.get("imageable"):
+        item["image_prompt"] = ""
+    item["card_type"] = QUIZ_DISTRACTOR_CARD_TYPE
+    return enrich_card_fields(
+        item,
+        direction=direction,
+        source_text="",
+        quiz_pool=[word_label],
+    )

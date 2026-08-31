@@ -96,19 +96,6 @@ _DISTRACTOR_BTN = """
     QPushButton:hover:enabled { background: #eff6ff; }
     QPushButton:disabled { color: #94a3b8; border-color: #e2e8f0; }
 """
-_DISTRACTOR_AUTO_BTN = """
-    QPushButton {
-        background: #fff7ed;
-        color: #c2410c;
-        border: 1px solid #fdba74;
-        border-radius: 6px;
-        padding: 6px 12px;
-        font-size: 12px;
-        font-weight: 600;
-    }
-    QPushButton:hover:enabled { background: #ffedd5; }
-    QPushButton:disabled { color: #94a3b8; border-color: #e2e8f0; background: #f8fafc; }
-"""
 _FIX_BTN = """
     QPushButton {
         background: transparent;
@@ -240,11 +227,6 @@ class QuizGenerationPanel(QFrame):
         self._distractor_btn.setVisible(False)
         self._distractor_btn.clicked.connect(self._start_distractor_generation)
         distractor_row.addWidget(self._distractor_btn)
-        self._distractor_auto_btn = QPushButton()
-        self._distractor_auto_btn.setStyleSheet(_DISTRACTOR_AUTO_BTN)
-        self._distractor_auto_btn.setVisible(False)
-        self._distractor_auto_btn.clicked.connect(self._start_distractor_auto_generation)
-        distractor_row.addWidget(self._distractor_auto_btn)
         distractor_row.addStretch()
         layout.addLayout(distractor_row)
 
@@ -325,7 +307,6 @@ class QuizGenerationPanel(QFrame):
 
         self._distractor_hint.setVisible(needs_distractor_cards)
         self._distractor_btn.setVisible(needs_distractor_cards)
-        self._distractor_auto_btn.setVisible(needs_distractor_cards)
         if needs_distractor_cards:
             total_missing = len(self._missing_distractor_words)
             self._distractor_hint.setText(
@@ -334,9 +315,7 @@ class QuizGenerationPanel(QFrame):
             self._distractor_btn.setText(
                 tr("learning.quiz_distractor_cards_btn", count=total_missing)
             )
-            self._distractor_auto_btn.setText(tr("learning.quiz_distractor_cards_auto_btn"))
             self._distractor_btn.setEnabled(not needs_fix)
-            self._distractor_auto_btn.setEnabled(not needs_fix)
 
         if self._result_message and not keep_progress:
             self._subtitle.setText(self._result_message)
@@ -368,8 +347,6 @@ class QuizGenerationPanel(QFrame):
         self._title.setText(tr("learning.quiz_generation_card_title"))
         self._generate_btn.setText(tr("learning.quiz_generate_short"))
         self._cancel_btn.setText(tr("main.cancel"))
-        if self._distractor_auto_btn.isVisible():
-            self._distractor_auto_btn.setText(tr("learning.quiz_distractor_cards_auto_btn"))
         self.refresh()
 
     def _start_generation(self) -> None:
@@ -424,38 +401,12 @@ class QuizGenerationPanel(QFrame):
         self.generation_started.emit()
         self._distractor_worker.start()
 
-    def _start_distractor_auto_generation(self) -> None:
-        if self._deck_id is None or self.is_busy():
-            return
-        if not self._missing_distractor_words:
-            return
-        if self._model_combo.currentIndex() < 0:
-            return
-        model_entry = get_model_by_index(self._model_combo.currentIndex())
-        self._result_message = ""
-        self._distractor_worker = AiDistractorCardsWorker(
-            self._deck_id,
-            self._missing_distractor_words,
-            model_entry=model_entry,
-            continuous_on_rate_limit=True,
-            parent=self,
-        )
-        self._distractor_worker.progress.connect(self._on_progress)
-        self._distractor_worker.error.connect(self._on_error)
-        self._distractor_worker.finished.connect(self._on_distractor_finished)
-        self._set_busy(True, tr("learning.quiz_distractor_cards_auto_generating"))
-        self.generation_started.emit()
-        self._distractor_worker.start()
-
     def _set_busy(self, busy: bool, progress_text: str = "") -> None:
         self._generate_btn.setVisible(not busy)
         self._cancel_btn.setVisible(busy)
         self._fix_btn.setEnabled(not busy and self._fix_btn.isVisible())
         self._distractor_btn.setEnabled(
             not busy and self._distractor_btn.isVisible() and bool(self._missing_distractor_words)
-        )
-        self._distractor_auto_btn.setEnabled(
-            not busy and self._distractor_auto_btn.isVisible() and bool(self._missing_distractor_words)
         )
         self._model_combo.setEnabled(not busy)
         if progress_text:

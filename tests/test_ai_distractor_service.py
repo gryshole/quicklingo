@@ -5,7 +5,11 @@ from unittest.mock import MagicMock, patch
 
 from quicklingo.learning.ai_deck.models import AiDeckParams
 from quicklingo.learning.corpus_analysis import CorpusCandidate
-from quicklingo.learning.quiz.ai_distractor_service import AiDistractorService, _RateLimitStopped
+from quicklingo.learning.quiz.ai_distractor_service import (
+    AiDistractorService,
+    _RateLimitStopped,
+    _prepare_distractor_cards_batch,
+)
 from quicklingo.providers.registry import ModelEntry
 
 
@@ -53,14 +57,65 @@ class AiDistractorServiceRateLimitTests(unittest.IsolatedAsyncioTestCase):
                 params,
                 model_entry,
                 cancel_flag=None,
-                retry_on_rate_limit=False,
-                rate_limit_padding_sec=0,
-                rate_limit_wait_cb=None,
-                progress_cb=None,
             )
 
         self.assertEqual(call_sizes, [2, 1, 1])
         self.assertEqual(len(cards), 2)
+
+
+class DistractorCardPrepareTests(unittest.TestCase):
+    def test_prepare_batch_uses_quiz_word_when_ai_back_differs(self) -> None:
+        batch = [
+            CorpusCandidate("", "problem", 1, "ai_word_list", 3),
+            CorpusCandidate("", "strong point", 2, "ai_word_list", 3),
+        ]
+        cards = [
+            {
+                "front": "проблема",
+                "back": "the problem",
+                "hint": "іменник · issue",
+                "notes": "Definition: a difficulty",
+                "context": ["The problem is serious.", "We solved the problem.", "That problem remains."],
+            },
+            {
+                "front": "сильна сторона",
+                "back": "a strong suit",
+                "hint": "іменник · skill",
+                "notes": "Definition: a personal strength",
+                "context": [
+                    "Cooking is my strong suit.",
+                    "Patience is a strong suit for teachers.",
+                    "Public speaking became her strong suit.",
+                ],
+            },
+        ]
+
+        prepared = _prepare_distractor_cards_batch(cards, batch, "ua-en", "ua-en")
+
+        self.assertEqual(len(prepared), 2)
+        self.assertEqual(prepared[0]["back"], "problem")
+        self.assertEqual(prepared[1]["back"], "strong point")
+
+    def test_prepare_batch_pairs_by_index_when_synonym_back(self) -> None:
+        batch = [CorpusCandidate("", "advantage", 1, "ai_word_list", 3)]
+        cards = [
+            {
+                "front": "перевага",
+                "back": "benefit",
+                "hint": "іменник · edge",
+                "notes": "Definition: a favorable condition",
+                "context": [
+                    "Speed is an advantage in sports.",
+                    "They used every advantage they had.",
+                    "Home advantage helped the team.",
+                ],
+            }
+        ]
+
+        prepared = _prepare_distractor_cards_batch(cards, batch, "ua-en", "ua-en")
+
+        self.assertEqual(len(prepared), 1)
+        self.assertEqual(prepared[0]["back"], "advantage")
 
 
 if __name__ == "__main__":

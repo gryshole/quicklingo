@@ -4,6 +4,7 @@ from quicklingo.config.loader import resolve_learning_direction
 from quicklingo.db.learning_decks import list_decks
 from quicklingo.db.learning_cards import list_cards
 from quicklingo.db.learning_models import LearningCard, LearningDeck
+from quicklingo.learning.quiz.normalize import normalize_english_quiz_key
 from quicklingo.learning.review_queue import english_side_text
 
 QUIZ_DISTRACTOR_DECK_TAG = "__quiz-distractors"
@@ -43,9 +44,9 @@ def collect_english_keys_across_decks(
         if not include_distractor_deck and is_quiz_distractor_deck(deck):
             continue
         for card in list_cards(deck.id):
-            english = english_side_text(card, kind).strip().lower()
+            english = english_side_text(card, kind).strip()
             if english:
-                keys.add(english)
+                keys.add(normalize_english_quiz_key(english))
     return keys
 
 

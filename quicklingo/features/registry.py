@@ -38,7 +38,6 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
         "choices_pool_size": 6,
         "choices_display_count": 4,
         "generation_max_retries": 3,
-        "distractor_word_delay_sec": 3,
         "distractor_batch_size": 5,
         "type_picker_lookback": 10,
         "quiz_system_prompt_template": "",

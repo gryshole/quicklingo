@@ -78,14 +78,6 @@ def _learning_limits(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
     )
     editor._add_spin_form(
         form,
-        "learning.quiz",
-        "distractor_word_delay_sec",
-        "settings.features.quiz_distractor_word_delay_sec",
-        0,
-        60,
-    )
-    editor._add_spin_form(
-        form,
         "learning.ai_deck_generator",
         "batch_size",
         "settings.features.ai_deck_batch_size",

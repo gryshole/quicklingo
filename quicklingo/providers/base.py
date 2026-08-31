@@ -10,6 +10,8 @@ import httpx
 from quicklingo.i18n.translator import TranslatableError
 
 REQUEST_TIMEOUT = 30.0
+# Batch card generation (Gemini thinking models) can exceed 30s.
+LONG_REQUEST_TIMEOUT = httpx.Timeout(connect=15.0, read=120.0, write=60.0, pool=15.0)
 
 
 @contextlib.contextmanager

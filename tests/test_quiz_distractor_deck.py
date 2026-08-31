@@ -8,9 +8,11 @@ from unittest.mock import patch
 from quicklingo.db import connection as db_connection
 from quicklingo.db.history_schema import init_db
 from quicklingo.db.learning import create_deck, get_or_create_distractor_deck, upsert_card, upsert_quiz_question
+from quicklingo.db.learning_cards import batch_upsert_cards, list_cards
 from quicklingo.learning.quiz.aggregator import list_quiz_eligible_decks
 from quicklingo.learning.quiz.choice_lookup import lookup_english_metadata
 from quicklingo.learning.quiz.distractor_deck import (
+    QUIZ_DISTRACTOR_CARD_TYPE,
     QUIZ_DISTRACTOR_DECK_TAG,
     filter_user_decks,
     is_quiz_distractor_deck,
@@ -51,6 +53,26 @@ class QuizDistractorDeckTests(unittest.TestCase):
         missing_after = collect_missing_distractor_words(main.id)
         self.assertEqual(missing_after, ["fence"])
 
+    def test_collect_missing_treats_article_variants_as_covered(self) -> None:
+        main = create_deck("Legal", "legal", "ua-en", source="ai")
+        card_id = upsert_card(main.id, front="питання", back="issue", notes="Definition: topic")
+        upsert_quiz_question(
+            card_id=card_id,
+            question_type="translation_recall",
+            prompt_text="питання",
+            example_sentence="",
+            choices_pool=["the problem", "issue", "risk"],
+            correct_english="issue",
+            status="active",
+        )
+        distractor = get_or_create_distractor_deck("ua-en")
+        upsert_card(distractor.id, front="проблема", back="problem", notes="Definition: difficulty")
+
+        missing = collect_missing_distractor_words(main.id)
+
+        self.assertEqual(missing, ["risk"])
+        self.assertIsNotNone(lookup_english_metadata("the problem", "ua-en"))
+
     def test_distractor_deck_hidden_from_quiz_eligible_decks(self) -> None:
         create_deck("Hidden", QUIZ_DISTRACTOR_DECK_TAG, "ua-en", source="quiz_distractor")
         create_deck("Visible", "farm", "ua-en", source="ai")
@@ -76,3 +98,39 @@ class QuizDistractorDeckTests(unittest.TestCase):
         self.assertEqual(len(filtered), 1)
         self.assertTrue(is_quiz_distractor_deck(hidden))
         self.assertFalse(is_quiz_distractor_deck(visible))
+
+    def test_batch_upsert_distractor_cards_dedupe_by_english_not_front(self) -> None:
+        distractor = create_deck(
+            "Distractors",
+            QUIZ_DISTRACTOR_DECK_TAG,
+            "ua-en",
+            source="quiz_distractor",
+        )
+        batch_upsert_cards(
+            distractor.id,
+            [
+                {
+                    "front": "проблема",
+                    "back": "the problem",
+                    "hint": "problem hint",
+                    "notes": "Definition: difficulty",
+                    "card_type": QUIZ_DISTRACTOR_CARD_TYPE,
+                }
+            ],
+        )
+        batch_upsert_cards(
+            distractor.id,
+            [
+                {
+                    "front": "проблема",
+                    "back": "issue",
+                    "hint": "issue hint",
+                    "notes": "Definition: topic",
+                    "card_type": QUIZ_DISTRACTOR_CARD_TYPE,
+                }
+            ],
+        )
+
+        cards = list_cards(distractor.id)
+        backs = sorted(card.back for card in cards)
+        self.assertEqual(backs, ["issue", "the problem"])

@@ -208,6 +208,34 @@ def _optional_str(card: dict[str, object], key: str) -> str:
     return str(value).strip() if value is not None else ""
 
 
+def _distractor_english_side(front: str, back: str, kind: str) -> str:
+    return back if kind == "ua-en" else front
+
+
+def _load_distractor_id_by_english_key(
+    conn: sqlite3.Connection,
+    deck_id: int,
+    kind: str,
+) -> dict[str, int]:
+    from quicklingo.learning.quiz.distractor_deck import QUIZ_DISTRACTOR_CARD_TYPE
+    from quicklingo.learning.quiz.normalize import normalize_english_quiz_key
+
+    rows = conn.execute(
+        """
+        SELECT id, front, back FROM learning_cards
+        WHERE deck_id = ? AND card_type = ?
+        """,
+        (deck_id, QUIZ_DISTRACTOR_CARD_TYPE),
+    ).fetchall()
+    index: dict[str, int] = {}
+    for row in rows:
+        english = _distractor_english_side(row["front"], row["back"], kind)
+        key = normalize_english_quiz_key(english)
+        if key and key not in index:
+            index[key] = int(row["id"])
+    return index
+
+
 def batch_upsert_cards(
     deck_id: int,
     cards: list[dict[str, object]],
@@ -215,9 +243,14 @@ def batch_upsert_cards(
     """Insert or update many cards in one transaction. Returns affected card ids."""
     if not cards:
         return []
+    from quicklingo.config.loader import resolve_learning_direction
+
     today = date.today().isoformat()
     card_ids: list[int] = []
+    deck = get_deck(deck_id)
+    kind = resolve_learning_direction(deck.direction) if deck else "ua-en"
     with connection() as conn:
+        distractor_ids_by_key: dict[str, int] | None = None
         for card in cards:
             front = str(card.get("front", "")).strip()
             back = str(card.get("back", "")).strip()
@@ -244,14 +277,30 @@ def batch_upsert_cards(
                 source_record_id = int(source_record_id) if source_record_id is not None else None
             except (TypeError, ValueError):
                 source_record_id = None
-            normalized_front = normalize_source(front)
-            existing = conn.execute(
-                """
-                SELECT id FROM learning_cards
-                WHERE deck_id = ? AND lower(trim(front)) = ?
-                """,
-                (deck_id, normalized_front),
-            ).fetchone()
+            existing = None
+            if card_type == "quiz_distractor":
+                from quicklingo.learning.quiz.normalize import normalize_english_quiz_key
+
+                if distractor_ids_by_key is None:
+                    distractor_ids_by_key = _load_distractor_id_by_english_key(
+                        conn, deck_id, kind
+                    )
+                english_key = normalize_english_quiz_key(
+                    _distractor_english_side(front, back, kind)
+                )
+                if english_key:
+                    existing_id = distractor_ids_by_key.get(english_key)
+                    if existing_id is not None:
+                        existing = {"id": existing_id}
+            else:
+                normalized_front = normalize_source(front)
+                existing = conn.execute(
+                    """
+                    SELECT id FROM learning_cards
+                    WHERE deck_id = ? AND lower(trim(front)) = ?
+                    """,
+                    (deck_id, normalized_front),
+                ).fetchone()
             if existing:
                 card_id = int(existing["id"])
                 existing_row = conn.execute(
@@ -315,6 +364,14 @@ def batch_upsert_cards(
                     ),
                 )
                 card_id = int(cursor.lastrowid or 0)
+                if card_type == "quiz_distractor" and distractor_ids_by_key is not None:
+                    from quicklingo.learning.quiz.normalize import normalize_english_quiz_key
+
+                    english_key = normalize_english_quiz_key(
+                        _distractor_english_side(front, back, kind)
+                    )
+                    if english_key:
+                        distractor_ids_by_key[english_key] = card_id
             card_ids.append(card_id)
     return card_ids
 
