@@ -10,7 +10,7 @@ from quicklingo.db.history_schema import init_db
 from quicklingo.db.learning import create_deck, get_or_create_distractor_deck, upsert_card, upsert_quiz_question
 from quicklingo.db.learning_cards import batch_upsert_cards, list_cards
 from quicklingo.learning.quiz.aggregator import list_quiz_eligible_decks
-from quicklingo.learning.quiz.choice_lookup import lookup_english_metadata
+from quicklingo.learning.quiz.choice_lookup import lookup_english_metadata, format_wrong_choice_feedback
 from quicklingo.learning.quiz.distractor_deck import (
     QUIZ_DISTRACTOR_CARD_TYPE,
     QUIZ_DISTRACTOR_DECK_TAG,
@@ -134,3 +134,16 @@ class QuizDistractorDeckTests(unittest.TestCase):
         cards = list_cards(distractor.id)
         backs = sorted(card.back for card in cards)
         self.assertEqual(backs, ["issue", "the problem"])
+
+    def test_format_wrong_choice_feedback_from_distractor_deck(self) -> None:
+        distractor = get_or_create_distractor_deck("ua-en")
+        upsert_card(
+            distractor.id,
+            front="відпустка",
+            back="vacation",
+            notes="Definition: time off work",
+        )
+        feedback = format_wrong_choice_feedback("vacation", "ua-en")
+        self.assertIsNotNone(feedback)
+        assert feedback is not None
+        self.assertIn("відпустка", feedback)

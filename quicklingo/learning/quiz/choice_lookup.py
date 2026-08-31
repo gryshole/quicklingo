@@ -67,3 +67,22 @@ def _match_in_deck(
             from_distractor_deck=from_distractor,
         )
     return None
+
+
+def format_wrong_choice_feedback(english: str, direction: str) -> str | None:
+    """Human-readable hint for a wrong quiz choice (ukrainian or definition from cards)."""
+    from quicklingo.i18n import tr
+
+    term = collapse_whitespace(english)
+    if not term:
+        return None
+    meta = lookup_english_metadata(term, direction)
+    if meta is None:
+        return tr("learning.quiz_wrong_choice_unknown", english=term)
+    ukrainian = meta.ukrainian.strip()
+    if ukrainian:
+        return tr("learning.quiz_wrong_choice_hint", english=term, ukrainian=ukrainian)
+    definition = meta.definition.strip()
+    if definition:
+        return tr("learning.quiz_wrong_choice_definition", english=term, definition=definition)
+    return None

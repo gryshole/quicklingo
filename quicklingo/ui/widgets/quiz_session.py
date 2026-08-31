@@ -23,6 +23,7 @@ from quicklingo.db import learning
 from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.quiz.aggregator import get_quiz_pool_stats, list_quiz_eligible_decks
+from quicklingo.learning.quiz.choice_lookup import format_wrong_choice_feedback
 from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch import collect_question_tts_texts, collect_quiz_tts_texts
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
@@ -35,6 +36,7 @@ _VICTORY_CARD_MAX_WIDTH = 760
 _QUIZ_CARD_MAX_WIDTH = 768
 _QUIZ_CARD_MIN_WIDTH = 560
 _NEXT_ROW_HEIGHT = 52
+_CHOICE_FEEDBACK_SLOT_HEIGHT = 48
 _PROGRESS_BAR_HEIGHT = 10
 _SPEAKER_SLOT_HEIGHT = 44
 
@@ -87,6 +89,9 @@ _FEEDBACK_CORRECT = (
 )
 _FEEDBACK_WRONG = (
     "background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; border-radius: 8px;"
+)
+_CHOICE_FEEDBACK_STYLE = (
+    "color: #475569; font-size: 10pt; padding: 4px 8px 0; background: transparent;"
 )
 _PRIMARY_BTN = """
     QPushButton {
@@ -436,6 +441,19 @@ class QuizSessionWidget(QWidget):
             self._choice_buttons.append(btn)
             self._choices_layout.addWidget(btn)
         quiz_card_layout.addLayout(self._choices_layout)
+        self._choice_feedback_host = QWidget()
+        self._choice_feedback_host.setFixedHeight(_CHOICE_FEEDBACK_SLOT_HEIGHT)
+        feedback_layout = QVBoxLayout(self._choice_feedback_host)
+        feedback_layout.setContentsMargins(0, 4, 0, 0)
+        feedback_layout.setSpacing(0)
+        self._choice_feedback_label = QLabel()
+        self._choice_feedback_label.setWordWrap(True)
+        self._choice_feedback_label.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        )
+        self._choice_feedback_label.setStyleSheet(_CHOICE_FEEDBACK_STYLE)
+        feedback_layout.addWidget(self._choice_feedback_label)
+        quiz_card_layout.addWidget(self._choice_feedback_host)
         self._next_row_host = QWidget()
         self._next_row_host.setFixedHeight(_NEXT_ROW_HEIGHT)
         next_row = QHBoxLayout(self._next_row_host)
@@ -723,8 +741,20 @@ class QuizSessionWidget(QWidget):
     def _prefetch_question_tts(self, question) -> None:
         tts_prefetch_service().prefetch_texts(collect_question_tts_texts(question), priority=True)
 
+    def _session_direction(self) -> str:
+        words = self._controller.words_by_id()
+        if not words:
+            return "ua-en"
+        first_word = next(iter(words.values()))
+        card = learning.get_card(first_word.card_id)
+        if card is None:
+            return "ua-en"
+        deck = learning.get_deck(card.deck_id)
+        return deck.direction if deck else "ua-en"
+
     def _show_current_question(self) -> None:
         self._next_btn.setVisible(False)
+        self._choice_feedback_label.clear()
         question = self._controller.current_question()
         if question is None:
             self._finish_session()
@@ -766,6 +796,11 @@ class QuizSessionWidget(QWidget):
                 btn.setStyleSheet(self._choice_feedback_style(correct=correct))
             elif btn.text().strip().lower() == correct_word.strip().lower():
                 btn.setStyleSheet(self._choice_feedback_style(correct=True))
+        self._choice_feedback_label.clear()
+        if not correct:
+            feedback = format_wrong_choice_feedback(choice, self._session_direction())
+            if feedback:
+                self._choice_feedback_label.setText(feedback)
         self._tts_answer_revealed = True
         self._update_tts_ui(question)
         self._prefetch_question_tts(question)
@@ -795,7 +830,11 @@ class QuizSessionWidget(QWidget):
         self._progress_label.setText("")
         self._score_label.setText(tr("learning.quiz_score", score=result.score, total=result.total))
         if result.wrong_words:
-            _populate_wrong_table(self._wrong_table, self._controller)
+            _populate_wrong_table(
+                self._wrong_table,
+                self._controller,
+                direction=self._session_direction(),
+            )
             self._wrong_title.setVisible(True)
             self._wrong_table.setVisible(True)
             self._review_weak_btn.setVisible(True)
@@ -848,7 +887,12 @@ class QuizSessionWidget(QWidget):
         self._prompt_play_btn.setEnabled(not active)
 
 
-def _populate_wrong_table(table: QTableWidget, controller: QuizSessionController) -> None:
+def _populate_wrong_table(
+    table: QTableWidget,
+    controller: QuizSessionController,
+    *,
+    direction: str,
+) -> None:
     rows: list[tuple[str, str, str]] = []
     seen: set[int] = set()
     for answer in controller.answers():
@@ -861,7 +905,11 @@ def _populate_wrong_table(table: QTableWidget, controller: QuizSessionController
         word = controller.words_by_id().get(question.source_card_id)
         if word is None:
             continue
-        rows.append((word.english, answer.selected, question.correct_english))
+        selected_label = answer.selected
+        feedback = format_wrong_choice_feedback(answer.selected, direction)
+        if feedback:
+            selected_label = feedback
+        rows.append((word.english, selected_label, question.correct_english))
 
     table.setRowCount(len(rows))
     table.clearContents()
