@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from quicklingo.config.loader import resolve_learning_direction
 from quicklingo.db import learning
+from quicklingo.learning.quiz.distractor_deck import filter_user_decks
 from quicklingo.learning.quiz.eligibility import is_quiz_eligible
 from quicklingo.learning.quiz.models import QuizWordDto
 from quicklingo.learning.quiz.normalize import card_to_quiz_word
@@ -21,7 +22,7 @@ class QuizPoolStats:
 
 def list_quiz_eligible_decks() -> list[learning.LearningDeck]:
     result: list[learning.LearningDeck] = []
-    for deck in learning.list_decks():
+    for deck in filter_user_decks(learning.list_decks()):
         if resolve_learning_direction(deck.direction) in ("ua-en", "en-ua"):
             result.append(deck)
     return result

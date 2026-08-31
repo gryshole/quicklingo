@@ -18,6 +18,7 @@ from quicklingo.config.loader import get_direction_label
 from quicklingo.db import learning
 from quicklingo.i18n import tr
 from quicklingo.learning.analytics.repository import LearningAnalyticsRepository
+from quicklingo.learning.quiz.distractor_deck import filter_user_decks
 from quicklingo.ui.widgets.activity_heatmap import ActivityHeatmapWidget
 
 _PAGE_MARGIN = 16
@@ -269,7 +270,7 @@ class LearningProgressWidget(QWidget):
         self._deck_filter.blockSignals(True)
         self._deck_filter.clear()
         self._deck_filter.addItem(tr("learning.progress_all_decks"), None)
-        for deck in learning.list_decks():
+        for deck in filter_user_decks(learning.list_decks()):
             label = f"{deck.name} ({get_direction_label(deck.direction)})"
             self._deck_filter.addItem(label, deck.id)
         if current is not None:

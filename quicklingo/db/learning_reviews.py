@@ -168,12 +168,15 @@ def list_quiz_english_words(
 ) -> list[str]:
     from quicklingo.config.loader import resolve_learning_direction
     from quicklingo.learning.card_prompt import hint_pos_matches
+    from quicklingo.learning.quiz.distractor_deck import is_quiz_distractor_deck
     from quicklingo.learning.review_queue import english_side_text
 
     exclude_lower = {word.lower() for word in (exclude or set())}
     seen: set[str] = set()
     results: list[str] = []
     for deck in list_decks():
+        if is_quiz_distractor_deck(deck):
+            continue
         if resolve_learning_direction(deck.direction) not in ("ua-en", "en-ua"):
             continue
         for card in list_cards(deck.id):

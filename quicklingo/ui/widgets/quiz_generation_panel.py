@@ -15,10 +15,16 @@ from quicklingo.db.learning import QuizCoverageStats
 from quicklingo.i18n import tr
 from quicklingo.learning.quiz.aggregator import list_quiz_eligible_decks
 from quicklingo.learning.quiz.card_eligibility_fix import count_ineligible_cards
+from quicklingo.learning.quiz.distractor_words import (
+    collect_missing_distractor_words,
+    resolve_distractor_generation_deck_id,
+)
+from quicklingo.learning.quiz.distractor_generation_outcome import DistractorGenerationOutcome
 from quicklingo.learning.quiz.deck_selection_prefs import save_generation_deck_id
 from quicklingo.learning.quiz.generation_outcome import QuizGenerationOutcome
 from quicklingo.providers.registry import get_model_by_index, get_model_entries
 from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
+from quicklingo.workers.ai_distractor_cards_worker import AiDistractorCardsWorker
 from quicklingo.workers.ai_quiz_fix_cards_worker import AiQuizFixCardsWorker, QuizFixOutcome
 from quicklingo.workers.ai_quiz_generator_worker import AiQuizGeneratorWorker
 
@@ -77,6 +83,32 @@ _CANCEL_BTN = """
     }
     QPushButton:hover:enabled { background: #f8fafc; }
 """
+_DISTRACTOR_BTN = """
+    QPushButton {
+        background: #ffffff;
+        color: #1e40af;
+        border: 1px solid #93c5fd;
+        border-radius: 6px;
+        padding: 6px 14px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    QPushButton:hover:enabled { background: #eff6ff; }
+    QPushButton:disabled { color: #94a3b8; border-color: #e2e8f0; }
+"""
+_DISTRACTOR_AUTO_BTN = """
+    QPushButton {
+        background: #fff7ed;
+        color: #c2410c;
+        border: 1px solid #fdba74;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    QPushButton:hover:enabled { background: #ffedd5; }
+    QPushButton:disabled { color: #94a3b8; border-color: #e2e8f0; background: #f8fafc; }
+"""
 _FIX_BTN = """
     QPushButton {
         background: transparent;
@@ -90,6 +122,36 @@ _FIX_BTN = """
     QPushButton:hover:enabled { color: #92400e; }
     QPushButton:disabled { color: #94a3b8; }
 """
+
+
+def _distractor_result_message(outcome: DistractorGenerationOutcome, remaining: int) -> str:
+    if outcome.cancelled:
+        return tr(
+            "learning.quiz_distractor_cards_cancelled",
+            created=outcome.created,
+            remaining=remaining,
+        )
+    if outcome.rate_limited:
+        retry_hint = (
+            tr("errors.api_retry_in_seconds", seconds=outcome.retry_seconds)
+            if outcome.retry_seconds is not None
+            else tr("errors.api_retry_soon")
+        )
+        return tr(
+            "learning.quiz_distractor_cards_rate_limit_paused",
+            created=outcome.created,
+            remaining=remaining,
+            retry_hint=retry_hint,
+        )
+    if outcome.created > 0:
+        if remaining > 0:
+            return tr(
+                "learning.quiz_distractor_cards_partial",
+                created=outcome.created,
+                remaining=remaining,
+            )
+        return tr("learning.quiz_distractor_cards_done", count=outcome.created)
+    return tr("learning.quiz_distractor_cards_none")
 
 
 def _generation_result_message(outcome: QuizGenerationOutcome) -> str:
@@ -123,10 +185,10 @@ def _resolve_deck_id(deck_ids: frozenset[int] | None) -> int | None:
             return deck.id
         if stats.eligible > 0 and stats.ready < stats.eligible:
             incomplete.append((stats.missing_any, deck.id, stats.eligible - stats.ready))
-    if not incomplete:
-        return None
-    incomplete.sort(key=lambda item: (-item[0], item[1]))
-    return incomplete[0][1]
+    if incomplete:
+        incomplete.sort(key=lambda item: (-item[0], item[1]))
+        return incomplete[0][1]
+    return resolve_distractor_generation_deck_id(deck_ids)
 
 
 class QuizGenerationPanel(QFrame):
@@ -142,6 +204,8 @@ class QuizGenerationPanel(QFrame):
         self._result_message: str = ""
         self._quiz_worker: AiQuizGeneratorWorker | None = None
         self._fix_worker: AiQuizFixCardsWorker | None = None
+        self._distractor_worker: AiDistractorCardsWorker | None = None
+        self._missing_distractor_words: list[str] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -162,6 +226,27 @@ class QuizGenerationPanel(QFrame):
         self._fix_btn.clicked.connect(self._start_fix)
         self._fix_btn.setVisible(False)
         layout.addWidget(self._fix_btn)
+
+        self._distractor_hint = QLabel()
+        self._distractor_hint.setObjectName("quizGenSubtitle")
+        self._distractor_hint.setWordWrap(True)
+        self._distractor_hint.setVisible(False)
+        layout.addWidget(self._distractor_hint)
+
+        distractor_row = QHBoxLayout()
+        distractor_row.setSpacing(8)
+        self._distractor_btn = QPushButton()
+        self._distractor_btn.setStyleSheet(_DISTRACTOR_BTN)
+        self._distractor_btn.setVisible(False)
+        self._distractor_btn.clicked.connect(self._start_distractor_generation)
+        distractor_row.addWidget(self._distractor_btn)
+        self._distractor_auto_btn = QPushButton()
+        self._distractor_auto_btn.setStyleSheet(_DISTRACTOR_AUTO_BTN)
+        self._distractor_auto_btn.setVisible(False)
+        self._distractor_auto_btn.clicked.connect(self._start_distractor_auto_generation)
+        distractor_row.addWidget(self._distractor_auto_btn)
+        distractor_row.addStretch()
+        layout.addLayout(distractor_row)
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
@@ -230,11 +315,28 @@ class QuizGenerationPanel(QFrame):
         ineligible = count_ineligible_cards(self._deck_id)
         needs_generation = stats.eligible > 0 and stats.ready < stats.eligible
         needs_fix = ineligible > 0
+        self._missing_distractor_words = collect_missing_distractor_words(self._deck_id)
+        needs_distractor_cards = len(self._missing_distractor_words) > 0
 
         self._fix_btn.setVisible(needs_fix)
         if needs_fix:
             self._fix_btn.setText(tr("learning.quiz_fix_ineligible", count=ineligible))
             self._fix_btn.setEnabled(True)
+
+        self._distractor_hint.setVisible(needs_distractor_cards)
+        self._distractor_btn.setVisible(needs_distractor_cards)
+        self._distractor_auto_btn.setVisible(needs_distractor_cards)
+        if needs_distractor_cards:
+            total_missing = len(self._missing_distractor_words)
+            self._distractor_hint.setText(
+                tr("learning.quiz_distractor_cards_hint", count=total_missing)
+            )
+            self._distractor_btn.setText(
+                tr("learning.quiz_distractor_cards_btn", count=total_missing)
+            )
+            self._distractor_auto_btn.setText(tr("learning.quiz_distractor_cards_auto_btn"))
+            self._distractor_btn.setEnabled(not needs_fix)
+            self._distractor_auto_btn.setEnabled(not needs_fix)
 
         if self._result_message and not keep_progress:
             self._subtitle.setText(self._result_message)
@@ -250,12 +352,14 @@ class QuizGenerationPanel(QFrame):
                     deck=deck_name,
                 )
             )
+        elif needs_distractor_cards:
+            self._subtitle.clear()
         elif self._result_message:
             self._subtitle.setText(self._result_message)
         else:
             self._subtitle.clear()
 
-        show = needs_fix or needs_generation or bool(self._result_message)
+        show = needs_fix or needs_generation or needs_distractor_cards or bool(self._result_message)
         self.setVisible(show)
         self._generate_btn.setEnabled(show and needs_generation and not needs_fix)
         self._generate_btn.setVisible(not self._cancel_btn.isVisible())
@@ -264,6 +368,8 @@ class QuizGenerationPanel(QFrame):
         self._title.setText(tr("learning.quiz_generation_card_title"))
         self._generate_btn.setText(tr("learning.quiz_generate_short"))
         self._cancel_btn.setText(tr("main.cancel"))
+        if self._distractor_auto_btn.isVisible():
+            self._distractor_auto_btn.setText(tr("learning.quiz_distractor_cards_auto_btn"))
         self.refresh()
 
     def _start_generation(self) -> None:
@@ -296,10 +402,61 @@ class QuizGenerationPanel(QFrame):
         self.generation_started.emit()
         self._fix_worker.start()
 
+    def _start_distractor_generation(self) -> None:
+        if self._deck_id is None or self.is_busy():
+            return
+        if not self._missing_distractor_words:
+            return
+        if self._model_combo.currentIndex() < 0:
+            return
+        model_entry = get_model_by_index(self._model_combo.currentIndex())
+        self._result_message = ""
+        self._distractor_worker = AiDistractorCardsWorker(
+            self._deck_id,
+            self._missing_distractor_words,
+            model_entry=model_entry,
+            parent=self,
+        )
+        self._distractor_worker.progress.connect(self._on_progress)
+        self._distractor_worker.error.connect(self._on_error)
+        self._distractor_worker.finished.connect(self._on_distractor_finished)
+        self._set_busy(True, tr("learning.quiz_distractor_cards_generating"))
+        self.generation_started.emit()
+        self._distractor_worker.start()
+
+    def _start_distractor_auto_generation(self) -> None:
+        if self._deck_id is None or self.is_busy():
+            return
+        if not self._missing_distractor_words:
+            return
+        if self._model_combo.currentIndex() < 0:
+            return
+        model_entry = get_model_by_index(self._model_combo.currentIndex())
+        self._result_message = ""
+        self._distractor_worker = AiDistractorCardsWorker(
+            self._deck_id,
+            self._missing_distractor_words,
+            model_entry=model_entry,
+            continuous_on_rate_limit=True,
+            parent=self,
+        )
+        self._distractor_worker.progress.connect(self._on_progress)
+        self._distractor_worker.error.connect(self._on_error)
+        self._distractor_worker.finished.connect(self._on_distractor_finished)
+        self._set_busy(True, tr("learning.quiz_distractor_cards_auto_generating"))
+        self.generation_started.emit()
+        self._distractor_worker.start()
+
     def _set_busy(self, busy: bool, progress_text: str = "") -> None:
         self._generate_btn.setVisible(not busy)
         self._cancel_btn.setVisible(busy)
         self._fix_btn.setEnabled(not busy and self._fix_btn.isVisible())
+        self._distractor_btn.setEnabled(
+            not busy and self._distractor_btn.isVisible() and bool(self._missing_distractor_words)
+        )
+        self._distractor_auto_btn.setEnabled(
+            not busy and self._distractor_auto_btn.isVisible() and bool(self._missing_distractor_words)
+        )
         self._model_combo.setEnabled(not busy)
         if progress_text:
             self._subtitle.setText(progress_text)
@@ -310,6 +467,21 @@ class QuizGenerationPanel(QFrame):
             self._quiz_worker.cancel()
         if self._fix_worker is not None:
             self._fix_worker.cancel()
+        if self._distractor_worker is not None:
+            self._distractor_worker.cancel()
+
+    def _on_distractor_finished(self, outcome: object) -> None:
+        if not isinstance(outcome, DistractorGenerationOutcome):
+            self._cleanup_workers()
+            self.set_deck_scope(self._scope_deck_ids)
+            self.generation_finished.emit()
+            return
+        self._cleanup_workers()
+        self.set_deck_scope(self._scope_deck_ids)
+        remaining = len(self._missing_distractor_words)
+        self._result_message = _distractor_result_message(outcome, remaining)
+        self.refresh()
+        self.generation_finished.emit()
 
     def _on_progress(self, message: str) -> None:
         self._subtitle.setText(message)
@@ -363,9 +535,16 @@ class QuizGenerationPanel(QFrame):
         if self._fix_worker is not None:
             self._fix_worker.deleteLater()
             self._fix_worker = None
+        if self._distractor_worker is not None:
+            self._distractor_worker.deleteLater()
+            self._distractor_worker = None
         self._cancel_btn.setVisible(False)
         self._generate_btn.setVisible(True)
         self._model_combo.setEnabled(True)
 
     def is_busy(self) -> bool:
-        return self._quiz_worker is not None or self._fix_worker is not None
+        return (
+            self._quiz_worker is not None
+            or self._fix_worker is not None
+            or self._distractor_worker is not None
+        )

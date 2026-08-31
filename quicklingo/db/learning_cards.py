@@ -5,6 +5,7 @@ from datetime import date
 
 from quicklingo import settings as app_settings
 from quicklingo.db.connection import connection, fetch_all, in_placeholders, scalar_int
+from quicklingo.db.learning_decks import get_deck
 from quicklingo.db.learning_models import LearningCard, _CARD_SELECT, _row_to_card
 from quicklingo.db.sync_schema import new_card_sync_id
 from quicklingo.db.tombstones import record_card_delete
@@ -227,6 +228,16 @@ def batch_upsert_cards(
             notes = _optional_str(card, "notes")
             image_prompt = _optional_str(card, "image_prompt")
             quiz_distractors = _optional_str(card, "quiz_distractors")
+            card_type = _optional_str(card, "card_type") or "basic"
+            next_review = card.get("next_review_date")
+            if next_review is not None:
+                next_review_date = str(next_review).strip()
+            elif card_type == "quiz_distractor":
+                from quicklingo.learning.quiz.distractor_deck import NO_REVIEW_SCHEDULE_DATE
+
+                next_review_date = NO_REVIEW_SCHEDULE_DATE
+            else:
+                next_review_date = today
             priority = int(card.get("priority", 3))
             source_record_id = card.get("source_record_id")
             try:
@@ -259,6 +270,7 @@ def batch_upsert_cards(
                     UPDATE learning_cards
                     SET back = ?, context = ?, hint = ?, notes = ?, image_prompt = ?,
                         quiz_distractors = ?, priority = ?, source_record_id = ?,
+                        card_type = ?, next_review_date = ?,
                         content_updated_at = datetime('now')
                     WHERE id = ?
                     """,
@@ -271,6 +283,8 @@ def batch_upsert_cards(
                         quiz_distractors,
                         priority,
                         source_record_id,
+                        card_type,
+                        next_review_date,
                         card_id,
                     ),
                 )
@@ -281,8 +295,8 @@ def batch_upsert_cards(
                     INSERT INTO learning_cards
                         (deck_id, front, back, context, hint, notes, image_prompt,
                          quiz_distractors, priority, source_record_id, next_review_date,
-                         sync_id, content_updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                         card_type, sync_id, content_updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     """,
                     (
                         deck_id,
@@ -295,7 +309,8 @@ def batch_upsert_cards(
                         quiz_distractors,
                         priority,
                         source_record_id,
-                        today,
+                        next_review_date,
+                        card_type,
                         sync_id,
                     ),
                 )

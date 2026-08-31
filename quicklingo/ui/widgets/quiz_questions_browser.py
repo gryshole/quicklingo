@@ -23,6 +23,7 @@ from quicklingo.config.loader import get_direction_label
 from quicklingo.db import learning
 from quicklingo.db.learning import QuizQuestionRow
 from quicklingo.i18n import tr
+from quicklingo.learning.quiz.distractor_deck import filter_user_decks
 from quicklingo.ui.dialogs.quiz_question_edit_dialog import QuizQuestionEditDialog
 from quicklingo.ui.dialogs.quiz_question_regen_dialog import QuizQuestionRegenDialog
 from quicklingo.ui.qt_utils import configure_single_line_combo, reload_combo
@@ -429,7 +430,7 @@ class QuizQuestionsBrowserWidget(QWidget):
 
     def reload_decks(self) -> None:
         current = self._deck_combo.currentData()
-        decks = learning.list_decks()
+        decks = filter_user_decks(learning.list_decks())
         reload_combo(
             self._deck_combo,
             [

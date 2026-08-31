@@ -7,6 +7,7 @@ from fsrs import State
 
 from quicklingo.db.connection import fetch_all, in_placeholders
 from quicklingo.db.learning_decks import list_decks
+from quicklingo.learning.quiz.distractor_deck import filter_user_decks
 from quicklingo.db.learning_models import LearningCard, LearningDeck
 from quicklingo.learning.fsrs_review import card_fsrs_state
 
@@ -55,6 +56,7 @@ def count_due_cards_map(deck_ids: list[int]) -> dict[int, int]:
         SELECT id, deck_id, last_reviewed, fsrs_state, next_review_date
         FROM learning_cards
         WHERE deck_id IN ({placeholders})
+          AND card_type != 'quiz_distractor'
         """,
         deck_ids,
     )
@@ -98,7 +100,7 @@ def count_cards_map(deck_ids: list[int]) -> dict[int, int]:
 
 
 def get_deck_summaries() -> list[DeckSummary]:
-    decks = list_decks()
+    decks = filter_user_decks(list_decks())
     deck_ids = [deck.id for deck in decks]
     due_map = count_due_cards_map(deck_ids)
     card_map = count_cards_map(deck_ids)

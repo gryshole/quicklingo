@@ -120,6 +120,22 @@ def list_decks() -> list[LearningDeck]:
     return [_row_to_deck(row) for row in rows]
 
 
+def get_or_create_distractor_deck(direction: str) -> LearningDeck:
+    from quicklingo.i18n import tr
+    from quicklingo.learning.quiz.distractor_deck import (
+        QUIZ_DISTRACTOR_DECK_SOURCE,
+        QUIZ_DISTRACTOR_DECK_TAG,
+    )
+
+    name = tr("learning.quiz_distractor_deck_name")
+    return create_deck(
+        name=name,
+        tag=QUIZ_DISTRACTOR_DECK_TAG,
+        direction=direction,
+        source=QUIZ_DISTRACTOR_DECK_SOURCE,
+    )
+
+
 def get_deck(deck_id: int) -> LearningDeck | None:
     with connection() as conn:
         row = conn.execute(

@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from quicklingo.db.connection import connection
 from quicklingo.db.learning import LearningCard, list_cards, list_decks
 from quicklingo.learning.analytics.mastered import is_learning, is_mastered
+from quicklingo.learning.quiz.distractor_deck import is_quiz_distractor_deck
 from quicklingo.learning.analytics.models import (
     DailyActivityDto,
     LearningDashboardDto,
@@ -142,5 +143,7 @@ class LearningAnalyticsRepository:
     def _all_cards(self) -> list[LearningCard]:
         cards: list[LearningCard] = []
         for deck in list_decks():
+            if is_quiz_distractor_deck(deck):
+                continue
             cards.extend(list_cards(deck.id))
         return cards
