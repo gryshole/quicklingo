@@ -11,6 +11,7 @@ from quicklingo.db.learning import create_deck, get_or_create_distractor_deck, u
 from quicklingo.db.learning_cards import batch_upsert_cards, list_cards
 from quicklingo.learning.quiz.aggregator import list_quiz_eligible_decks
 from quicklingo.learning.quiz.choice_lookup import lookup_english_metadata, format_wrong_choice_feedback
+from quicklingo.learning.quiz.models import QuizQuestionType
 from quicklingo.learning.quiz.distractor_deck import (
     QUIZ_DISTRACTOR_CARD_TYPE,
     QUIZ_DISTRACTOR_DECK_TAG,
@@ -147,3 +148,53 @@ class QuizDistractorDeckTests(unittest.TestCase):
         self.assertIsNotNone(feedback)
         assert feedback is not None
         self.assertIn("відпустка", feedback)
+
+    def test_format_wrong_choice_feedback_definition_match_combined(self) -> None:
+        main = create_deck("Clothes", "clothes", "ua-en", source="ai")
+        upsert_card(main.id, front="сорочка", back="shirt", notes="Definition: upper-body garment")
+        distractor = create_deck(
+            "Distractors",
+            QUIZ_DISTRACTOR_DECK_TAG,
+            "ua-en",
+            source="quiz_distractor",
+        )
+        upsert_card(distractor.id, front="куртка", back="jacket", notes="Definition: outer garment")
+
+        feedback = format_wrong_choice_feedback(
+            "jacket",
+            "ua-en",
+            correct_english="shirt",
+            question_type=QuizQuestionType.DEFINITION_MATCH,
+        )
+
+        self.assertIsNotNone(feedback)
+        assert feedback is not None
+        self.assertIn("сорочка", feedback)
+        self.assertIn("shirt", feedback)
+        self.assertIn("jacket", feedback)
+        self.assertIn("куртка", feedback)
+
+    def test_format_wrong_choice_feedback_fill_blank_combined(self) -> None:
+        main = create_deck("Furniture", "furniture", "ua-en", source="ai")
+        upsert_card(main.id, front="стілець", back="chair", notes="Definition: seat with a back")
+        distractor = create_deck(
+            "Distractors",
+            QUIZ_DISTRACTOR_DECK_TAG,
+            "ua-en",
+            source="quiz_distractor",
+        )
+        upsert_card(distractor.id, front="полиця", back="shelf", notes="Definition: flat storage board")
+
+        feedback = format_wrong_choice_feedback(
+            "shelf",
+            "ua-en",
+            correct_english="chair",
+            question_type=QuizQuestionType.FILL_BLANK,
+        )
+
+        self.assertIsNotNone(feedback)
+        assert feedback is not None
+        self.assertIn("стілець", feedback)
+        self.assertIn("chair", feedback)
+        self.assertIn("shelf", feedback)
+        self.assertIn("полиця", feedback)

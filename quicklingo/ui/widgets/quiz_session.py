@@ -798,7 +798,12 @@ class QuizSessionWidget(QWidget):
                 btn.setStyleSheet(self._choice_feedback_style(correct=True))
         self._choice_feedback_label.clear()
         if not correct:
-            feedback = format_wrong_choice_feedback(choice, self._session_direction())
+            feedback = format_wrong_choice_feedback(
+                choice,
+                self._session_direction(),
+                correct_english=correct_word,
+                question_type=question.type,
+            )
             if feedback:
                 self._choice_feedback_label.setText(feedback)
         self._tts_answer_revealed = True
@@ -906,7 +911,12 @@ def _populate_wrong_table(
         if word is None:
             continue
         selected_label = answer.selected
-        feedback = format_wrong_choice_feedback(answer.selected, direction)
+        feedback = format_wrong_choice_feedback(
+            answer.selected,
+            direction,
+            correct_english=question.correct_english,
+            question_type=question.type,
+        )
         if feedback:
             selected_label = feedback
         rows.append((word.english, selected_label, question.correct_english))

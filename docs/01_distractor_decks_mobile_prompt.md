@@ -1,6 +1,8 @@
-# Колоди дистракторів — промпт для quicklingomobile
+# 01 — Колоди дистракторів — промпт для quicklingomobile
 
-Скопіюй цей текст у чат для `d:\Develop\quicklingomobile`, коли desktop QuickLingo уже змерджено і distractor deck з [`docs/quiz_distractor_mobile_prompt.md`](quiz_distractor_mobile_prompt.md) реалізовано (або паралельно, якщо базова колода дистракторів уже є).
+> **01 з 02** — перший крок. Далі: [02](02_quiz_wrong_choice_feedback_mobile_prompt.md). Зміст кроків: [README](README.md).
+
+Скопіюй цей текст у чат для `d:\Develop\quicklingomobile`, коли **базова колода дистракторів, AI-генерація і lookup** уже є на mobile (перенесено раніше).
 
 ---
 
@@ -109,7 +111,7 @@ transferDistractorCards(
 
 ## 5. Lookup після переносу
 
-`lookupEnglishMetadata` ([`choice_lookup.ts`](quiz_distractor_mobile_prompt.md)) спочатку шукає в **user decks**, потім в distractor deck. Після переносу картка в основній колоді знаходиться **раніше** — очікуваний ефект для quiz wrong-choice hints.
+`lookupEnglishMetadata` (`choice_lookup`) спочатку шукає в **user decks**, потім в distractor deck. Після переносу картка в основній колоді знаходиться **раніше** — очікуваний ефект для quiz wrong-choice hints ([**02**](02_quiz_wrong_choice_feedback_mobile_prompt.md)).
 
 ---
 
@@ -190,4 +192,4 @@ transferDistractorCards(
 ## 11. Не в scope
 
 - Help topic для дистракторів (desktop теж без help).
-- Повторення AI-генерації дистракторів — вже в [`quiz_distractor_mobile_prompt.md`](quiz_distractor_mobile_prompt.md).
+- Повторення AI-генерації дистракторів — вже перенесено на mobile (не входить у цей prompt).
