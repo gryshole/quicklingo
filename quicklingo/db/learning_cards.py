@@ -8,7 +8,7 @@ from quicklingo.db.connection import connection, fetch_all, in_placeholders, sca
 from quicklingo.db.learning_decks import get_deck
 from quicklingo.db.learning_models import LearningCard, _CARD_SELECT, _row_to_card
 from quicklingo.db.sync_schema import new_card_sync_id
-from quicklingo.db.tombstones import record_card_delete
+from quicklingo.db.tombstones import record_card_delete, record_deck_delete
 from quicklingo.learning.text_normalize import normalize_source
 
 

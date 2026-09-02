@@ -13,7 +13,12 @@ from quicklingo.sync.keys import (
     quiz_entity_key,
     translation_entity_key,
 )
-from quicklingo.sync.models import SyncMergeStats, _max_ts, _pick_side
+from quicklingo.sync.models import (
+    SyncMergeStats,
+    _max_ts,
+    _pick_remote_when_newer_or_tie,
+    _pick_side,
+)
 
 
 def merge_remote_into_local(remote_path: Path) -> SyncMergeStats:
@@ -496,10 +501,14 @@ def _merge_cards(
             deck_id = int(deck["id"])
         local = conn.execute(
             """
-            SELECT id, front, back, context, hint, notes, priority, phonetic, image_prompt,
-                   quiz_distractors, ease, interval_days, next_review_date, last_reviewed,
-                   fsrs_state, content_updated_at, srs_updated_at, audio_path, image_path
-            FROM learning_cards WHERE sync_id = ?
+            SELECT lc.id, lc.front, lc.back, lc.context, lc.hint, lc.notes, lc.priority,
+                   lc.phonetic, lc.image_prompt, lc.quiz_distractors, lc.ease, lc.interval_days,
+                   lc.next_review_date, lc.last_reviewed, lc.fsrs_state, lc.content_updated_at,
+                   lc.srs_updated_at, lc.audio_path, lc.image_path, ld.tag AS deck_tag,
+                   ld.direction AS deck_direction
+            FROM learning_cards lc
+            JOIN learning_decks ld ON ld.id = lc.deck_id
+            WHERE lc.sync_id = ?
             """,
             (sync_id,),
         ).fetchone()
@@ -541,13 +550,21 @@ def _merge_cards(
             continue
         local_id = int(local["id"])
         sync_map[sync_id] = local_id
-        content_winner = _pick_side(
-            str(local["content_updated_at"] or ""),
-            str(row["content_updated_at"] or ""),
-        )
+        local_content_ts = str(local["content_updated_at"] or "")
+        remote_content_ts = str(row["content_updated_at"] or "")
+        content_winner = _pick_side(local_content_ts, remote_content_ts)
         srs_winner = _pick_side(
             str(local["srs_updated_at"] or ""),
             str(row["srs_updated_at"] or ""),
+        )
+        deck_differs = (str(local["deck_tag"] or ""), str(local["deck_direction"] or "")) != (
+            tag,
+            direction,
+        )
+        deck_winner = (
+            _pick_remote_when_newer_or_tie(local_content_ts, remote_content_ts)
+            if deck_differs
+            else "local"
         )
         if content_winner == "remote":
             conn.execute(
@@ -572,6 +589,12 @@ def _merge_cards(
                     deck_id,
                     local_id,
                 ),
+            )
+            stats.cards_updated += 1
+        elif deck_winner == "remote":
+            conn.execute(
+                "UPDATE learning_cards SET deck_id = ? WHERE id = ?",
+                (deck_id, local_id),
             )
             stats.cards_updated += 1
         if srs_winner == "remote":

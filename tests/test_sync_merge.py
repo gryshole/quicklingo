@@ -372,6 +372,115 @@ class SyncMergeTests(unittest.TestCase):
         assert row is not None
         self.assertEqual(row["tag"], "law-conflict")
 
+    def test_merge_applies_remote_deck_when_local_content_is_newer(self) -> None:
+        deck = create_deck("TV", "tv", "ua-en")
+        card_id = upsert_card(deck.id, front="hello", back="привіт")
+        with db_connection.connection() as conn:
+            sync_id = conn.execute(
+                "SELECT sync_id FROM learning_cards WHERE id = ?",
+                (card_id,),
+            ).fetchone()["sync_id"]
+            conn.execute(
+                """
+                UPDATE learning_cards
+                SET back = 'оновлено', content_updated_at = '2026-01-03T12:00:00+00:00'
+                WHERE id = ?
+                """,
+                (card_id,),
+            )
+
+        remote = self._remote_from_local()
+        with self._open_remote(remote) as conn:
+            conn.execute(
+                """
+                INSERT INTO learning_decks (
+                    name, tag, direction, created_at, analysis_summary, source, updated_at
+                )
+                VALUES ('Law', 'law-conflict', 'ua-en', '2026-01-01', '', 'corpus', '2026-01-01')
+                """
+            )
+            target_deck_id = conn.execute(
+                "SELECT id FROM learning_decks WHERE tag = 'law-conflict'"
+            ).fetchone()["id"]
+            conn.execute(
+                """
+                UPDATE learning_cards
+                SET deck_id = ?, back = 'привіт', content_updated_at = '2026-01-02T10:00:00+00:00'
+                WHERE sync_id = ?
+                """,
+                (target_deck_id, sync_id),
+            )
+
+        merge_remote_into_local(remote)
+        with db_connection.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT lc.back, ld.tag
+                FROM learning_cards lc
+                JOIN learning_decks ld ON ld.id = lc.deck_id
+                WHERE lc.sync_id = ?
+                """,
+                (sync_id,),
+            ).fetchone()
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["back"], "оновлено")
+        self.assertEqual(row["tag"], "tv")
+
+    def test_merge_applies_remote_deck_on_equal_timestamp_tie(self) -> None:
+        deck = create_deck("TV", "tv", "ua-en")
+        card_id = upsert_card(deck.id, front="hello", back="привіт")
+        with db_connection.connection() as conn:
+            sync_id = conn.execute(
+                "SELECT sync_id FROM learning_cards WHERE id = ?",
+                (card_id,),
+            ).fetchone()["sync_id"]
+            conn.execute(
+                """
+                UPDATE learning_cards
+                SET content_updated_at = '2026-01-02T10:00:00+00:00'
+                WHERE id = ?
+                """,
+                (card_id,),
+            )
+
+        remote = self._remote_from_local()
+        with self._open_remote(remote) as conn:
+            conn.execute(
+                """
+                INSERT INTO learning_decks (
+                    name, tag, direction, created_at, analysis_summary, source, updated_at
+                )
+                VALUES ('Law', 'law-conflict', 'ua-en', '2026-01-01', '', 'corpus', '2026-01-01')
+                """
+            )
+            target_deck_id = conn.execute(
+                "SELECT id FROM learning_decks WHERE tag = 'law-conflict'"
+            ).fetchone()["id"]
+            conn.execute(
+                """
+                UPDATE learning_cards
+                SET deck_id = ?, content_updated_at = '2026-01-02T10:00:00+00:00'
+                WHERE sync_id = ?
+                """,
+                (target_deck_id, sync_id),
+            )
+
+        merge_remote_into_local(remote)
+        with db_connection.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT ld.tag
+                FROM learning_cards lc
+                JOIN learning_decks ld ON ld.id = lc.deck_id
+                WHERE lc.sync_id = ?
+                """,
+                (sync_id,),
+            ).fetchone()
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["tag"], "law-conflict")
+
     def test_quiz_delete_tombstone_blocks_remote_return(self) -> None:
         deck = create_deck("Work", "quiz-tag", "ua-en")
         card_id = upsert_card(deck.id, front="hello", back="привіт")

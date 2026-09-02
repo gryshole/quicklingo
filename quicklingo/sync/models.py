@@ -94,13 +94,59 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _parse_sync_ts(value: str) -> datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            raw = f"{raw[:-1]}+00:00"
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%f"):
+        try:
+            return datetime.strptime(raw, fmt).replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    return None
+
+
 def _max_ts(left: str, right: str) -> str:
-    left = left or ""
-    right = right or ""
-    return left if left >= right else right
+    left_dt = _parse_sync_ts(left)
+    right_dt = _parse_sync_ts(right)
+    if left_dt is None and right_dt is None:
+        return left or right or ""
+    if left_dt is None:
+        return right or ""
+    if right_dt is None:
+        return left or ""
+    return left if left_dt >= right_dt else right
 
 
 def _pick_side(local_ts: str, remote_ts: str) -> str:
-    if (remote_ts or "") > (local_ts or ""):
+    local_dt = _parse_sync_ts(local_ts)
+    remote_dt = _parse_sync_ts(remote_ts)
+    if remote_dt is None:
+        return "local"
+    if local_dt is None:
+        return "remote"
+    if remote_dt > local_dt:
+        return "remote"
+    return "local"
+
+
+def _pick_remote_when_newer_or_tie(local_ts: str, remote_ts: str) -> str:
+    """Prefer remote on ties — used for deck placement during download merge."""
+    local_dt = _parse_sync_ts(local_ts)
+    remote_dt = _parse_sync_ts(remote_ts)
+    if remote_dt is None:
+        return "local"
+    if local_dt is None:
+        return "remote"
+    if remote_dt >= local_dt:
         return "remote"
     return "local"

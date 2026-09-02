@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from quicklingo.config.loader import resolve_learning_direction
 from quicklingo.db.connection import connection
 from quicklingo.db.learning_decks import get_deck, get_or_create_deck
@@ -55,13 +57,14 @@ def move_cards_to_deck(
             if existing:
                 skipped += 1
                 continue
+            moved_at = datetime.now(UTC).replace(microsecond=0).isoformat()
             conn.execute(
                 """
                 UPDATE learning_cards
-                SET deck_id = ?, content_updated_at = datetime('now')
+                SET deck_id = ?, content_updated_at = ?
                 WHERE id = ?
                 """,
-                (target_deck.id, card_id),
+                (target_deck.id, moved_at, card_id),
             )
             moved += 1
 

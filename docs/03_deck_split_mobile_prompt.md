@@ -208,7 +208,7 @@ moveCardsToDeck(
 1. `targetTag` trim, lowercase; порожній / `__quiz-distractors` → skip all.
 2. `getOrCreateDeck(deckName ?? targetTag, targetTag, direction)`.
 3. Skip: missing card, distractor source deck, direction mismatch, duplicate `front` у target.
-4. `UPDATE deck_id` only — FSRS / `next_review_date` не змінюються.
+4. `UPDATE deck_id` + **`content_updated_at`** (UTC ISO, див. §9) — FSRS / `next_review_date` не змінюються.
 5. Toast/message `learning.deck_split_done`; reload decks + cards.
 
 ---
@@ -237,10 +237,81 @@ moveCardsToDeck(
 - [ ] Settings: 3 spins + custom prompt + reset builtin.
 - [ ] Quiz на `card_id` після переносу.
 - [ ] `ai_request_scope('learning.deck_split')` у логах.
+- [ ] **Sync:** §7 — bump `content_updated_at` на move + merge `deck_id` (див. acceptance §7.5).
 
 ---
 
-## 7. MVP — не в scope (v2)
+## 7. Синхронізація після deck split (обов’язковий паритет)
+
+> **Критично.** Без цього блоку split на одному пристрої зникає після sync з іншого (картки лишаються, але повертаються в source deck). Desktop уже виправлено в `fb42d71` + `39ebdaa`.
+
+### 7.1 Перенос карток (`moveCardsToDeck`)
+
+При `UPDATE deck_id` **завжди** оновлюй `content_updated_at` — інакше sync не бачить зміну:
+
+```typescript
+const movedAt = new Date().toISOString().replace(/\.\d{3}Z$/, (m) =>
+  m === ".000Z" ? "+00:00" : m,
+); // або той самий helper, що utc_now_iso() на desktop
+
+// Після перевірок skip (distractor, direction, duplicate front у target):
+UPDATE learning_cards
+SET deck_id = ?, content_updated_at = ?
+WHERE id = ?
+```
+
+- Формат: **UTC ISO** (`2026-09-02T20:32:38+00:00`), не лише `datetime('now')` без timezone — для коректного LWW між пристроями.
+- `sync_id` **не змінювати**; tombstone на move **не** створювати.
+- Паритет: `quicklingo/learning/deck_split/move_cards.py`.
+
+### 7.2 Merge карток при download (`mergeCards` / `_merge_cards`)
+
+Identity: `sync_id`. Deck identity: `tag|direction`, не numeric `deck_id`.
+
+**Insert** (картки немає локально): `deck_id` з remote deck tag/direction — як раніше.
+
+**Update** (картка вже є локально):
+
+1. **Content LWW** по `content_updated_at` — front, back, context, hint, notes, priority, phonetic, image_prompt, quiz_distractors.
+2. **SRS LWW** окремо по `srs_updated_at`.
+3. **Deck placement** (виправлення бага):
+   - Якщо remote виграв content → оновити поля **і** `deck_id` з remote.
+   - Інакше, якщо `(localDeckTag, localDirection) ≠ (remoteDeckTag, remoteDirection)` **і** remote `content_updated_at` ≥ local → **лише** `UPDATE deck_id` (текст картки не чіпати).
+   - При **рівних** timestamp для deck placement → **remote** (tie-break на користь хмари при pull).
+
+Паритет: `quicklingo/sync/merge.py` (`_merge_cards`), `quicklingo/sync/models.py` (`_parse_sync_ts`, `_pick_side`, `_pick_remote_when_newer_or_tie`).
+
+### 7.3 Порівняння timestamp
+
+Не порівнювати рядки naïve (`'2026-09-02 17:38'` vs `'2026-09-02T20:32:38+00:00'`). Парсити обидва формати в UTC `Date` і порівнювати значення.
+
+### 7.4 Upload / конфлікт між пристроями
+
+- Sync = **merge remote → local**, потім **upload повного snapshot** (`history.snapshot.db`). Останній upload перезаписує файл у хмарі цілком.
+- Пристрій з **новим split** має мати **новіший** `content_updated_at` на перенесених картках — тоді після merge інший пристрій отримає правильні колоди.
+- **Порядок:** спочатку sync на ПК, де зробили split і застосували перенос; потім на інших (з тим самим кодом merge). Старий клієнт без §7.2 може знову перезаписати хмару старим розкладом колод.
+- `deck_id` не входить у upload stats окремо — важливий саме bump `content_updated_at` на move.
+
+### 7.5 Acceptance (sync)
+
+- [ ] `moveCardsToDeck` bump `content_updated_at` (UTC ISO).
+- [ ] Merge застосовує remote `deck_id` при content win **або** при новішому/рівному remote timestamp при різних колодах.
+- [ ] Timestamp parse: SQLite `YYYY-MM-DD HH:MM:SS` + ISO з offset.
+- [ ] Після split на A + sync → на B pull дає ті самі `tag`/`count` по колодах (без ручного re-split).
+- [ ] Тести-паритет: `tests/test_sync_merge.py` (`test_merge_applies_remote_deck_move`, `test_merge_applies_remote_deck_on_equal_timestamp_tie`), `tests/test_deck_split.py` (`test_move_cards_bumps_content_updated_at`).
+
+### 7.6 Діагностика sync після split
+
+| Симптом | Причина |
+|---------|---------|
+| Split ок локально, після sync колоди «злітають» | merge не оновлює `deck_id`; або move без bump `content_updated_at` |
+| На іншому пристрої картки в старій колоді | той пристрій sync **після** і перезаписав snapshot; або старий клієнт без §7.2 |
+| Дублікати одного `front` у двох колодах | merge insert + старий рядок у source deck; прибрати дубль у зайвій колоді |
+| `law-conflict` порожня в хмарі, локально 27 | ще не було upload з пристрою, де зробили split |
+
+---
+
+## 8. MVP — не в scope (v2)
 
 - Ручне переміщення слів між опціями (чекбокси).
 - Apply **всі** опції одним кліком.
@@ -248,7 +319,7 @@ moveCardsToDeck(
 
 ---
 
-## 8. Діагностика (desktop)
+## 9. Діагностика AI (desktop)
 
 Логи: `%APPDATA%\QuickLingo\logs\ai_requests.log`, purpose `learning.deck_split`.
 
