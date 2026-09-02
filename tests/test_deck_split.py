@@ -208,6 +208,32 @@ class MoveCardsTests(unittest.TestCase):
             ).fetchone()["content_updated_at"]
         self.assertNotEqual(before, after)
 
+    def test_move_cards_updates_history_tags(self) -> None:
+        from quicklingo.db.history_repository import save_translation
+        from quicklingo.db.history_tags import get_translation_tag_names
+
+        record_id = save_translation(
+            "en-ua",
+            "martyr",
+            "мученик",
+            "test",
+            tags=["tv"],
+        )
+        source = create_deck("TV", "tv", "en-ua", source="ai")
+        card_id = upsert_card(
+            source.id,
+            front="martyr",
+            back="мученик",
+            source_record_id=record_id,
+        )
+        move_cards_to_deck([card_id], "law-conflict", "en-ua", deck_name="law-conflict")
+
+        with db_connection.connection() as conn:
+            tags = get_translation_tag_names(conn, record_id)
+        lowered = {tag.lower() for tag in tags}
+        self.assertIn("law-conflict", lowered)
+        self.assertNotIn("tv", lowered)
+
     def test_rejects_distractor_tag(self) -> None:
         source = create_deck("TV", "tv", "en-ua", source="ai")
         card_id = upsert_card(source.id, front="barn", back="сарай")

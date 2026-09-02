@@ -17,6 +17,8 @@
 | Область | Файли |
 |--------|--------|
 | Core | `quicklingo/learning/deck_split/` (`models`, `prompts`, `parse`, `move_cards`, `service`) |
+| History tags | `quicklingo/learning/card_history_tags.py` |
+| Create deck corpus | `quicklingo/learning/deck_corpus.py` (`loadDirectionCorpusCoverage`, `pendingCorpusRecords`) |
 | Worker | `quicklingo/workers/ai_deck_split_worker.py` |
 | UI | `deck_split_start_dialog.py`, `deck_split_options_dialog.py`, `learning_window.py` |
 | Settings | `learning_features_tab.py`, `features/registry.py` |
@@ -209,7 +211,11 @@ moveCardsToDeck(
 2. `getOrCreateDeck(deckName ?? targetTag, targetTag, direction)`.
 3. Skip: missing card, distractor source deck, direction mismatch, duplicate `front` у target.
 4. `UPDATE deck_id` + **`content_updated_at`** (UTC ISO, див. §9) — FSRS / `next_review_date` не змінюються.
-5. Toast/message `learning.deck_split_done`; reload decks + cards.
+5. **History tags** (паритет `card_history_tags.py`): для перекладу, пов’язаного з карткою (`source_record_id` або match `front` ↔ `source_text`/`result_text` у тому напрямку):
+   - **додати** `targetTag` у `translation_tags` (тег створюється в `tags`, якщо новий);
+   - **зняти** `sourceTag`, якщо він ≠ `targetTag` (напр. `tv` → `law-conflict`);
+   - bump `translations.updated_at` для sync.
+6. Toast/message `learning.deck_split_done`; reload decks + cards.
 
 ---
 
@@ -234,6 +240,8 @@ moveCardsToDeck(
 - [ ] Options UI: callout, card tiles, tag/name fields, preview table, primary/ghost footer.
 - [ ] «Не розділяти» — close без змін у DB.
 - [ ] Apply + skip duplicates; не з distractor / не в distractor tag.
+- [ ] Apply оновлює **history tags** (create target tag, remove source tag) + `translations.updated_at`.
+- [ ] «Створити колоду»: pending candidates — **всі колоди напрямку** (`loadDirectionCorpusCoverage`), не лише deck з тим самим tag (картки в `law-conflict` не з’являються як «нові» для `tv`).
 - [ ] Settings: 3 spins + custom prompt + reset builtin.
 - [ ] Quiz на `card_id` після переносу.
 - [ ] `ai_request_scope('learning.deck_split')` у логах.
@@ -262,7 +270,7 @@ WHERE id = ?
 
 - Формат: **UTC ISO** (`2026-09-02T20:32:38+00:00`), не лише `datetime('now')` без timezone — для коректного LWW між пристроями.
 - `sync_id` **не змінювати**; tombstone на move **не** створювати.
-- Паритет: `quicklingo/learning/deck_split/move_cards.py`.
+- Паритет: `quicklingo/learning/deck_split/move_cards.py`, `quicklingo/learning/card_history_tags.py`.
 
 ### 7.2 Merge карток при download (`mergeCards` / `_merge_cards`)
 
@@ -295,10 +303,11 @@ Identity: `sync_id`. Deck identity: `tag|direction`, не numeric `deck_id`.
 ### 7.5 Acceptance (sync)
 
 - [ ] `moveCardsToDeck` bump `content_updated_at` (UTC ISO).
+- [ ] `moveCardsToDeck` sync history tags (`add` target, `remove` source) + `translations.updated_at`.
 - [ ] Merge застосовує remote `deck_id` при content win **або** при новішому/рівному remote timestamp при різних колодах.
 - [ ] Timestamp parse: SQLite `YYYY-MM-DD HH:MM:SS` + ISO з offset.
 - [ ] Після split на A + sync → на B pull дає ті самі `tag`/`count` по колодах (без ручного re-split).
-- [ ] Тести-паритет: `tests/test_sync_merge.py` (`test_merge_applies_remote_deck_move`, `test_merge_applies_remote_deck_on_equal_timestamp_tie`), `tests/test_deck_split.py` (`test_move_cards_bumps_content_updated_at`).
+- [ ] Тести-паритет: `tests/test_sync_merge.py` (`test_merge_applies_remote_deck_move`, `test_merge_applies_remote_deck_on_equal_timestamp_tie`), `tests/test_deck_split.py` (`test_move_cards_bumps_content_updated_at`, `test_move_cards_updates_history_tags`), `tests/test_deck_corpus.py`.
 
 ### 7.6 Діагностика sync після split
 
@@ -308,6 +317,8 @@ Identity: `sync_id`. Deck identity: `tag|direction`, не numeric `deck_id`.
 | На іншому пристрої картки в старій колоді | той пристрій sync **після** і перезаписав snapshot; або старий клієнт без §7.2 |
 | Дублікати одного `front` у двох колодах | merge insert + старий рядок у source deck; прибрати дубль у зайвій колоді |
 | `law-conflict` порожня в хмарі, локально 27 | ще не було upload з пристрою, де зробили split |
+| Слова в «Створити колоду» для `tv` після split | history tag ще `tv` або pending лише по deck `tv` — §4.5 + `deck_corpus` direction-wide |
+| Тег `law-conflict` не в dropdown перекладу | move без history tags — §4.5 |
 
 ---
 

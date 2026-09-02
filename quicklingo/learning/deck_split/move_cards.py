@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from quicklingo.config.loader import resolve_learning_direction
 from quicklingo.db.connection import connection
 from quicklingo.db.learning_decks import get_deck, get_or_create_deck
+from quicklingo.learning.card_history_tags import sync_history_tags_for_card_move
 from quicklingo.learning.deck_split.models import MoveCardsResult
 from quicklingo.learning.quiz.distractor_deck import (
     QUIZ_DISTRACTOR_DECK_TAG,
@@ -31,7 +32,7 @@ def move_cards_to_deck(
     with connection() as conn:
         for card_id in card_ids:
             row = conn.execute(
-                "SELECT id, deck_id, front FROM learning_cards WHERE id = ?",
+                "SELECT id, deck_id, front, source_record_id FROM learning_cards WHERE id = ?",
                 (card_id,),
             ).fetchone()
             if row is None:
@@ -65,6 +66,14 @@ def move_cards_to_deck(
                 WHERE id = ?
                 """,
                 (target_deck.id, moved_at, card_id),
+            )
+            sync_history_tags_for_card_move(
+                conn,
+                source_record_id=row["source_record_id"],
+                front=str(row["front"]),
+                deck_direction=source_deck.direction,
+                source_tag=source_deck.tag or "",
+                target_tag=tag,
             )
             moved += 1
 

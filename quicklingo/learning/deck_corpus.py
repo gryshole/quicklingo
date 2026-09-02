@@ -3,7 +3,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from quicklingo.config.loader import resolve_learning_direction
 from quicklingo.db import history, learning
+from quicklingo.db.learning_decks import list_decks
+from quicklingo.learning.quiz.distractor_deck import filter_user_decks
 from quicklingo.learning.text_normalize import normalize_source
 
 _WORD_RE = re.compile(r"[\w']+", re.UNICODE)
@@ -20,18 +23,33 @@ def load_deck_corpus_coverage(tag: str, direction: str) -> DeckCorpusCoverage | 
     deck = learning.find_deck_by_tag(tag, direction)
     if deck is None:
         return None
-    cards = learning.list_cards(deck.id)
+    return _coverage_from_cards(learning.list_cards(deck.id))
+
+
+def load_direction_corpus_coverage(direction: str) -> DeckCorpusCoverage | None:
+    """All user decks in a learning direction (excludes quiz distractor deck)."""
+    kind = resolve_learning_direction(direction)
+    decks = [
+        deck
+        for deck in filter_user_decks(list_decks())
+        if resolve_learning_direction(deck.direction) == kind
+    ]
+    if not decks:
+        return None
+    cards: list[learning.LearningCard] = []
+    for deck in decks:
+        cards.extend(learning.list_cards(deck.id))
+    if not cards:
+        return None
+    return _coverage_from_cards(cards)
+
+
+def _coverage_from_cards(cards: list[learning.LearningCard]) -> DeckCorpusCoverage:
     source_record_ids = frozenset(
-        card.source_record_id
-        for card in cards
-        if card.source_record_id is not None
+        card.source_record_id for card in cards if card.source_record_id is not None
     )
-    fronts = frozenset(
-        normalize_source(card.front) for card in cards if card.front.strip()
-    )
-    backs = frozenset(
-        normalize_source(card.back) for card in cards if card.back.strip()
-    )
+    fronts = frozenset(normalize_source(card.front) for card in cards if card.front.strip())
+    backs = frozenset(normalize_source(card.back) for card in cards if card.back.strip())
     return DeckCorpusCoverage(
         source_record_ids=source_record_ids,
         fronts=fronts,
@@ -71,7 +89,7 @@ def pending_corpus_records(
     tag: str,
     direction: str,
 ) -> list[history.TranslationRecord]:
-    coverage = load_deck_corpus_coverage(tag, direction)
+    coverage = load_direction_corpus_coverage(direction)
     if coverage is None:
         return records
     return [record for record in records if not is_record_covered(record, coverage)]

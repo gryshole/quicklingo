@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from quicklingo.db.history_models import normalize_tag_names, parse_tags
+from quicklingo.db.sync_schema import touch_translation_updated_at
 
 
 def cleanup_orphan_tags(conn: sqlite3.Connection) -> None:
@@ -126,6 +127,29 @@ def set_translation_tags(
         "UPDATE translations SET tags = '' WHERE id = ?",
         (translation_id,),
     )
+
+
+def apply_translation_tag_changes(
+    conn: sqlite3.Connection,
+    translation_id: int,
+    *,
+    add: list[str] | None = None,
+    remove: list[str] | None = None,
+) -> bool:
+    """Add/remove history tags on one translation. Returns True if tags changed."""
+    add_tags = add or []
+    remove_set = {tag.strip().lower() for tag in remove or [] if tag.strip()}
+    current = get_translation_tag_names(conn, translation_id)
+    if add_tags:
+        current = normalize_tag_names(current + add_tags)
+    if remove_set:
+        current = [tag for tag in current if tag.lower() not in remove_set]
+    new_tags = normalize_tag_names(current)
+    if new_tags == get_translation_tag_names(conn, translation_id):
+        return False
+    set_translation_tags(conn, translation_id, new_tags)
+    touch_translation_updated_at(conn, translation_id)
+    return True
 
 
 def tags_subquery_sql() -> str:
