@@ -56,7 +56,11 @@ def move_cards_to_deck(
                 skipped += 1
                 continue
             conn.execute(
-                "UPDATE learning_cards SET deck_id = ? WHERE id = ?",
+                """
+                UPDATE learning_cards
+                SET deck_id = ?, content_updated_at = datetime('now')
+                WHERE id = ?
+                """,
                 (target_deck.id, card_id),
             )
             moved += 1

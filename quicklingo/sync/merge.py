@@ -555,7 +555,7 @@ def _merge_cards(
                 UPDATE learning_cards
                 SET front = ?, back = ?, context = ?, hint = ?, notes = ?, priority = ?,
                     phonetic = ?, image_prompt = ?, quiz_distractors = ?,
-                    content_updated_at = ?
+                    content_updated_at = ?, deck_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -569,6 +569,7 @@ def _merge_cards(
                     row["image_prompt"],
                     row["quiz_distractors"],
                     row["content_updated_at"],
+                    deck_id,
                     local_id,
                 ),
             )

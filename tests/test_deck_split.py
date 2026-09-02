@@ -192,6 +192,22 @@ class MoveCardsTests(unittest.TestCase):
         self.assertEqual(result.skipped, 1)
         self.assertIsNotNone(get_card(card_id))
 
+    def test_move_cards_bumps_content_updated_at(self) -> None:
+        source = create_deck("TV", "tv", "en-ua", source="ai")
+        card_id = upsert_card(source.id, front="barn", back="сарай")
+        with db_connection.connection() as conn:
+            before = conn.execute(
+                "SELECT content_updated_at FROM learning_cards WHERE id = ?",
+                (card_id,),
+            ).fetchone()["content_updated_at"]
+        move_cards_to_deck([card_id], "tv-rural", "en-ua", deck_name="TV rural")
+        with db_connection.connection() as conn:
+            after = conn.execute(
+                "SELECT content_updated_at FROM learning_cards WHERE id = ?",
+                (card_id,),
+            ).fetchone()["content_updated_at"]
+        self.assertNotEqual(before, after)
+
     def test_rejects_distractor_tag(self) -> None:
         source = create_deck("TV", "tv", "en-ua", source="ai")
         card_id = upsert_card(source.id, front="barn", back="сарай")
