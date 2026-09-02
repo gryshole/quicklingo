@@ -17,6 +17,7 @@ from quicklingo.learning.quiz.aggregator import list_quiz_eligible_decks
 from quicklingo.learning.quiz.card_eligibility_fix import count_ineligible_cards
 from quicklingo.learning.quiz.distractor_words import (
     collect_missing_distractor_words,
+    count_missing_distractor_words_in_scope,
     resolve_distractor_generation_deck_id,
 )
 from quicklingo.learning.quiz.distractor_generation_outcome import DistractorGenerationOutcome
@@ -281,11 +282,22 @@ class QuizGenerationPanel(QFrame):
         if self._model_combo.count() and self._model_combo.currentIndex() < 0:
             self._model_combo.setCurrentIndex(0)
 
+    def _missing_distractor_count_in_scope(self) -> int:
+        return count_missing_distractor_words_in_scope(self._scope_deck_ids)
+
+    def _reload_missing_distractor_words(self) -> None:
+        if self._deck_id is None:
+            self._missing_distractor_words = []
+        else:
+            self._missing_distractor_words = collect_missing_distractor_words(self._deck_id)
+
     def refresh(self, *, keep_progress: bool = False) -> None:
         if self.is_busy():
             return
 
         if self._deck_id is None:
+            self._distractor_hint.setVisible(False)
+            self._distractor_btn.setVisible(False)
             self.setVisible(bool(self._result_message))
             if self._result_message:
                 self._subtitle.setText(self._result_message)
@@ -297,8 +309,9 @@ class QuizGenerationPanel(QFrame):
         ineligible = count_ineligible_cards(self._deck_id)
         needs_generation = stats.eligible > 0 and stats.ready < stats.eligible
         needs_fix = ineligible > 0
-        self._missing_distractor_words = collect_missing_distractor_words(self._deck_id)
-        needs_distractor_cards = len(self._missing_distractor_words) > 0
+        self._reload_missing_distractor_words()
+        scope_missing = self._missing_distractor_count_in_scope()
+        needs_distractor_cards = scope_missing > 0
 
         self._fix_btn.setVisible(needs_fix)
         if needs_fix:
@@ -308,12 +321,11 @@ class QuizGenerationPanel(QFrame):
         self._distractor_hint.setVisible(needs_distractor_cards)
         self._distractor_btn.setVisible(needs_distractor_cards)
         if needs_distractor_cards:
-            total_missing = len(self._missing_distractor_words)
             self._distractor_hint.setText(
-                tr("learning.quiz_distractor_cards_hint", count=total_missing)
+                tr("learning.quiz_distractor_cards_hint", count=scope_missing)
             )
             self._distractor_btn.setText(
-                tr("learning.quiz_distractor_cards_btn", count=total_missing)
+                tr("learning.quiz_distractor_cards_btn", count=scope_missing)
             )
             self._distractor_btn.setEnabled(not needs_fix)
 
@@ -429,8 +441,11 @@ class QuizGenerationPanel(QFrame):
             return
         self._cleanup_workers()
         self.set_deck_scope(self._scope_deck_ids)
-        remaining = len(self._missing_distractor_words)
-        self._result_message = _distractor_result_message(outcome, remaining)
+        remaining = self._missing_distractor_count_in_scope()
+        if outcome.cancelled or outcome.rate_limited or remaining > 0:
+            self._result_message = _distractor_result_message(outcome, remaining)
+        else:
+            self._result_message = ""
         self.refresh()
         self.generation_finished.emit()
 

@@ -1,12 +1,12 @@
 # Mobile prompts (quicklingomobile)
 
-Переносити **в цьому порядку**:
+Всі заплановані кроки перенесені на mobile:
 
-| # | Файл | Зміст |
-|---|------|--------|
-| **01** | [`01_distractor_decks_mobile_prompt.md`](01_distractor_decks_mobile_prompt.md) | Браузер дистракторних колод + перенос у основні колоди |
-| **02** | [`02_quiz_wrong_choice_feedback_mobile_prompt.md`](02_quiz_wrong_choice_feedback_mobile_prompt.md) | Комбінований feedback для `definition_match` і `fill_blank` |
+| # | Зміст | Статус |
+|---|--------|--------|
+| **01** | Браузер дистракторних колод + перенос у основні колоди | ✅ |
+| **02** | Комбінований feedback для `definition_match` і `fill_blank` | ✅ |
 
-**Передумова:** прихована колода дистракторів, AI-генерація карток і `lookupEnglishMetadata` уже перенесені на mobile (окремо, без prompt-файлу в цьому репо).
+Базовий distractor deck (AI-генерація, `lookupEnglishMetadata`) також на mobile.
 
-Кожен промпт копіюється окремо в чат quicklingomobile після завершення попереднього кроку.
+Нових prompt-файлів у цьому репо немає — desktop parity для цих фіч завершено.
