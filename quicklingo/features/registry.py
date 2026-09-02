@@ -51,6 +51,12 @@ FEATURE_DEFAULTS: dict[str, dict[str, Any]] = {
     "learning.tts_enabled": {},
     "learning.tts_auto_play": {"enabled": False},
     "learning.ai_deck_generator": {"batch_size": 10, "max_words": 30},
+    "learning.deck_split": {
+        "min_deck_cards": 25,
+        "max_options": 4,
+        "min_subgroup_cards": 8,
+        "split_prompt_template": "",
+    },
     "translation.response_cache": {"enabled": True, "ttl_days": 30},
     "translation.context_window": {"enabled": False, "last_n": 3},
     "input.global_hotkey.translate_selection": {
@@ -119,6 +125,7 @@ def is_enabled(key: str) -> bool:
         "learning.ai_corpus_analysis",
         "learning.quiz",
         "learning.ai_deck_generator",
+        "learning.deck_split",
         "learning.tts_enabled",
     }:
         return True

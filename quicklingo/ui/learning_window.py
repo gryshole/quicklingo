@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTableWidget,
@@ -28,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from quicklingo.config.loader import get_direction_label, resolve_learning_direction
 from quicklingo.db import learning
-from quicklingo.features import is_enabled
+from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.anki_export import export_anki_apkg, export_anki_csv
 from quicklingo.learning.card_display import parse_context, serialize_context
@@ -36,9 +37,15 @@ from quicklingo.learning.review_queue import card_bucket
 from quicklingo.db.learning_due import count_due_cards_map, get_deck_summaries
 from quicklingo.ui.controllers.update_controller import UpdateController
 from quicklingo.ui.dialogs.ai_deck_generator_dialog import AiDeckGeneratorDialog
+from quicklingo.ui.dialogs.deck_split_options_dialog import DeckSplitOptionsDialog
+from quicklingo.ui.dialogs.deck_split_start_dialog import DeckSplitStartDialog
 from quicklingo.ui.dialogs.learning_onboarding_dialog import LearningOnboardingDialog
 from quicklingo.ui.qt_utils import configure_single_line_combo, confirm, open_help
 from quicklingo.ui.settings_dialog import SettingsDialog
+from quicklingo.learning.deck_split.move_cards import move_cards_to_deck
+from quicklingo.learning.quiz.distractor_deck import is_quiz_distractor_deck
+from quicklingo.providers.registry import get_model_by_index
+from quicklingo.workers.ai_deck_split_worker import AiDeckSplitWorker
 from quicklingo.ui.widgets.create_deck_tab import CreateDeckTabWidget
 from quicklingo.ui.widgets.learning_progress import LearningProgressWidget
 from quicklingo.ui.widgets.quiz_session import QuizSessionWidget
@@ -184,6 +191,16 @@ QFrame#deckSummaryCard QLabel#deckSummaryTitle {
     font-weight: 600;
     letter-spacing: 0.04em;
 }
+QFrame#deckSplitBusyCard {
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+}
+QFrame#deckSplitBusyCard QLabel#deckSplitBusyLabel {
+    color: #1d4ed8;
+    font-size: 13px;
+    font-weight: 600;
+}
 QFrame#cardsTableCard {
     background-color: #ffffff;
     border: 1px solid #e5e7eb;
@@ -296,6 +313,7 @@ class LearningWindow(QMainWindow):
         restore_window_geometry(self, "learning", default_width=1090, default_height=880)
         self._current_deck_id: int | None = None
         self._pending_nav: dict | None = None
+        self._deck_split_worker: AiDeckSplitWorker | None = None
 
         self._tabs = QTabWidget()
         self._tabs.setObjectName("learningTabs")
@@ -419,6 +437,9 @@ class LearningWindow(QMainWindow):
         self._export_btn = QPushButton()
         self._export_btn.setObjectName("btnSecondary")
         self._export_btn.clicked.connect(self._export_anki)
+        self._split_deck_btn = QPushButton()
+        self._split_deck_btn.setObjectName("btnSecondary")
+        self._split_deck_btn.clicked.connect(self._open_deck_split)
         self._edit_card_btn = QPushButton()
         self._edit_card_btn.setObjectName("btnSecondary")
         self._edit_card_btn.clicked.connect(self._edit_selected_card)
@@ -433,11 +454,26 @@ class LearningWindow(QMainWindow):
         top.addWidget(self._deck_combo, stretch=1)
         top.addWidget(self._generate_ai_deck_btn)
         top.addWidget(self._export_btn)
+        top.addWidget(self._split_deck_btn)
         top.addWidget(self._edit_card_btn)
         top.addStretch()
         top.addWidget(self._delete_card_btn)
         top.addWidget(self._delete_deck_btn)
         layout.addLayout(top)
+
+        self._deck_split_busy_card = QFrame()
+        self._deck_split_busy_card.setObjectName("deckSplitBusyCard")
+        busy_layout = QHBoxLayout(self._deck_split_busy_card)
+        busy_layout.setContentsMargins(14, 10, 14, 10)
+        self._deck_split_busy_label = QLabel()
+        self._deck_split_busy_label.setObjectName("deckSplitBusyLabel")
+        self._deck_split_cancel_btn = QPushButton()
+        self._deck_split_cancel_btn.setObjectName("btnSecondary")
+        self._deck_split_cancel_btn.clicked.connect(self._cancel_deck_split)
+        busy_layout.addWidget(self._deck_split_busy_label, stretch=1)
+        busy_layout.addWidget(self._deck_split_cancel_btn)
+        self._deck_split_busy_card.setVisible(False)
+        layout.addWidget(self._deck_split_busy_card)
 
         self._deck_summary_card = QFrame()
         self._deck_summary_card.setObjectName("deckSummaryCard")
@@ -553,6 +589,10 @@ class LearningWindow(QMainWindow):
         self._deck_summary_title.setText(tr("learning.analysis_summary").upper())
         self._export_btn.setText(tr("learning.export_anki"))
         self._export_btn.setVisible(is_enabled("learning.anki_export"))
+        self._split_deck_btn.setText(tr("learning.deck_split_btn"))
+        self._deck_split_busy_label.setText(tr("learning.deck_split_analyzing"))
+        self._deck_split_cancel_btn.setText(tr("main.cancel"))
+        self._update_split_deck_btn_state()
         self._edit_card_btn.setText(tr("learning.edit_card"))
         self._delete_card_btn.setText(tr("learning.delete_card"))
         self._delete_deck_btn.setText(tr("learning.delete_deck"))
@@ -774,6 +814,97 @@ class LearningWindow(QMainWindow):
                 if col < 4 and text:
                     item.setToolTip(text)
                 self._cards_table.setItem(row, col, item)
+        self._update_split_deck_btn_state()
+
+    def _update_split_deck_btn_state(self) -> None:
+        if self._deck_split_worker is not None:
+            self._split_deck_btn.setEnabled(False)
+            return
+        deck_id = self._deck_combo.currentData()
+        deck = learning.get_deck(deck_id) if deck_id is not None else None
+        if deck is None:
+            self._split_deck_btn.setEnabled(False)
+            return
+        min_cards = int(get_feature("learning.deck_split").get("min_deck_cards", 25))
+        count = learning.count_cards(deck.id)
+        enabled = count >= min_cards and not is_quiz_distractor_deck(deck)
+        self._split_deck_btn.setEnabled(enabled)
+
+    def _set_deck_split_busy(self, busy: bool) -> None:
+        self._deck_split_busy_card.setVisible(busy)
+        if busy:
+            self._deck_split_busy_label.setText(tr("learning.deck_split_analyzing"))
+        self._update_split_deck_btn_state()
+
+    def _cleanup_deck_split_worker(self) -> None:
+        if self._deck_split_worker is not None:
+            self._deck_split_worker.deleteLater()
+            self._deck_split_worker = None
+        self._set_deck_split_busy(False)
+
+    def _cancel_deck_split(self) -> None:
+        if self._deck_split_worker is not None:
+            self._deck_split_worker.cancel()
+
+    def _open_deck_split(self) -> None:
+        if self._deck_split_worker is not None:
+            return
+        deck_id = self._deck_combo.currentData()
+        deck = learning.get_deck(deck_id) if deck_id is not None else None
+        if deck is None:
+            return
+        card_count = learning.count_cards(deck.id)
+        start = DeckSplitStartDialog(self, deck=deck, card_count=card_count)
+        if start.exec() != QDialog.DialogCode.Accepted:
+            return
+        if start.model_index() < 0:
+            return
+        model_entry = get_model_by_index(start.model_index())
+        self._set_deck_split_busy(True)
+        self._deck_split_worker = AiDeckSplitWorker(
+            deck.id,
+            model_entry=model_entry,
+            user_note=start.user_note(),
+            parent=self,
+        )
+        self._deck_split_worker.finished.connect(self._on_deck_split_finished)
+        self._deck_split_worker.error.connect(self._on_deck_split_error)
+        self._deck_split_worker.start()
+
+    def _on_deck_split_error(self, message: str) -> None:
+        self._cleanup_deck_split_worker()
+        QMessageBox.warning(self, tr("learning.deck_split_title"), message)
+
+    def _on_deck_split_finished(self, result: object) -> None:
+        self._cleanup_deck_split_worker()
+        from quicklingo.learning.deck_split.models import DeckSplitAnalysisResult
+
+        if not isinstance(result, DeckSplitAnalysisResult):
+            return
+        dialog = DeckSplitOptionsDialog(self, result=result)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        option = dialog.selected_option()
+        if option is None or not option.card_ids:
+            return
+        move_result = move_cards_to_deck(
+            option.card_ids,
+            option.tag,
+            result.direction,
+            deck_name=option.deck_name,
+        )
+        QMessageBox.information(
+            self,
+            tr("learning.deck_split_title"),
+            tr(
+                "learning.deck_split_done",
+                moved=move_result.moved,
+                skipped=move_result.skipped,
+                tag=option.tag,
+            ),
+        )
+        self._reload_decks()
+        self._load_cards()
 
     def _edit_selected_card(self) -> None:
         rows = self._cards_table.selectionModel().selectedRows()
@@ -908,6 +1039,8 @@ class LearningWindow(QMainWindow):
         self._create_deck_tab._reload_tags()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._deck_split_worker is not None:
+            self._deck_split_worker.cancel()
         save_table_columns(self._cards_table, "learning", "cards")
         save_window_geometry(self, "learning")
         self.closed.emit()

@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QFormLayout
 
 from quicklingo.learning.card_prompt import get_builtin_card_prompt_template
 from quicklingo.learning.quiz.models import QuizQuestionType
+from quicklingo.learning.deck_split.prompts import get_builtin_deck_split_prompt
 from quicklingo.learning.quiz.quiz_prompts import (
     get_builtin_quiz_prompt,
     get_builtin_quiz_system_prompt,
@@ -84,6 +85,30 @@ def _learning_limits(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
         5,
         20,
     )
+    editor._add_spin_form(
+        form,
+        "learning.deck_split",
+        "min_deck_cards",
+        "settings.features.deck_split_min_cards",
+        5,
+        200,
+    )
+    editor._add_spin_form(
+        form,
+        "learning.deck_split",
+        "max_options",
+        "settings.features.deck_split_max_options",
+        2,
+        5,
+    )
+    editor._add_spin_form(
+        form,
+        "learning.deck_split",
+        "min_subgroup_cards",
+        "settings.features.deck_split_min_subgroup",
+        5,
+        30,
+    )
 
 
 def _learning_prompts(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
@@ -131,6 +156,14 @@ def _learning_prompts(form: QFormLayout, editor: FeatureSettingsEditor) -> None:
         "quiz_prompt_translation_recall",
         "settings.features.quiz_prompt_translation",
         reset_factory=lambda: get_builtin_quiz_prompt(QuizQuestionType.TRANSLATION_RECALL),
+        placeholder_key="settings.features.quiz_prompt_placeholder",
+    )
+    editor._add_prompt_field(
+        form,
+        "learning.deck_split",
+        "split_prompt_template",
+        "settings.features.deck_split_prompt",
+        reset_factory=get_builtin_deck_split_prompt,
         placeholder_key="settings.features.quiz_prompt_placeholder",
     )
 
