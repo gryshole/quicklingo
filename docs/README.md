@@ -9,3 +9,7 @@
 Базовий distractor deck (AI-генерація, `lookupEnglishMetadata`) також на mobile.
 
 Desktop parity для 01–03 завершено.
+
+## Backlog
+
+Відкладені задачі: [todo/](todo/)
