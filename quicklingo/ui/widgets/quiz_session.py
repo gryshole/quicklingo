@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QTableWidget,
@@ -24,11 +25,16 @@ from quicklingo.features import get_feature, is_enabled
 from quicklingo.i18n import tr
 from quicklingo.learning.quiz.aggregator import get_quiz_pool_stats, list_quiz_eligible_decks
 from quicklingo.learning.quiz.choice_lookup import format_wrong_choice_feedback
+from quicklingo.learning.quiz.quiz_feedback_content import (
+    is_choice_visible_in_feedback,
+    load_quiz_feedback_content,
+)
 from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch import collect_question_tts_texts, collect_quiz_tts_texts
 from quicklingo.learning.tts.prefetch_service import tts_prefetch_service
 from quicklingo.ui.controllers.quiz_session_controller import QuizSessionController
 from quicklingo.ui.widgets.quiz_deck_combo import QuizDeckComboBox
+from quicklingo.ui.widgets.quiz_feedback_enrichment import QuizFeedbackEnrichmentWidget
 from quicklingo.ui.widgets.quiz_generation_panel import QuizGenerationPanel
 
 _CARD_MAX_WIDTH = 672
@@ -36,7 +42,6 @@ _VICTORY_CARD_MAX_WIDTH = 760
 _QUIZ_CARD_MAX_WIDTH = 768
 _QUIZ_CARD_MIN_WIDTH = 560
 _NEXT_ROW_HEIGHT = 52
-_CHOICE_FEEDBACK_SLOT_HEIGHT = 48
 _PROGRESS_BAR_HEIGHT = 10
 _SPEAKER_SLOT_HEIGHT = 44
 
@@ -245,6 +250,10 @@ class QuizSessionWidget(QWidget):
         self._tts_answer_revealed = False
         self._deck_ids: frozenset[int] | None = None
         self._choice_buttons: list[QPushButton] = []
+        self._feedback_active = False
+        self._feedback_question = None
+        self._selected_choice: str | None = None
+        self._last_correct: bool | None = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -441,8 +450,24 @@ class QuizSessionWidget(QWidget):
             self._choice_buttons.append(btn)
             self._choices_layout.addWidget(btn)
         quiz_card_layout.addLayout(self._choices_layout)
+
+        self._feedback_scroll = QScrollArea()
+        self._feedback_scroll.setWidgetResizable(True)
+        self._feedback_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._feedback_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._feedback_scroll.setVisible(False)
+        feedback_scroll_host = QWidget()
+        feedback_scroll_layout = QVBoxLayout(feedback_scroll_host)
+        feedback_scroll_layout.setContentsMargins(0, 0, 0, 0)
+        feedback_scroll_layout.setSpacing(10)
+
         self._choice_feedback_host = QWidget()
-        self._choice_feedback_host.setFixedHeight(_CHOICE_FEEDBACK_SLOT_HEIGHT)
+        self._choice_feedback_host.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Minimum,
+        )
         feedback_layout = QVBoxLayout(self._choice_feedback_host)
         feedback_layout.setContentsMargins(0, 4, 0, 0)
         feedback_layout.setSpacing(0)
@@ -453,7 +478,12 @@ class QuizSessionWidget(QWidget):
         )
         self._choice_feedback_label.setStyleSheet(_CHOICE_FEEDBACK_STYLE)
         feedback_layout.addWidget(self._choice_feedback_label)
-        quiz_card_layout.addWidget(self._choice_feedback_host)
+        feedback_scroll_layout.addWidget(self._choice_feedback_host)
+
+        self._enrichment_widget = QuizFeedbackEnrichmentWidget(self._audio)
+        feedback_scroll_layout.addWidget(self._enrichment_widget)
+        self._feedback_scroll.setWidget(feedback_scroll_host)
+        quiz_card_layout.addWidget(self._feedback_scroll, stretch=1)
         self._next_row_host = QWidget()
         self._next_row_host.setFixedHeight(_NEXT_ROW_HEIGHT)
         next_row = QHBoxLayout(self._next_row_host)
@@ -616,6 +646,7 @@ class QuizSessionWidget(QWidget):
         self._finish_btn.setText(tr("learning.quiz_finish"))
         self._review_weak_btn.setText(tr("learning.quiz_review_weak"))
         self._next_btn.setText(tr("learning.quiz_next"))
+        self._enrichment_widget.retranslate_ui()
         self._wrong_title.setText(tr("learning.quiz_wrong_title"))
         self._wrong_table.setHorizontalHeaderLabels(
             [
@@ -752,9 +783,18 @@ class QuizSessionWidget(QWidget):
         deck = learning.get_deck(card.deck_id)
         return deck.direction if deck else "ua-en"
 
+    def _clear_feedback_state(self) -> None:
+        self._feedback_active = False
+        self._feedback_question = None
+        self._selected_choice = None
+        self._last_correct = None
+        self._choice_feedback_label.clear()
+        self._enrichment_widget.set_content(None)
+        self._feedback_scroll.setVisible(False)
+
     def _show_current_question(self) -> None:
         self._next_btn.setVisible(False)
-        self._choice_feedback_label.clear()
+        self._clear_feedback_state()
         question = self._controller.current_question()
         if question is None:
             self._finish_session()
@@ -788,24 +828,44 @@ class QuizSessionWidget(QWidget):
         choice = sender.text()
         correct_word = question.correct_english
         correct = self._controller.submit_answer(choice)
+        self._feedback_active = True
+        self._feedback_question = question
+        self._selected_choice = choice
+        self._last_correct = correct
         for btn in self._choice_buttons:
+            if not btn.text():
+                continue
             btn.setEnabled(False)
-            if not btn.isVisible():
+            visible = is_choice_visible_in_feedback(
+                btn.text(),
+                "feedback",
+                last_correct=correct,
+                selected_choice=choice,
+                correct_english=correct_word,
+            )
+            btn.setVisible(visible)
+            if not visible:
                 continue
             if btn.text().strip().lower() == choice.strip().lower():
                 btn.setStyleSheet(self._choice_feedback_style(correct=correct))
             elif btn.text().strip().lower() == correct_word.strip().lower():
                 btn.setStyleSheet(self._choice_feedback_style(correct=True))
         self._choice_feedback_label.clear()
+        wrong_hint = ""
         if not correct:
-            feedback = format_wrong_choice_feedback(
+            wrong_hint = format_wrong_choice_feedback(
                 choice,
                 self._session_direction(),
                 correct_english=correct_word,
                 question_type=question.type,
             )
-            if feedback:
-                self._choice_feedback_label.setText(feedback)
+            if wrong_hint:
+                self._choice_feedback_label.setText(wrong_hint)
+        content = load_quiz_feedback_content(question, self._session_direction())
+        self._enrichment_widget.set_content(content)
+        self._feedback_scroll.setVisible(
+            bool(wrong_hint) or self._enrichment_widget.isVisible()
+        )
         self._tts_answer_revealed = True
         self._update_tts_ui(question)
         self._prefetch_question_tts(question)
@@ -855,7 +915,9 @@ class QuizSessionWidget(QWidget):
     def _refresh_progress(self) -> None:
         if self._stack.currentIndex() != 1:
             return
-        current, total = self._controller.progress()
+        current, total = self._controller.progress_for_display(
+            in_feedback=self._feedback_active
+        )
         if total <= 0:
             self._progress_label.setText("")
             return

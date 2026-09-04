@@ -103,6 +103,12 @@ class QuizSessionController:
             current = total
         return (current, total)
 
+    def progress_for_display(self, *, in_feedback: bool) -> tuple[int, int]:
+        current, total = self.progress()
+        if in_feedback and not self.is_finished() and self._state.position > 0:
+            current = self._state.position
+        return (current, total)
+
     def words_by_id(self) -> dict[int, QuizWordDto]:
         return {word.card_id: word for word in self._state.words}
 
