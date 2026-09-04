@@ -165,7 +165,7 @@ class QuizQuestionRegenDialog(QDialog):
         info_layout.setContentsMargins(12, 12, 12, 12)
         info_layout.setSpacing(12)
         info_layout.addWidget(
-            _info_row(tr("learning.quiz_questions_col_word"), f"{row.card_front} — {row.card_back}")
+            _info_row(tr("learning.quiz_questions_col_word"), f"{row.card_front} - {row.card_back}")
         )
         info_layout.addWidget(
             _info_row(tr("learning.quiz_questions_col_type"), _question_type_label(row.question_type))

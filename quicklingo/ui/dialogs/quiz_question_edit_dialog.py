@@ -28,7 +28,7 @@ class QuizQuestionEditDialog(QDialog):
         self.setMinimumWidth(520)
 
         layout = QFormLayout(self)
-        self._word_label = QLabel(f"{row.card_front} — {row.card_back}")
+        self._word_label = QLabel(f"{row.card_front} - {row.card_back}")
         self._type_label = QLabel(_question_type_label(row.question_type))
         layout.addRow(tr("learning.quiz_questions_col_word"), self._word_label)
         layout.addRow(tr("learning.quiz_questions_col_type"), self._type_label)

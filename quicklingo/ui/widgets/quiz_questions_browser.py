@@ -209,7 +209,7 @@ def _build_detail_html(row: QuizQuestionRow) -> str:
         f'letter-spacing: 0.04em; color: #64748b; text-transform: uppercase;">'
         f'{html.escape(tr("learning.quiz_question_edit_prompt"))}</p>',
         f'<h3 style="margin: 0 0 14px 0; font-size: 16px; font-weight: 600; color: #1e293b;">'
-        f"{prompt or '—'}</h3>",
+        f"{prompt or '-'}</h3>",
     ]
     if row.example_sentence.strip():
         example = html.escape(row.example_sentence.strip())
@@ -239,7 +239,7 @@ def _build_detail_html(row: QuizQuestionRow) -> str:
     correct_label = html.escape(tr("learning.quiz_question_edit_correct"))
     parts.append(
         f'<p style="margin: 0 0 14px 0; font-size: 14px; line-height: 1.5;">'
-        f'<b style="color: #059669;">{correct_label}: {correct or "—"}</b></p>'
+        f'<b style="color: #059669;">{correct_label}: {correct or "-"}</b></p>'
     )
     meta: list[str] = []
     if row.model_id:

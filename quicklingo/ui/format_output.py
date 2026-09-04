@@ -6,8 +6,8 @@ import re
 _CYRILLIC = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
 _UA_EN_SPLIT = re.compile(r"\n(?=──────────────────\n|You probably meant: )")
 _SEPARATOR_LINE = re.compile(r"^_+\s*$")
-_CONTEXT_LINE = re.compile(r"^(.+?) — (.+)$")
-_GLOSS_DASH_PREFIX = re.compile(r"^[\-—–]\s*(.+)$")
+_CONTEXT_LINE = re.compile(r"^(.+?) [-—–] (.+)$")
+_GLOSS_DASH_PREFIX = re.compile(r"^[-—–]\s*(.+)$")
 _NUMBERED_LINE = re.compile(r"^(\[\d+\]\s*.+)$")
 _NUMBERED_HEADER = re.compile(r"^\[(\d+)\]\s*(.+)$")
 _UA_EN_META_PREFIXES = ("Example:", "You probably meant:", "Also, if you meant:")
@@ -23,7 +23,7 @@ def _is_ua_en_continuation_line(stripped: str) -> bool:
         return False
     if stripped.startswith(_UA_EN_META_PREFIXES):
         return False
-    if stripped.startswith("—"):
+    if stripped.startswith("-"):
         return False
     if _NUMBERED_LINE.match(stripped):
         return False
@@ -35,7 +35,7 @@ def _can_merge_ua_en_previous_line(prev_stripped: str) -> bool:
         return False
     if _CONTEXT_LINE.match(prev_stripped):
         return True
-    if prev_stripped.startswith("—") and _CYRILLIC.search(prev_stripped):
+    if prev_stripped.startswith("-") and _CYRILLIC.search(prev_stripped):
         return True
     return _is_ua_en_continuation_line(prev_stripped)
 
@@ -49,7 +49,7 @@ def _is_english_gloss_header(stripped: str) -> bool:
         return False
     if _NUMBERED_LINE.match(stripped):
         return False
-    if stripped.startswith(("—", "-")):
+    if stripped.startswith("-"):
         return False
     return True
 
@@ -57,9 +57,9 @@ def _is_english_gloss_header(stripped: str) -> bool:
 def _normalize_gloss_line(stripped: str) -> str:
     if _CONTEXT_LINE.match(stripped):
         return stripped
-    match = re.match(r"^(.+?) [\-\–] (.+)$", stripped)
+    match = re.match(r"^(.+?) [-—–] (.+)$", stripped)
     if match and not _CYRILLIC.search(match.group(1)) and _CYRILLIC.search(match.group(2)):
-        return f"{match.group(1).strip()} — {match.group(2).strip()}"
+        return f"{match.group(1).strip()} - {match.group(2).strip()}"
     return stripped
 
 
@@ -104,7 +104,7 @@ def merge_ua_en_wrapped_lines(block: str) -> str:
                     else ""
                 )
                 if dash_body and _CYRILLIC.search(dash_body):
-                    merged.append(f"{stripped} — {dash_body}")
+                    merged.append(f"{stripped} - {dash_body}")
                     index = next_index + 1
                     continue
 
@@ -170,7 +170,7 @@ _SKY_700 = "#1d4ed8"
 
 
 def _definition_pill(inner_html: str) -> str:
-    """Qt QTextDocument ignores div padding/radius — use a table for the emerald chip."""
+    """Qt QTextDocument ignores div padding/radius - use a table for the emerald chip."""
     return (
         '<table width="100%" cellpadding="6" cellspacing="0" '
         f'style="background-color:{_EMERALD_50}; border:1px solid {_EMERALD_100}; '
@@ -182,7 +182,7 @@ def _definition_pill(inner_html: str) -> str:
 
 
 def _example_pill(inner_html: str) -> str:
-    """Example sentences — blue tint, left accent (distinct from green definition)."""
+    """Example sentences - blue tint, left accent (distinct from green definition)."""
     return (
         '<table width="100%" cellpadding="6" cellspacing="0" '
         f'style="background-color:{_SKY_50}; border:1px solid {_SKY_200}; '
@@ -244,7 +244,7 @@ def _ua_en_gloss_row(english: str, note: str) -> str:
     return (
         f'<p style="{_UA_EN_GLOSS_STYLE}">'
         f'<span style="font-weight:600;color:#1e40af">{english}</span>'
-        f'<span style="color:#64748b"> — {note}</span>'
+        f'<span style="color:#64748b"> - {note}</span>'
         "</p>"
     )
 
@@ -293,7 +293,7 @@ def _format_ua_en_block(block: str) -> str:
 
 
 def format_en_ua_output(text: str) -> str:
-    """Turn en-ua API text into HTML cards — one card per meaning block."""
+    """Turn en-ua API text into HTML cards - one card per meaning block."""
     normalized = _normalize_separators(text)
     entries = _parse_en_ua_entries(normalized)
     parts = [

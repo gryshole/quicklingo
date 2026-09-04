@@ -33,14 +33,14 @@ HELP_TOPICS = (
 )
 
 _HEADING_EMOJI = {
-    # About — Ukrainian
+    # About - Ukrainian
     "Що таке QuickLingo": "👋",
     "Як це працює": "⚙️",
     "Ключові поняття": "🧠",
     "Типові сценарії": "🎯",
     "Налаштування та дані": "🛠",
     "Де почати": "🚀",
-    # About — English
+    # About - English
     "What is QuickLingo": "👋",
     "What QuickLingo is": "👋",
     "How it works": "⚙️",
@@ -50,7 +50,7 @@ _HEADING_EMOJI = {
     "Settings and data": "🛠",
     "Where to start": "🚀",
     "Getting started": "🚀",
-    # Models — Ukrainian
+    # Models - Ukrainian
     "Загальна ідея": "💡",
     "Ключі API": "🔑",
     "Підтримуються провайдери": "🤖",
@@ -58,7 +58,7 @@ _HEADING_EMOJI = {
     "Додавання моделі вручну": "➕",
     "Як модель використовується при перекладі": "🔄",
     "Як обрати модель": "🎯",
-    # Models — English
+    # Models - English
     "General idea": "💡",
     "The big picture": "💡",
     "API keys": "🔑",
@@ -68,7 +68,7 @@ _HEADING_EMOJI = {
     "Adding a model manually": "➕",
     "How a model is used when translating": "🔄",
     "Choosing a model": "🎯",
-    # Profiles / directions — Ukrainian
+    # Profiles / directions - Ukrainian
     "Навіщо три вкладки": "🗂",
     "Напрямки (Інструменти → Налаштування → Напрямки)": "🧭",
     "Поля напрямку": "📝",
@@ -76,14 +76,14 @@ _HEADING_EMOJI = {
     "Що налаштовується в профілі": "🧩",
     "Використання (Інструменти → Налаштування → Використання)": "🔗",
     "Приклад: серіали і робота": "🎬",
-    "Крок 1 — два напрямки (вкладка Напрямки)": "1️⃣",
-    "Крок 2 — профілі (вкладка Профілі). Можна так": "2️⃣",
-    "Варіант А — окремі профілі": "🅰️",
-    "Крок 3 — використання (вкладка Використання)": "3️⃣",
-    "Крок 4 — глосарій (окремо, вкладка Глосарій)": "4️⃣",
+    "Крок 1 - два напрямки (вкладка Напрямки)": "1️⃣",
+    "Крок 2 - профілі (вкладка Профілі). Можна так": "2️⃣",
+    "Варіант А - окремі профілі": "🅰️",
+    "Крок 3 - використання (вкладка Використання)": "3️⃣",
+    "Крок 4 - глосарій (окремо, вкладка Глосарій)": "4️⃣",
     "Типовий робочий процес": "🔄",
     "Поради": "💬",
-    # Profiles / directions — English
+    # Profiles / directions - English
     "Why three tabs": "🗂",
     "Directions (Tools → Settings → Directions)": "🧭",
     "Direction fields": "📝",
@@ -91,14 +91,14 @@ _HEADING_EMOJI = {
     "What you configure in a profile": "🧩",
     "Usage (Tools → Settings → Usage)": "🔗",
     "Example: series vs work": "🎬",
-    "Step 1 — two directions (Directions tab)": "1️⃣",
-    "Step 2 — profiles (Profiles tab). For example": "2️⃣",
-    "Option A — separate profiles": "🅰️",
-    "Step 3 — usage (Usage tab)": "3️⃣",
-    "Step 4 — glossary (separate Glossary tab)": "4️⃣",
+    "Step 1 - two directions (Directions tab)": "1️⃣",
+    "Step 2 - profiles (Profiles tab). For example": "2️⃣",
+    "Option A - separate profiles": "🅰️",
+    "Step 3 - usage (Usage tab)": "3️⃣",
+    "Step 4 - glossary (separate Glossary tab)": "4️⃣",
     "Typical workflow": "🔄",
     "Tips": "💬",
-    # Features — Ukrainian
+    # Features - Ukrainian
     "Що це за вкладка": "🎛️",
     "Як користуватися": "👆",
     "Загальне": "🪟",
@@ -108,7 +108,7 @@ _HEADING_EMOJI = {
     "Приватність": "🔒",
     "Як обрати набір функцій": "🎛️",
     "Зв’язок з іншими вкладками": "🔗",
-    # Features — English
+    # Features - English
     "What this tab is": "🎛️",
     "How to use it": "👆",
     "General": "🪟",
@@ -118,7 +118,7 @@ _HEADING_EMOJI = {
     "Privacy": "🔒",
     "Choosing a feature set": "🎛️",
     "How this relates to other tabs": "🔗",
-    # History — Ukrainian
+    # History - Ukrainian
     "Що це": "📖",
     "Таблиця та перегляд": "🧾",
     "Пошук і фільтри": "🔎",
@@ -128,7 +128,7 @@ _HEADING_EMOJI = {
     "Зв’язок з іншими частинами": "🔗",
     "Якщо чогось не видно": "👀",
     "Навчання з історії": "🎓",
-    # History — English
+    # History - English
     "What it is": "📖",
     "Table and preview": "🧾",
     "Search and filters": "🔎",
@@ -138,46 +138,46 @@ _HEADING_EMOJI = {
     "Links to other parts": "🔗",
     "If something is missing": "👀",
     "Learning from history": "🎓",
-    # Quiz questions — Ukrainian
+    # Quiz questions - Ukrainian
     "Типи питань": "❓",
     "Покриття": "📊",
     "Зв’язок з Навчанням": "🔗",
-    # Quiz questions — English
+    # Quiz questions - English
     "Question types": "❓",
     "Coverage": "📊",
     "How it relates to Learning": "🔗",
-    # Learning — Ukrainian
+    # Learning - Ukrainian
     "Вкладки": "📑",
     "Типовий flow": "🔄",
-    "Створити колоду — деталі": "🃏",
+    "Створити колоду - деталі": "🃏",
     "Повторення і медіа": "🔁",
     "Статистика": "📊",
-    # Learning — English
+    # Learning - English
     "Tabs": "📑",
     "Typical flow": "🔄",
-    "Create deck — details": "🃏",
+    "Create deck - details": "🃏",
     "Review and media": "🔁",
     "Statistics": "📊",
-    # Sync — Ukrainian
+    # Sync - Ukrainian
     "Навіщо це": "☁️",
     "Що синхронізується": "✅",
     "Що НЕ синхронізується": "🚫",
     "Де налаштувати": "⚙️",
     "Доступні транспорти": "🚚",
-    # Sync — English
+    # Sync - English
     "Why sync": "☁️",
     "What is synced": "✅",
     "What is NOT synced": "🚫",
     "Where to configure": "⚙️",
     "Available transports": "🚚",
-    # Google Drive — Ukrainian
+    # Google Drive - Ukrainian
     "Одноразове налаштування в Google Cloud": "☁️",
     "Підключення в QuickLingo": "🔌",
     "Запуск синхронізації": "▶️",
     "Другий комп’ютер": "💻",
     "Де лежать файли": "📁",
     "Типові проблеми": "🩹",
-    # Google Drive — English
+    # Google Drive - English
     "What it does": "☁️",
     "One-time setup in Google Cloud": "☁️",
     "Connect in QuickLingo": "🔌",
@@ -185,7 +185,7 @@ _HEADING_EMOJI = {
     "Second computer": "💻",
     "Where files are stored": "📁",
     "Troubleshooting": "🩹",
-    # Formatters — Ukrainian
+    # Formatters - Ukrainian
     "Що таке форматер": "🎨",
     "Де задається форматер": "📍",
     "Коли застосовується": "⏱️",
@@ -195,7 +195,7 @@ _HEADING_EMOJI = {
     "Перегляд": "👁️",
     "Зв’язок промпту і форматера": "🔗",
     "Типовий процес": "🔄",
-    # Formatters — English
+    # Formatters - English
     "What a formatter does": "🎨",
     "Where the formatter is set": "📍",
     "When it runs": "⏱️",
@@ -204,27 +204,27 @@ _HEADING_EMOJI = {
     "Custom rules mode": "✏️",
     "Preview": "👁️",
     "Prompt and formatter must match": "🔗",
-    # Glossary — Ukrainian
+    # Glossary - Ukrainian
     "Як це потрапляє в запит до моделі": "📨",
     "Як додати терміни": "➕",
     "Коли глосарій застосовується": "⏱️",
     "Навіщо це потрібно": "💡",
     "Важливо знати": "⚠️",
     "Типовий сценарій для серіалів": "🎬",
-    # Glossary — English
+    # Glossary - English
     "How it reaches the model": "📨",
     "How to add terms": "➕",
     "When the glossary is used": "⏱️",
     "Why it helps": "💡",
     "Important to know": "⚠️",
     "Typical workflow for TV series": "🎬",
-    # Dashboard — Ukrainian
-    "Верхній рядок — підсумок": "📌",
+    # Dashboard - Ukrainian
+    "Верхній рядок - підсумок": "📌",
     "Графік активності (ліворуч)": "📊",
     "Використання моделей (праворуч)": "🥧",
     "Оновлення": "🔄",
     "Якщо графік не видно": "👀",
-    # Dashboard — English
+    # Dashboard - English
     "Top summary row": "📌",
     "Activity chart (left)": "📊",
     "Model usage (right)": "🥧",
@@ -352,7 +352,7 @@ a {
 
 _BULLET_RE = re.compile(r"^[•\-\*]\s+(.*)$")
 _NUMBERED_RE = re.compile(r"^(\d+)\.\s+(.*)$")
-_TERM_SEP_RE = re.compile(r"\s+[—–\-]\s+", re.UNICODE)
+_TERM_SEP_RE = re.compile(r"\s+[--\-]\s+", re.UNICODE)
 _MENU_PATH_RE = re.compile(
     r"(?<![>\w/])("
     r"(?:Інструменти|Вчитися|Довідка|Налаштування|Функції|Навчання|"
@@ -460,7 +460,7 @@ def _is_heading(line: str) -> bool:
     # Colon-lines are section titles only when explicitly mapped (avoids sub-leads).
     if line.endswith(":"):
         return known
-    if not known and len(line) > 55 and " — " in line:
+    if not known and len(line) > 55 and " - " in line:
         return False
     return True
 

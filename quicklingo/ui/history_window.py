@@ -790,11 +790,11 @@ def _format_result_html(text: str) -> str:
                 f'color: #1e40af;">[{idx}] {title}</h3>'
             )
             continue
-        if stripped.startswith("—") or stripped.startswith("-"):
-            body = stripped.lstrip("—- ").strip()
+        if stripped.startswith("-"):
+            body = stripped.lstrip("- ").strip()
             parts.append(
                 f'<p style="margin: 0 0 10px 14px; color: #64748b; font-size: 13px;">'
-                f"— {html.escape(body)}</p>"
+                f"- {html.escape(body)}</p>"
             )
             continue
         if stripped.lower().startswith("example:"):

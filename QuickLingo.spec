@@ -10,12 +10,14 @@ project_root = Path(SPECPATH)
 datas = [
     (str(project_root / "assets"), "assets"),
     (str(project_root / "quicklingo" / "i18n" / "locales"), "quicklingo/i18n/locales"),
+    (str(project_root / "quicklingo" / "ui" / "assets"), "quicklingo/ui/assets"),
 ]
 
 # Only modules QuickLingo imports. Avoid collect_all('PySide6') — it bundles Qt3D,
 # WebEngine, QML, etc. and slows every launch when using --onefile.
 hiddenimports = [
     "PySide6.QtCharts",
+    "PySide6.QtSvg",
 ]
 
 icon_path = str(project_root / "assets" / "quicklingo_icon.ico")

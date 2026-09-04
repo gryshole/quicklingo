@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import html
+
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap, QResizeEvent, QShowEvent
+from PySide6.QtGui import QColor, QFont, QIcon, QPalette, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -11,7 +13,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QTableWidget,
@@ -26,8 +27,10 @@ from quicklingo.i18n import tr
 from quicklingo.learning.quiz.aggregator import get_quiz_pool_stats, list_quiz_eligible_decks
 from quicklingo.learning.quiz.choice_lookup import format_wrong_choice_feedback
 from quicklingo.learning.quiz.quiz_feedback_content import (
+    format_wrong_hint_html,
     is_choice_visible_in_feedback,
     load_quiz_feedback_content,
+    should_show_quiz_feedback_enrichment,
 )
 from quicklingo.learning.tts.audio_service import AudioService
 from quicklingo.learning.tts.prefetch import collect_question_tts_texts, collect_quiz_tts_texts
@@ -36,20 +39,29 @@ from quicklingo.ui.controllers.quiz_session_controller import QuizSessionControl
 from quicklingo.ui.widgets.quiz_deck_combo import QuizDeckComboBox
 from quicklingo.ui.widgets.quiz_feedback_enrichment import QuizFeedbackEnrichmentWidget
 from quicklingo.ui.widgets.quiz_generation_panel import QuizGenerationPanel
+from quicklingo.ui.widgets.quiz_ui import (
+    PROMPT_SPEAKER_BUTTON_STYLE,
+    arrow_right_icon,
+    check_icon,
+    speaker_icon,
+    x_icon,
+)
 
 _CARD_MAX_WIDTH = 672
 _VICTORY_CARD_MAX_WIDTH = 760
-_QUIZ_CARD_MAX_WIDTH = 768
-_QUIZ_CARD_MIN_WIDTH = 560
-_NEXT_ROW_HEIGHT = 52
-_PROGRESS_BAR_HEIGHT = 10
-_SPEAKER_SLOT_HEIGHT = 44
+_QUIZ_CARD_MAX_WIDTH = 560
+_QUIZ_CARD_MIN_WIDTH = 440
+_PROGRESS_BAR_HEIGHT = 6
+_SPEAKER_SLOT_HEIGHT = 36
 
 _CARD_STYLE = """
     QWidget#quizCard, QWidget#victoryCard {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
+        background: #ffffff;
+        border: 1px solid #e8edf2;
+        border-radius: 16px;
+    }
+    QWidget#quizActiveHost {
+        background: #f1f5f9;
     }
 """
 _IDLE_SETUP_STYLE = """
@@ -74,30 +86,31 @@ _IDLE_SETUP_STYLE = """
 _CHOICE_STYLE = """
     QPushButton {
         text-align: left;
-        padding: 14px 18px;
-        font-size: 12pt;
+        padding: 14px 20px 14px 16px;
+        font-size: 13pt;
+        font-weight: 600;
         color: #0f172a;
         background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        min-height: 50px;
     }
     QPushButton:hover:enabled {
-        border-color: #94a3b8;
-        background: #f1f5f9;
+        border-color: #9ca3af;
+        background: #f9fafb;
     }
     QPushButton:pressed:enabled {
-        background: #e2e8f0;
+        background: #f1f5f9;
     }
 """
 _FEEDBACK_CORRECT = (
-    "background: #ecfdf5; border: 1px solid #6ee7b7; color: #065f46; border-radius: 8px;"
+    "background: #ecfdf5; border: 2px solid #22c55e; border-radius: 12px;"
 )
 _FEEDBACK_WRONG = (
-    "background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; border-radius: 8px;"
+    "background: #fef2f2; border: 2px solid #ef4444; border-radius: 12px;"
 )
-_CHOICE_FEEDBACK_STYLE = (
-    "color: #475569; font-size: 10pt; padding: 4px 8px 0; background: transparent;"
-)
+_FEEDBACK_CORRECT_TEXT = "#166534"
+_FEEDBACK_WRONG_TEXT = "#991b1b"
 _PRIMARY_BTN = """
     QPushButton {
         background: #2563eb;
@@ -133,40 +146,22 @@ _SECONDARY_BTN = """
 """
 _NEXT_BTN = """
     QPushButton {
-        background: #ffffff;
-        color: #334155;
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 8px 20px;
+        background: #2563eb;
+        color: #ffffff;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 24px;
         font-size: 11pt;
         font-weight: 600;
-        min-width: 120px;
+        min-height: 48px;
     }
     QPushButton:hover {
-        background: #f8fafc;
-        border-color: #94a3b8;
+        background: #1d4ed8;
+    }
+    QPushButton:pressed {
+        background: #1e40af;
     }
 """
-_SPEAKER_BTN = """
-    QPushButton#quizSpeakerBtn {
-        background: #eff6ff;
-        border: none;
-        border-radius: 22px;
-        min-width: 44px;
-        min-height: 44px;
-        max-width: 44px;
-        max-height: 44px;
-        padding: 0;
-    }
-    QPushButton#quizSpeakerBtn:hover {
-        background: #dbeafe;
-    }
-    QPushButton#quizSpeakerBtn:pressed {
-        background: #bfdbfe;
-    }
-"""
-_QUESTION_STYLE = "color: #1e293b;"
-_HINT_STYLE = "color: #64748b; font-size: 10pt;"
 _WRONG_TABLE_STYLE = """
     QTableWidget#wrongAnswersTable {
         background: transparent;
@@ -208,28 +203,20 @@ _WRONG_TABLE_STYLE = """
     }
 """
 
+_QUESTION_STYLE = "padding: 0;"
+_QUESTION_FONT_PT = 15
+_QUESTION_LINE_HEIGHT = 1.55
+_HINT_STYLE = "color: #94a3b8; font-size: 10pt;"
+_CHOICE_ICON_SIZE = 24
 
-def _speaker_icon(*, size: int = 20, color: str = "#2563eb") -> QIcon:
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" """
-    svg += f"""viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2" """
-    svg += """stroke-linecap="round" stroke-linejoin="round">"""
-    svg += """<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>"""
-    svg += """<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>"""
-    svg += """<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>"""
-    try:
-        from PySide6.QtSvg import QSvgRenderer
 
-        renderer = QSvgRenderer(svg.encode("utf-8"))
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-        return QIcon(pixmap)
-    except Exception:
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        return QIcon(pixmap)
+def _question_label_html(text: str) -> str:
+    escaped = html.escape(text)
+    return (
+        f'<div style="text-align: center; color: #0f172a; font-size: {_QUESTION_FONT_PT}pt; '
+        f"font-weight: 600; line-height: {_QUESTION_LINE_HEIGHT}; margin: 0; padding: 0;"
+        f'">{escaped}</div>'
+    )
 
 
 class QuizSessionWidget(QWidget):
@@ -251,9 +238,7 @@ class QuizSessionWidget(QWidget):
         self._deck_ids: frozenset[int] | None = None
         self._choice_buttons: list[QPushButton] = []
         self._feedback_active = False
-        self._feedback_question = None
         self._selected_choice: str | None = None
-        self._last_correct: bool | None = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -264,13 +249,15 @@ class QuizSessionWidget(QWidget):
         progress_header_layout.setSpacing(4)
         self._progress_label = QLabel()
         self._progress_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._progress_label.setStyleSheet("color: #64748b; font-size: 10pt;")
+        self._progress_label.setStyleSheet(
+            "color: #94a3b8; font-size: 9pt; letter-spacing: 0.02em;"
+        )
         self._progress = QProgressBar()
         self._progress.setTextVisible(False)
         self._progress.setFixedHeight(_PROGRESS_BAR_HEIGHT)
         self._progress.setStyleSheet(
-            "QProgressBar { border: none; background: #e2e8f0; border-radius: 5px; }"
-            "QProgressBar::chunk { background: #2563eb; border-radius: 5px; }"
+            "QProgressBar { border: none; background: #e2e8f0; border-radius: 3px; }"
+            "QProgressBar::chunk { background: #2563eb; border-radius: 3px; }"
         )
         progress_header_layout.addWidget(self._progress_label)
         progress_header_layout.addWidget(self._progress)
@@ -363,6 +350,7 @@ class QuizSessionWidget(QWidget):
 
     def _build_quiz_active_page(self) -> QWidget:
         active_page = QWidget()
+        active_page.setObjectName("quizActiveHost")
         active_layout = QVBoxLayout(active_page)
         active_layout.setContentsMargins(0, 0, 0, 0)
         active_layout.addStretch(1)
@@ -373,18 +361,24 @@ class QuizSessionWidget(QWidget):
         self._quiz_card.setMinimumWidth(_QUIZ_CARD_MIN_WIDTH)
         self._quiz_card.setMaximumWidth(_QUIZ_CARD_MAX_WIDTH)
         self._quiz_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        card_shadow = QGraphicsDropShadowEffect(self._quiz_card)
+        card_shadow.setBlurRadius(30)
+        card_shadow.setOffset(0, 4)
+        card_shadow.setColor(QColor(0, 0, 0, 20))
+        self._quiz_card.setGraphicsEffect(card_shadow)
         quiz_card_layout = QVBoxLayout(self._quiz_card)
-        quiz_card_layout.setContentsMargins(28, 28, 28, 28)
-        quiz_card_layout.setSpacing(20)
+        self._quiz_card_layout = quiz_card_layout
+        quiz_card_layout.setContentsMargins(16, 20, 16, 12)
+        quiz_card_layout.setSpacing(8)
 
         prompt_center = QHBoxLayout()
         prompt_center.setContentsMargins(0, 0, 0, 0)
         prompt_center.addStretch()
         self._prompt_block = QWidget()
-        self._prompt_block.setMaximumWidth(520)
+        self._prompt_block.setMaximumWidth(_QUIZ_CARD_MAX_WIDTH)
         prompt_block_layout = QVBoxLayout(self._prompt_block)
         prompt_block_layout.setContentsMargins(0, 0, 0, 0)
-        prompt_block_layout.setSpacing(0)
+        prompt_block_layout.setSpacing(2)
         prompt_block_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
         self._prompt_play_host = QWidget()
@@ -393,13 +387,14 @@ class QuizSessionWidget(QWidget):
         prompt_play_host_layout.setContentsMargins(0, 0, 0, 0)
         prompt_play_host_layout.setSpacing(0)
 
+        prompt_play_host_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self._prompt_play_btn = QPushButton()
         self._prompt_play_btn.setObjectName("quizSpeakerBtn")
         self._prompt_play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._prompt_play_btn.setStyleSheet(_SPEAKER_BTN)
-        self._prompt_play_btn.setIcon(_speaker_icon())
-        self._prompt_play_btn.setIconSize(QSize(20, 20))
-        self._prompt_play_btn.setToolTip(tr("learning.tts_play_prompt"))
+        self._prompt_play_btn.setStyleSheet(PROMPT_SPEAKER_BUTTON_STYLE)
+        self._prompt_play_btn.setIcon(speaker_icon(size=18))
+        self._prompt_play_btn.setIconSize(QSize(18, 18))
         self._prompt_play_btn.clicked.connect(self._play_prompt_audio)
         self._audio.synthesizing.connect(self._on_tts_synthesizing)
         prompt_play_host_layout.addStretch()
@@ -407,22 +402,27 @@ class QuizSessionWidget(QWidget):
         prompt_play_host_layout.addStretch()
 
         self._question_label = QLabel()
+        self._question_label.setTextFormat(Qt.TextFormat.RichText)
         self._question_label.setWordWrap(True)
         self._question_label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         self._question_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Minimum,
         )
-        question_font = QFont()
-        question_font.setPointSize(14)
-        question_font.setWeight(QFont.Weight.DemiBold)
+        question_font = QFont(self.font())
+        question_font.setPointSize(_QUESTION_FONT_PT)
+        question_font.setWeight(QFont.Weight.Bold)
         self._question_label.setFont(question_font)
-        self._question_label.setStyleSheet(_QUESTION_STYLE + " padding-top: 8px;")
+        self._question_label.setStyleSheet(_QUESTION_STYLE)
 
         self._hint_label = QLabel()
-        self._hint_label.setWordWrap(True)
+        self._hint_label.setWordWrap(False)
         self._hint_label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-        self._hint_label.setStyleSheet(_HINT_STYLE + " padding-top: 12px;")
+        self._hint_label.setSizePolicy(
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Minimum,
+        )
+        self._hint_label.setStyleSheet(_HINT_STYLE)
 
         prompt_block_layout.addWidget(
             self._prompt_play_host,
@@ -432,6 +432,7 @@ class QuizSessionWidget(QWidget):
             self._question_label,
             alignment=Qt.AlignmentFlag.AlignHCenter,
         )
+        prompt_block_layout.addSpacing(2)
         prompt_block_layout.addWidget(
             self._hint_label,
             alignment=Qt.AlignmentFlag.AlignHCenter,
@@ -439,8 +440,9 @@ class QuizSessionWidget(QWidget):
         prompt_center.addWidget(self._prompt_block)
         prompt_center.addStretch()
         quiz_card_layout.addLayout(prompt_center)
+        quiz_card_layout.addSpacing(20)
         self._choices_layout = QVBoxLayout()
-        self._choices_layout.setSpacing(10)
+        self._choices_layout.setSpacing(8)
         for _ in range(4):
             btn = QPushButton()
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -451,51 +453,36 @@ class QuizSessionWidget(QWidget):
             self._choices_layout.addWidget(btn)
         quiz_card_layout.addLayout(self._choices_layout)
 
-        self._feedback_scroll = QScrollArea()
-        self._feedback_scroll.setWidgetResizable(True)
-        self._feedback_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._feedback_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._feedback_scroll.setVisible(False)
-        feedback_scroll_host = QWidget()
-        feedback_scroll_layout = QVBoxLayout(feedback_scroll_host)
-        feedback_scroll_layout.setContentsMargins(0, 0, 0, 0)
-        feedback_scroll_layout.setSpacing(10)
-
-        self._choice_feedback_host = QWidget()
-        self._choice_feedback_host.setSizePolicy(
+        self._feedback_host = QWidget()
+        self._feedback_host.setObjectName("quizFeedbackHost")
+        self._feedback_host.setAutoFillBackground(False)
+        self._feedback_host.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._feedback_host.setStyleSheet("background: transparent;")
+        self._feedback_host.setSizePolicy(
             QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Minimum,
         )
-        feedback_layout = QVBoxLayout(self._choice_feedback_host)
-        feedback_layout.setContentsMargins(0, 4, 0, 0)
-        feedback_layout.setSpacing(0)
-        self._choice_feedback_label = QLabel()
-        self._choice_feedback_label.setWordWrap(True)
-        self._choice_feedback_label.setAlignment(
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
-        )
-        self._choice_feedback_label.setStyleSheet(_CHOICE_FEEDBACK_STYLE)
-        feedback_layout.addWidget(self._choice_feedback_label)
-        feedback_scroll_layout.addWidget(self._choice_feedback_host)
+        self._feedback_host.setVisible(False)
+        feedback_host_layout = QVBoxLayout(self._feedback_host)
+        feedback_host_layout.setContentsMargins(0, 0, 0, 0)
+        feedback_host_layout.setSpacing(0)
 
         self._enrichment_widget = QuizFeedbackEnrichmentWidget(self._audio)
-        feedback_scroll_layout.addWidget(self._enrichment_widget)
-        self._feedback_scroll.setWidget(feedback_scroll_host)
-        quiz_card_layout.addWidget(self._feedback_scroll, stretch=1)
-        self._next_row_host = QWidget()
-        self._next_row_host.setFixedHeight(_NEXT_ROW_HEIGHT)
-        next_row = QHBoxLayout(self._next_row_host)
-        next_row.setContentsMargins(0, 0, 0, 0)
-        next_row.addStretch()
+        feedback_host_layout.addWidget(self._enrichment_widget)
+        quiz_card_layout.addWidget(self._feedback_host, stretch=0)
         self._next_btn = QPushButton()
+        self._next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._next_btn.setStyleSheet(_NEXT_BTN)
+        self._next_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self._next_btn.setIcon(arrow_right_icon(size=_CHOICE_ICON_SIZE))
+        self._next_btn.setIconSize(QSize(_CHOICE_ICON_SIZE, _CHOICE_ICON_SIZE))
+        self._next_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self._next_btn.clicked.connect(self._advance_after_feedback)
-        self._next_btn.setVisible(False)
-        next_row.addWidget(self._next_btn)
-        next_row.addStretch()
-        quiz_card_layout.addWidget(self._next_row_host)
+        self._set_next_row_visible(False)
+        quiz_card_layout.addWidget(self._next_btn)
         active_center.addWidget(self._quiz_card, stretch=1)
         active_center.addStretch(1)
         active_layout.addLayout(active_center)
@@ -645,7 +632,10 @@ class QuizSessionWidget(QWidget):
         self._restart_btn.setText(tr("learning.quiz_restart"))
         self._finish_btn.setText(tr("learning.quiz_finish"))
         self._review_weak_btn.setText(tr("learning.quiz_review_weak"))
-        self._next_btn.setText(tr("learning.quiz_next"))
+        self._next_btn.setText(self._plain_button_text(tr("learning.quiz_next")))
+        self._next_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self._next_btn.setIcon(arrow_right_icon(size=_CHOICE_ICON_SIZE))
+        self._next_btn.setIconSize(QSize(_CHOICE_ICON_SIZE, _CHOICE_ICON_SIZE))
         self._enrichment_widget.retranslate_ui()
         self._wrong_title.setText(tr("learning.quiz_wrong_title"))
         self._wrong_table.setHorizontalHeaderLabels(
@@ -728,7 +718,7 @@ class QuizSessionWidget(QWidget):
 
     def _show_idle(self) -> None:
         self._controller.reset()
-        self._next_btn.setVisible(False)
+        self._set_next_row_visible(False)
         self._stack.setCurrentIndex(0)
         self._set_progress_header_visible(False)
         self._progress.setValue(0)
@@ -785,38 +775,97 @@ class QuizSessionWidget(QWidget):
 
     def _clear_feedback_state(self) -> None:
         self._feedback_active = False
-        self._feedback_question = None
         self._selected_choice = None
-        self._last_correct = None
-        self._choice_feedback_label.clear()
-        self._enrichment_widget.set_content(None)
-        self._feedback_scroll.setVisible(False)
+        self._enrichment_widget.set_feedback(None)
+        self._feedback_host.setVisible(False)
 
     def _show_current_question(self) -> None:
-        self._next_btn.setVisible(False)
+        self._set_next_row_visible(False)
         self._clear_feedback_state()
         question = self._controller.current_question()
         if question is None:
             self._finish_session()
             return
-        self._question_label.setText(question.prompt_text)
+        self._question_label.setText(_question_label_html(question.prompt_text))
         self._hint_label.setText(question.prompt_hint)
         self._tts_answer_revealed = False
         self._update_tts_ui(question)
         self._prefetch_question_tts(question)
         for index, btn in enumerate(self._choice_buttons):
             if index < len(question.choices):
-                btn.setText(question.choices[index])
+                btn.setText(self._plain_button_text(question.choices[index]))
                 btn.setVisible(True)
                 btn.setEnabled(True)
-                btn.setStyleSheet(_CHOICE_STYLE)
+                self._reset_choice_button_style(btn)
+                btn.setIcon(QIcon())
+                btn.setIconSize(QSize(_CHOICE_ICON_SIZE, _CHOICE_ICON_SIZE))
             else:
                 btn.setVisible(False)
         self._refresh_progress()
 
+    @staticmethod
+    def _plain_button_text(text: str) -> str:
+        return text.strip()
+
+    def _set_next_row_visible(self, visible: bool) -> None:
+        self._next_btn.setVisible(visible)
+
+    def _sync_prompt_top_spacing(self, has_speaker: bool) -> None:
+        top = 16 if has_speaker else 20
+        self._quiz_card_layout.setContentsMargins(16, top, 16, 12)
+
+    @staticmethod
+    def _set_button_text_color(btn: QPushButton, color: QColor) -> None:
+        palette = btn.palette()
+        for group in (
+            QPalette.ColorGroup.Active,
+            QPalette.ColorGroup.Inactive,
+            QPalette.ColorGroup.Disabled,
+        ):
+            palette.setColor(group, QPalette.ColorRole.ButtonText, color)
+        btn.setPalette(palette)
+
+    def _reset_choice_button_style(self, btn: QPushButton) -> None:
+        btn.setStyleSheet(_CHOICE_STYLE)
+        self._set_button_text_color(btn, QColor("#0f172a"))
+
+    def _apply_choice_feedback_appearance(self, btn: QPushButton, *, correct: bool) -> None:
+        btn.setStyleSheet(self._choice_feedback_style(correct=correct))
+        text_color = QColor(_FEEDBACK_CORRECT_TEXT if correct else _FEEDBACK_WRONG_TEXT)
+        self._set_button_text_color(btn, text_color)
+
     def _choice_feedback_style(self, *, correct: bool) -> str:
-        base = "text-align: left; padding: 14px 18px; font-size: 12pt; font-weight: 600;"
-        return base + (" " + _FEEDBACK_CORRECT if correct else " " + _FEEDBACK_WRONG)
+        text_color = _FEEDBACK_CORRECT_TEXT if correct else _FEEDBACK_WRONG_TEXT
+        bg = _FEEDBACK_CORRECT if correct else _FEEDBACK_WRONG
+        return (
+            "QPushButton {"
+            f"text-align: left; color: {text_color}; padding: 14px 20px 14px 16px; "
+            "font-size: 13pt; font-weight: 600; min-height: 50px; "
+            f"border-width: 2px; border-style: solid; {bg}"
+            "}"
+            "QPushButton:disabled {"
+            f"color: {text_color};"
+            "}"
+        )
+
+    def _finalize_choice_feedback_button(
+        self,
+        btn: QPushButton,
+        *,
+        correct_visual: bool,
+        show_icon: bool,
+        icon_correct: bool,
+    ) -> None:
+        self._apply_choice_feedback_appearance(btn, correct=correct_visual)
+        btn.setEnabled(False)
+        text_color = QColor(_FEEDBACK_CORRECT_TEXT if correct_visual else _FEEDBACK_WRONG_TEXT)
+        self._set_button_text_color(btn, text_color)
+        if show_icon:
+            icon = check_icon(size=_CHOICE_ICON_SIZE) if icon_correct else x_icon(size=_CHOICE_ICON_SIZE)
+            btn.setIcon(icon)
+            btn.setIconSize(QSize(_CHOICE_ICON_SIZE, _CHOICE_ICON_SIZE))
+        else:
+            btn.setIcon(QIcon())
 
     def _on_choice_clicked(self) -> None:
         sender = self.sender()
@@ -825,19 +874,17 @@ class QuizSessionWidget(QWidget):
         question = self._controller.current_question()
         if question is None:
             return
-        choice = sender.text()
+        choice = self._plain_button_text(sender.text())
         correct_word = question.correct_english
         correct = self._controller.submit_answer(choice)
         self._feedback_active = True
-        self._feedback_question = question
         self._selected_choice = choice
-        self._last_correct = correct
         for btn in self._choice_buttons:
-            if not btn.text():
+            text = self._plain_button_text(btn.text())
+            if not text:
                 continue
-            btn.setEnabled(False)
             visible = is_choice_visible_in_feedback(
-                btn.text(),
+                text,
                 "feedback",
                 last_correct=correct,
                 selected_choice=choice,
@@ -845,12 +892,24 @@ class QuizSessionWidget(QWidget):
             )
             btn.setVisible(visible)
             if not visible:
+                btn.setEnabled(False)
                 continue
-            if btn.text().strip().lower() == choice.strip().lower():
-                btn.setStyleSheet(self._choice_feedback_style(correct=correct))
-            elif btn.text().strip().lower() == correct_word.strip().lower():
-                btn.setStyleSheet(self._choice_feedback_style(correct=True))
-        self._choice_feedback_label.clear()
+            is_selected = text.strip().lower() == choice.strip().lower()
+            is_correct_choice = text.strip().lower() == correct_word.strip().lower()
+            if is_selected:
+                self._finalize_choice_feedback_button(
+                    btn,
+                    correct_visual=correct,
+                    show_icon=True,
+                    icon_correct=correct,
+                )
+            elif is_correct_choice:
+                self._finalize_choice_feedback_button(
+                    btn,
+                    correct_visual=True,
+                    show_icon=True,
+                    icon_correct=True,
+                )
         wrong_hint = ""
         if not correct:
             wrong_hint = format_wrong_choice_feedback(
@@ -859,17 +918,21 @@ class QuizSessionWidget(QWidget):
                 correct_english=correct_word,
                 question_type=question.type,
             )
-            if wrong_hint:
-                self._choice_feedback_label.setText(wrong_hint)
         content = load_quiz_feedback_content(question, self._session_direction())
-        self._enrichment_widget.set_content(content)
-        self._feedback_scroll.setVisible(
-            bool(wrong_hint) or self._enrichment_widget.isVisible()
+        self._enrichment_widget.set_feedback(
+            content,
+            wrong_hint_html=format_wrong_hint_html(wrong_hint) if wrong_hint else "",
+            is_wrong=not correct,
         )
+        has_feedback_body = should_show_quiz_feedback_enrichment(
+            wrong_hint=wrong_hint,
+            content=content,
+        )
+        self._feedback_host.setVisible(has_feedback_body)
         self._tts_answer_revealed = True
         self._update_tts_ui(question)
         self._prefetch_question_tts(question)
-        self._next_btn.setVisible(True)
+        self._set_next_row_visible(True)
         self._refresh_progress()
 
     def _advance_after_feedback(self) -> None:
@@ -885,7 +948,7 @@ class QuizSessionWidget(QWidget):
         self._victory_card.setMaximumHeight(available)
 
     def _finish_session(self) -> None:
-        self._next_btn.setVisible(False)
+        self._set_next_row_visible(False)
         self._controller.persist_session_logs()
         self._show_victory()
 
@@ -928,27 +991,26 @@ class QuizSessionWidget(QWidget):
     def _update_tts_ui(self, question) -> None:
         if not is_enabled("learning.tts_enabled"):
             self._prompt_play_host.setVisible(False)
+            self._sync_prompt_top_spacing(False)
             self._current_spoken_text = ""
             return
         has_tts_slot = bool(
             question.prompt_spoken_text.strip() or question.answer_spoken_text.strip()
         )
         self._prompt_play_host.setVisible(has_tts_slot)
+        self._sync_prompt_top_spacing(has_tts_slot)
         if self._tts_answer_revealed:
             spoken = question.answer_spoken_text.strip()
-            self._prompt_play_btn.setToolTip(tr("learning.tts_play_answer"))
         else:
             spoken = question.prompt_spoken_text.strip()
-            self._prompt_play_btn.setToolTip(tr("learning.tts_play_prompt"))
         show_button = bool(spoken)
         self._prompt_play_btn.setVisible(show_button)
         self._prompt_play_btn.setEnabled(show_button)
         self._current_spoken_text = spoken if show_button else ""
 
     def _play_prompt_audio(self) -> None:
-        text = getattr(self, "_current_spoken_text", "")
-        if text:
-            self._audio.speak_sentence(text)
+        if self._current_spoken_text:
+            self._audio.speak_sentence(self._current_spoken_text)
 
     def _on_tts_synthesizing(self, active: bool) -> None:
         self._prompt_play_btn.setEnabled(not active)

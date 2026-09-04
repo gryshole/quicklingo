@@ -351,7 +351,7 @@ class DistractorCardsBrowserWidget(QWidget):
         for row_index, card in enumerate(self._cards):
             front_item = QTableWidgetItem(card.front)
             front_item.setData(Qt.ItemDataRole.UserRole, card.id)
-            next_review = card.next_review_date[:10] if card.next_review_date else "—"
+            next_review = card.next_review_date[:10] if card.next_review_date else "-"
             for col, text in enumerate(
                 (card.front, card.back, card.hint, card.notes, next_review)
             ):

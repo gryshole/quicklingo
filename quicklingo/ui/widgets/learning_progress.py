@@ -291,7 +291,7 @@ class LearningProgressWidget(QWidget):
         self._kpi_total.set_data(str(kpi.total_cards), tr("learning.progress_kpi_total"))
         self._kpi_learning.set_data(str(kpi.learning_cards), tr("learning.progress_kpi_learning"))
         self._kpi_mastered.set_data(str(kpi.mastered_cards), tr("learning.progress_kpi_mastered"))
-        accuracy_text = "—"
+        accuracy_text = "-"
         accuracy_tooltip = ""
         if kpi.accuracy_percent is not None:
             accuracy_text = f"{kpi.accuracy_percent:.0f}%"

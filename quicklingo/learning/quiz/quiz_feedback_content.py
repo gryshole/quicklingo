@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import html
+import re
+
 from dataclasses import dataclass
 
 from quicklingo.config.loader import resolve_learning_direction
@@ -111,3 +114,37 @@ def load_quiz_feedback_content(
 
 def feedback_content_has_body(content: QuizFeedbackContent) -> bool:
     return bool(content.ukrainian or content.definition or content.examples)
+
+
+def should_show_quiz_feedback_enrichment(
+    *,
+    wrong_hint: str,
+    content: QuizFeedbackContent | None,
+) -> bool:
+    """Whether the post-answer enrichment block should be shown.
+
+    Do not use QWidget.isVisible() for this: the feedback host may still be
+    hidden when we decide visibility, which makes child widgets report False.
+    """
+    return bool(wrong_hint.strip()) or (
+        content is not None and feedback_content_has_body(content)
+    )
+
+
+def format_wrong_hint_html(text: str) -> str:
+    """Emphasize quoted inner text; keep guillemets and surrounding copy muted."""
+    if not text:
+        return ""
+    parts = re.split(r"(«[^»]+»)", text)
+    chunks: list[str] = []
+    muted_open = '<span style="color:#64748b;">'
+    bold_open = '<span style="font-weight:700;color:#0f172a;">'
+    for part in parts:
+        if not part:
+            continue
+        if part.startswith("«") and part.endswith("»") and len(part) > 2:
+            inner = html.escape(part[1:-1])
+            chunks.append(f"{muted_open}«</span>{bold_open}{inner}</span>{muted_open}»</span>")
+        else:
+            chunks.append(f"{muted_open}{html.escape(part)}</span>")
+    return "".join(chunks)

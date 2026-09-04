@@ -6,6 +6,7 @@ from quicklingo.learning.quiz.models import QuizQuestionType, QuizWordDto
 from quicklingo.learning.quiz.quiz_feedback_content import (
     build_quiz_feedback_content,
     is_choice_visible_in_feedback,
+    should_show_quiz_feedback_enrichment,
 )
 
 
@@ -82,6 +83,23 @@ class QuizFeedbackContentTests(unittest.TestCase):
         )
         self.assertFalse(
             is_choice_visible_in_feedback("kitten", "feedback", **options)
+        )
+
+    def test_correct_answer_shows_enrichment_without_wrong_hint(self) -> None:
+        content = build_quiz_feedback_content(
+            self.sample_word,
+            QuizQuestionType.TRANSLATION_RECALL,
+        )
+        self.assertTrue(
+            should_show_quiz_feedback_enrichment(wrong_hint="", content=content)
+        )
+
+    def test_wrong_answer_shows_enrichment_from_hint_alone(self) -> None:
+        self.assertTrue(
+            should_show_quiz_feedback_enrichment(
+                wrong_hint="Your choice was wrong.",
+                content=None,
+            )
         )
 
     def test_session_phase_shows_all_choices(self) -> None:

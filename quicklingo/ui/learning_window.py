@@ -83,16 +83,17 @@ QTabBar::tab {
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    padding: 8px 16px;
-    margin-right: 4px;
+    padding: 10px 18px;
+    margin-right: 2px;
     color: #64748b;
     font-size: 13px;
+    font-weight: 500;
 }
 QTabBar::tab:selected {
     background: #ffffff;
     color: #0f172a;
-    font-weight: bold;
-    border-bottom: 2px solid #0078D7;
+    font-weight: 700;
+    border-bottom: 2px solid #2563eb;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
 }
@@ -772,7 +773,7 @@ class LearningWindow(QMainWindow):
             3: tr("learning.review_good"),
             4: tr("learning.review_easy"),
         }
-        return labels.get(rating, "—")
+        return labels.get(rating, "-")
 
     def _load_cards(self) -> None:
         deck_id = self._deck_combo.currentData()
@@ -794,7 +795,7 @@ class LearningWindow(QMainWindow):
         self._cards_table.setRowCount(len(cards))
         for row, card in enumerate(cards):
             card_stats = stats.get(card.id, {})
-            next_review = card.next_review_date[:10] if card.next_review_date else "—"
+            next_review = card.next_review_date[:10] if card.next_review_date else "-"
             last_rating = int(card_stats.get("last_rating") or 0)
             review_count = int(card_stats.get("review_count") or 0)
             for col, text in enumerate(
@@ -805,7 +806,7 @@ class LearningWindow(QMainWindow):
                     card.notes,
                     self._status_label_for_card(card),
                     next_review,
-                    self._grade_label(last_rating) if last_rating else "—",
+                    self._grade_label(last_rating) if last_rating else "-",
                     str(review_count),
                     str(card.priority),
                 )
